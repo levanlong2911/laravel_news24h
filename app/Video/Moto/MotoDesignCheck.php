@@ -19,8 +19,8 @@ final class MotoDesignCheck
 
     public const UNSCORED = 'UNSCORED';
 
-    /** @var list<string> the physical build states, in order */
-    public const PHYSICAL_STATES = ['BS06', 'BS07', 'BS08', 'BS09', 'BS10', 'BS11', 'BS12'];
+    /** @var list<string> the physical build states of a legacy design, in order; a design of moto-design-v3 reads its own (MotoDesignStates) */
+    public const PHYSICAL_STATES = MotoDesignStates::LEGACY_PHYSICAL;
 
     /** @var list<string> the facings the eight panels need described */
     private const FACINGS = ['left', 'right', 'front', 'rear', 'top'];
@@ -58,7 +58,7 @@ final class MotoDesignCheck
      */
     private static function scored(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors, string $format): array
     {
-        $themed = $format === MotoContract::DESIGN_FORMAT_V2;
+        $themed = $format !== MotoContract::DESIGN_FORMAT;
 
         if ($response === null) {
             return self::result(self::UNSCORED, null, [], 'Phản hồi không đọc được JSON.');
@@ -91,18 +91,30 @@ final class MotoDesignCheck
         }
 
         $data = $response['data'];
+
+        if ($format === MotoContract::DESIGN_FORMAT_V3) {
+            // The seven stages, their checkpoints and every moment that names one are ids the later steps look up: nothing below reads states a broken layout does not have.
+            $layout = MotoDesignStates::layoutProblems($data);
+
+            if ($layout !== []) {
+                return self::result(self::FAIL, $status, [...$issues, ...$layout]);
+            }
+        }
+
+        // The physical states as every later step reads them: a v3 design by its checkpoints, a legacy design as it is.
+        $states = MotoDesignStates::normalize($response);
         $ids = self::ids($data);
         $geometry = self::geometryIssues($data, $ids);
         $warnings = $geometry['warnings'];
         $issues = [
             ...$issues,
             ...$ids['issues'],
-            ...self::referenceIssues($data, $ids, $themed),
+            ...self::referenceIssues($states, $ids, $themed),
             ...self::dnaIssues($data, $dna),
             ...$geometry['issues'],
             ...self::configurationIssues($data, $ids, $themed),
             ...($themed ? self::storyIssues($data, $ids) : []),
-            ...self::stateIssues($data, $ids),
+            ...self::stateIssues($states, $ids),
             ...self::viewIssues($data, $ids, (array) ($modelSheet['cameras'] ?? [])),
             ...(isset($data['model_sheet']['final_prompt']) ? self::promptIssues($data, $modelSheet) : MotoSheetPrompt::composedProblems($data)),
         ];
@@ -112,20 +124,22 @@ final class MotoDesignCheck
             $issues[] = Finding::requirement('MotoDesignCheck.scored.3', 'AI báo status partial — hồ sơ được lưu nhưng không render model sheet: '.implode('; ', array_map(static fn (array $issue): string => "{$issue['id']} {$issue['problem']}", $blocking)).'.');
         }
 
-        return self::result($issues === [] ? self::PASS : self::FAIL, $status, $issues, null, CanonicalJson::hash($data), self::partsByState($data), $warnings);
+        return self::result($issues === [] ? self::PASS : self::FAIL, $status, $issues, null, CanonicalJson::hash($data), self::partsByState($states), $warnings);
     }
 
     /**
-     * @param  array<string, mixed>  $data  a design record that matches the schema
-     * @return array<string, list<string>> each physical build state => the ids of the parts present in it
+     * @param  array<string, mixed>  $data  a design record that matches the schema, as MotoDesignStates::normalize() gives it
+     * @return array<string, list<string>> each physical state => the ids of the parts present in it: BS06–BS12 for a legacy design, each checkpoint for a design of moto-design-v3
      */
     public static function partsByState(array $data): array
     {
         $parts = array_column($data['parts'], null, 'id');
+        $layout = MotoDesignStates::of($data);
+        $order = $layout->order();
         $present = [];
 
-        foreach (self::PHYSICAL_STATES as $state) {
-            $present[$state] = array_fill_keys(array_keys(array_filter($parts, static fn (array $part): bool => self::exists($part, $state))), true);
+        foreach ($layout->physical() as $state) {
+            $present[$state] = array_fill_keys(array_keys(array_filter($parts, static fn (array $part): bool => self::exists($part, $state, $order))), true);
         }
 
         foreach ($data['build_states'] as $buildState) {
@@ -370,7 +384,7 @@ final class MotoDesignCheck
 
         if ($themed) {
             // A story ref is an id the next steps look up in the design.
-            $issues = [...$issues, ...Finding::each(MotoCheckRules::USE, 'MotoDesignRefs.storyRefProblems', array_column(MotoDesignRefs::storyRefProblems($data), 'message'))];
+            $issues = [...$issues, ...Finding::each(MotoCheckRules::USE, 'MotoDesignRefs.storyRefProblems', array_column(MotoDesignRefs::storyRefProblems(self::told($data)), 'message'))];
         }
 
         foreach ($data['build_states'] as $state) {
@@ -598,7 +612,7 @@ final class MotoDesignCheck
     private static function stateIssues(array $data, array $ids): array
     {
         $issues = [];
-        $order = array_flip(self::PHYSICAL_STATES);
+        $order = MotoDesignStates::of($data)->order();
 
         foreach ($ids['parts'] as $id => $part) {
             if ($part['until_state'] !== null && ($part['from_state'] === null || $order[$part['until_state']] < $order[$part['from_state']])) {
@@ -724,13 +738,23 @@ final class MotoDesignCheck
         return preg_match_all(self::PROMPT_IDS, $text, $match) > 0 ? array_values(array_unique($match[0])) : [];
     }
 
-    /** @param  array<string, mixed>  $part */
-    private static function exists(array $part, string $state): bool
+    /**
+     * @param  array<string, mixed>  $part
+     * @param  array<string, int>  $order  the place of each physical state (MotoDesignStates::order())
+     */
+    private static function exists(array $part, string $state, array $order): bool
     {
-        $order = array_flip(self::PHYSICAL_STATES);
-
         return $part['present'] && $part['from_state'] !== null && $order[$part['from_state']] <= $order[$state]
             && ($part['until_state'] === null || $order[$state] <= $order[$part['until_state']]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data  a design as MotoDesignStates::normalize() gives it
+     * @return array<string, mixed> the design with its stages as the model wrote them: a v3 design tells its refs once per stage, not once per checkpoint
+     */
+    private static function told(array $data): array
+    {
+        return MotoDesignStates::of($data)->checkpointed() ? ['build_states' => $data[MotoDesignStates::STAGES_KEY]] + $data : $data;
     }
 
     /** @return list<string> every object key used anywhere in a value */

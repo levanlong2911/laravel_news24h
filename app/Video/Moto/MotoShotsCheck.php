@@ -51,7 +51,11 @@ final class MotoShotsCheck
      */
     public static function evaluate(?array $response, array $context, array $schema): array
     {
-        $format = ($context['timing'] ?? null) === self::TIMING_FIXED ? MotoContract::SHOTS_FORMAT_V2 : MotoContract::SHOTS_FORMAT;
+        $format = match (true) {
+            ($context['format'] ?? null) === MotoContract::SHOTS_FORMAT_V3 => MotoContract::SHOTS_FORMAT_V3,
+            ($context['timing'] ?? null) === self::TIMING_FIXED => MotoContract::SHOTS_FORMAT_V2,
+            default => MotoContract::SHOTS_FORMAT,
+        };
 
         return ['format' => $format] + self::scored($response, $context, $schema, $format);
     }
@@ -179,10 +183,20 @@ final class MotoShotsCheck
         $placed = is_array($context['work'] ?? null) ? MotoWork::shotPlaces(self::workShots($shots, $omissions), $context['work']) : null;
         $issues = [...$issues, ...($placed['issues'] ?? [])];
 
+        $layout = MotoDesignStates::ofFacts($context);
+
         foreach ($shots as $index => $shot) {
             $scene = $scenes[$shot['scene']] ?? null;
-            $state = is_array($scene) ? $scene['state'] : null;
             $covered = array_values(array_filter(array_map(static fn (array $item): ?array => $beats[$item['beat']] ?? null, (array) $shot['coverage'])));
+
+            if ($layout->checkpointed()) {
+                // A shot of a v3 design is read at the checkpoint its first frame shows, and pins checkpoints the beats it covers run through.
+                $state = is_string($shot['checkpoint_start'] ?? null) ? $shot['checkpoint_start'] : null;
+                $issues = [...$issues, ...self::checkpointIssues($shot, is_array($scene) ? $scene['state'] : null, $covered, $layout)];
+            } else {
+                $state = is_array($scene) ? $scene['state'] : null;
+            }
+
             $issues = [...$issues, ...self::shotIssues($shot, array_slice($order, 0, $index), $state, $covered, $context, $placed === null ? null : ($placed['shots'][$shot['id']] ?? []))];
         }
 
@@ -252,7 +266,9 @@ final class MotoShotsCheck
             $parts = array_column((array) $shot['parts'], 'part');
             $away = array_column((array) ($shot['off_frame'] ?? []), 'part');
             $covered = array_values(array_unique(array_column((array) $shot['coverage'], 'beat')));
-            $present = (array) ($context['states'][(string) ($scenes[$shot['scene']]['state'] ?? '')]['present'] ?? []);
+            // On the motorcycle at the shot's first frame: at its scene's build state, or in a v3 design at the checkpoint the shot opens on.
+            $at = MotoDesignStates::ofFacts($context)->checkpointed() ? (string) ($shot['checkpoint_start'] ?? '') : (string) ($scenes[$shot['scene']]['state'] ?? '');
+            $present = (array) ($context['states'][$at]['present'] ?? []);
 
             $film = [...$film, ...$parts];
 
@@ -850,6 +866,38 @@ final class MotoShotsCheck
         }
 
         return $cursor === MotoContract::SHOT_MS ? null : "kết thúc ở {$cursor} ms, cần ".MotoContract::SHOT_MS.' ms';
+    }
+
+    /**
+     * @param  array<string, mixed>  $shot  a shot of a plan made from a design of moto-design-v3
+     * @param  ?string  $stage  the build state of the shot's scene
+     * @param  list<array<string, mixed>>  $covered  the beats the shot covers, in the order it covers them
+     * @return list<Finding> a checkpoint_start or checkpoint_end that is not a checkpoint of the scene's stage, or null on a stage before the physical motorcycle; an end before the start; a start before the checkpoint the first covered beat opens on, or an end after the one the last covered beat ends on. Which checkpoint a shot between them shows is the plan's to state, never derived here
+     */
+    private static function checkpointIssues(array $shot, ?string $stage, array $covered, MotoDesignStates $layout): array
+    {
+        $id = (string) $shot['id'];
+        $start = $shot['checkpoint_start'] ?? null;
+        $end = $shot['checkpoint_end'] ?? null;
+        $problems = $layout->rowProblems(['state' => $stage, 'checkpoint_start' => $start, 'checkpoint_end' => $end], $id);
+
+        if ($problems !== [] || $covered === [] || $stage === null || ! $layout->physicalStage($stage)) {
+            return $problems;
+        }
+
+        $order = $layout->order();
+        $opens = $covered[0]['checkpoint_start'] ?? null;
+        $closes = $covered[count($covered) - 1]['checkpoint_end'] ?? null;
+
+        if (is_string($opens) && isset($order[$opens]) && $order[$start] < $order[$opens]) {
+            $problems[] = Finding::requirement('MotoShotsCheck.checkpointIssues.1', "{$id}.checkpoint_start {$start} đứng trước {$opens}, checkpoint mà {$covered[0]['id']} mở đầu.");
+        }
+
+        if (is_string($closes) && isset($order[$closes]) && $order[$end] > $order[$closes]) {
+            $problems[] = Finding::requirement('MotoShotsCheck.checkpointIssues.2', "{$id}.checkpoint_end {$end} đứng sau {$closes}, checkpoint mà {$covered[count($covered) - 1]['id']} kết thúc.");
+        }
+
+        return $problems;
     }
 
     /**

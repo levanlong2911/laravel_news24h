@@ -37,9 +37,13 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
 
     public function __construct(private readonly ScriptSourceService $scripts) {}
 
+    /** @var bool whether the release designs seven stages with checkpoints, so each beat carries the checkpoints it runs through */
+    private bool $checkpointed = false;
+
     public function bind(VideoProject $project): void
     {
         $this->eventful = MotoPipelineRelease::cinematic($project);
+        $this->checkpointed = $this->eventful && MotoPipelineRelease::checkpointed($project);
     }
 
     public function format(): string
@@ -59,7 +63,11 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
 
     public function inputsVersion(): string
     {
-        return $this->eventful ? MotoContract::LOCATIONS_INPUT_V2 : MotoContract::LOCATIONS_INPUT;
+        return match (true) {
+            $this->checkpointed => MotoContract::LOCATIONS_INPUT_V3,
+            $this->eventful => MotoContract::LOCATIONS_INPUT_V2,
+            default => MotoContract::LOCATIONS_INPUT,
+        };
     }
 
     public function settings(): array
@@ -84,7 +92,11 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
         $projectId = (string) $project->id;
         $script = $this->scripts->approvedSource($projectId);
 
-        $scriptFormat = $this->eventful ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
+        $scriptFormat = match (true) {
+            $this->checkpointed => MotoContract::SCRIPT_FORMAT_V3,
+            $this->eventful => MotoContract::SCRIPT_FORMAT_V2,
+            default => MotoContract::SCRIPT_FORMAT,
+        };
 
         if (($script['document']['format'] ?? null) !== $scriptFormat) {
             throw new RuntimeException('Kịch bản đang chọn không theo định dạng '.$scriptFormat.' — không lập địa điểm moto từ nó.');
@@ -170,8 +182,10 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
         $parts = array_column((array) ($design['parts'] ?? []), null, 'id');
         $states = array_column((array) ($design['build_states'] ?? []), null, 'id');
         $roles = array_column((array) ($design['participant_roles'] ?? []), 'name', 'id');
-        $present = self::present($parts, $states);
-        $finished = self::box(array_intersect_key($parts, $present[sprintf('BS%02d', self::LAST_STATE)] ?? []), 'part_boxes');
+        $layout = MotoDesignStates::of($design);
+        $present = self::present($parts, $states, $layout);
+        $physical = $layout->physical();
+        $finished = self::box(array_intersect_key($parts, $present[$layout->checkpointed() ? $physical[count($physical) - 1] : sprintf('BS%02d', self::LAST_STATE)] ?? []), 'part_boxes');
         $beats = [];
         $keys = $eventful ? self::EVENTFUL_BEAT_KEYS : self::BEAT_KEYS;
 
@@ -180,9 +194,15 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
                 ? ['mode' => $beat['situation']['mode'], 'dry_road' => $beat['situation']['dry_road'], 'procedures' => array_values((array) ($beat['situation']['procedures'] ?? []))]
                 : null;
             $events = $eventful ? ['events' => array_map(static fn (array $event): array => array_intersect_key($event, array_flip(['id', 'action', 'result', 'character_ids'])), (array) ($beat['events'] ?? []))] : [];
-            $beats[] = array_combine($keys, array_map(static fn (string $key): mixed => $beat[$key] ?? null, $keys)) + $events + [
+            // A beat of a v3 design carries the checkpoints it runs through and only the temporary equipment those checkpoints hold.
+            $span = $layout->checkpointed() ? [
+                'checkpoint_start' => $beat['checkpoint_start'] ?? null,
+                'checkpoint_end' => $beat['checkpoint_end'] ?? null,
+                'temporary' => array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => array_values((array) ($states[$id]['temporary'] ?? [])), $layout->span($beat))))),
+            ] : [];
+            $beats[] = array_combine($keys, array_map(static fn (string $key): mixed => $beat[$key] ?? null, $keys)) + $span + $events + [
                 'situation' => $situation,
-                'subjects' => self::subjects($beat, $parts, $states, $present, $finished, $design['motorcycle']['name'] ?? null),
+                'subjects' => self::subjects($beat, $parts, $states, $present, $finished, $design['motorcycle']['name'] ?? null, $layout),
                 'operations' => self::operations($beat, $design),
                 'conditions' => self::conditions($beat, $design),
                 'limits' => self::limits($beat, $design),
@@ -207,16 +227,18 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
 
             $named = static fn (array $item, array $keys): array => ['part' => $item['part'], 'name' => $parts[$item['part']]['name'] ?? null] + array_intersect_key($item, array_flip($keys));
             $work = array_map(static fn (array $item): array => $named($item, ['description']), (array) ($state['in_progress'] ?? []));
+            // A checkpoint of a v3 design names its stage and what it marks.
+            $checkpoint = $layout->checkpointed() ? ['stage' => $state['stage'] ?? null, 'label' => $state['label'] ?? null] : [];
             $shown[] = [
                 'id' => $id,
                 'kind' => $state['kind'],
-            ] + array_intersect_key($state, array_flip(self::STORY_KEYS)) + [
+            ] + $checkpoint + array_intersect_key($state, array_flip(self::STORY_KEYS)) + [
                 'surface' => $state['surface'] ?? null,
                 'in_progress' => $work,
                 'temporary' => array_values((array) ($state['temporary'] ?? [])),
                 'exceptions' => array_map(static fn (array $item): array => $named($item, ['presence', 'description']), (array) ($state['exceptions'] ?? [])),
             ];
-            $facts[$id] = ['kind' => $state['kind'], 'temporary' => array_values((array) ($state['temporary'] ?? [])), 'surface' => $state['surface'] ?? null, 'in_progress' => array_column($work, 'description')];
+            $facts[$id] = ['kind' => $state['kind']] + $checkpoint + ['temporary' => array_values((array) ($state['temporary'] ?? [])), 'surface' => $state['surface'] ?? null, 'in_progress' => array_column($work, 'description')];
         }
 
         return [
@@ -231,7 +253,7 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
             'context' => [
                 'beats' => $beats,
                 'build_states' => $facts,
-            ],
+            ] + ($layout->checkpointed() ? [MotoDesignStates::LAYOUT_KEY => MotoDesignStates::CHECKPOINTS] : []),
         ];
     }
 
@@ -243,14 +265,17 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
      * @param  array<string, mixed>  $finished  the size of the finished motorcycle
      * @return list<array{ref: string, name: ?string, size: array<string, mixed>}> the motorcycle as built at a physical build state, a physical model of a design stage, and every part the beat names, each with its size
      */
-    private static function subjects(array $beat, array $parts, array $states, array $present, array $finished, mixed $name): array
+    private static function subjects(array $beat, array $parts, array $states, array $present, array $finished, mixed $name, MotoDesignStates $layout): array
     {
         $state = is_string($beat['state'] ?? null) ? $beat['state'] : null;
         $index = $state !== null && preg_match('/^BS(\d{2})$/', $state, $match) === 1 ? (int) $match[1] : null;
+        $built = $layout->checkpointed() ? $state !== null && $layout->physicalStage($state) : $index !== null && $index >= self::FIRST_BUILT_STATE;
+        // The motorcycle as it stands where the beat opens: its own state in a legacy design, its opening checkpoint in a v3 design.
+        $at = $layout->checkpointed() ? $layout->opening($beat) : $state;
         $subjects = [];
 
-        if (($beat['act'] ?? null) !== 'ending' && $index !== null && $index >= self::FIRST_BUILT_STATE) {
-            $subjects[] = ['ref' => 'motorcycle', 'name' => is_string($name) ? $name : null, 'size' => self::box(array_intersect_key($parts, $present[$state] ?? []), 'part_boxes')];
+        if (($beat['act'] ?? null) !== 'ending' && $built) {
+            $subjects[] = ['ref' => 'motorcycle', 'name' => is_string($name) ? $name : null, 'size' => self::box(array_intersect_key($parts, $present[$at] ?? []), 'part_boxes')];
         } elseif ($state !== null && ($states[$state]['model_medium'] ?? null) === 'physical') {
             $scale = (int) ($states[$state]['scale_denominator'] ?? 0);
             $subjects[] = ['ref' => 'model', 'name' => 'physical model', 'size' => $scale > 1 && $finished['basis'] !== 'unknown' ? [
@@ -356,17 +381,19 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
      * @param  array<string, array<string, mixed>>  $states
      * @return array<string, array<string, true>> the parts present in every physical build state: by their lifespan, then by the state's exceptions
      */
-    private static function present(array $parts, array $states): array
+    private static function present(array $parts, array $states, MotoDesignStates $layout): array
     {
         $present = [];
+        // A legacy design places a state by its stage number, a v3 design by the order of its checkpoints.
+        $order = $layout->checkpointed() ? $layout->order() : null;
+        $place = static fn (mixed $state): ?int => ! is_string($state) ? null : ($order === null ? (int) substr($state, 2) : ($order[$state] ?? null));
 
-        for ($index = self::FIRST_BUILT_STATE; $index <= self::LAST_STATE; $index++) {
-            $id = sprintf('BS%02d', $index);
+        foreach ($order ?? array_combine(array_map(static fn (int $index): string => sprintf('BS%02d', $index), range(self::FIRST_BUILT_STATE, self::LAST_STATE)), range(self::FIRST_BUILT_STATE, self::LAST_STATE)) as $id => $index) {
             $present[$id] = [];
 
             foreach ($parts as $partId => $part) {
-                $from = is_string($part['from_state'] ?? null) ? (int) substr($part['from_state'], 2) : null;
-                $until = is_string($part['until_state'] ?? null) ? (int) substr($part['until_state'], 2) : null;
+                $from = $place($part['from_state'] ?? null);
+                $until = $place($part['until_state'] ?? null);
 
                 if (($part['present'] ?? false) && $from !== null && $from <= $index && ($until === null || $index <= $until)) {
                     $present[$id][$partId] = true;
@@ -424,7 +451,9 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
             throw new RuntimeException('Bản thiết kế mà kịch bản đã ghim không còn hoặc không còn nguyên vẹn.');
         }
 
-        $data = JsonAnswer::object((string) $stage->raw_response)['data'] ?? null;
+        $answer = JsonAnswer::object((string) $stage->raw_response);
+        // A legacy design is read as it is; a v3 design by its checkpoints, the way every later step reads the states.
+        $data = is_array($answer['data'] ?? null) ? MotoDesignStates::normalize($answer) : null;
 
         if (! is_array($data) || ! is_array($data['build_states'] ?? null)) {
             throw new RuntimeException('Bản thiết kế mà kịch bản đã ghim không có build_states.');

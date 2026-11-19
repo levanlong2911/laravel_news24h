@@ -29,7 +29,7 @@ final class MotoDesign implements DesignWorkflow
     public function markers(?array $manifest = null): array
     {
         return self::themed($manifest)
-            ? [MotoContract::DESIGN_FORMAT_V2, 'Input format: `'.MotoContract::DESIGN_INPUT_V2.'`']
+            ? [self::format($manifest), 'Input format: `'.MotoContract::DESIGN_INPUT_V2.'`']
             : [MotoContract::DESIGN_FORMAT, 'Input format: `'.MotoContract::DESIGN_INPUT.'`'];
     }
 
@@ -59,6 +59,19 @@ final class MotoDesign implements DesignWorkflow
     public static function themed(?array $manifest): bool
     {
         return MotoContract::generation($manifest ?? [], 'MotoDesign') >= 2;
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $manifest  the bundle a run is sent with
+     * @return string the answer format the run pins: moto-design-v3 under MotoDesign 3.x (seven stages with checkpoints), moto-design-v2 under 2.x, moto-design-v1 before
+     */
+    public static function format(?array $manifest): string
+    {
+        return match (true) {
+            MotoContract::generation($manifest ?? [], 'MotoDesign') >= 3 => MotoContract::DESIGN_FORMAT_V3,
+            self::themed($manifest) => MotoContract::DESIGN_FORMAT_V2,
+            default => MotoContract::DESIGN_FORMAT,
+        };
     }
 
     /** @return string the schema re-encoded without whitespace between tokens */
@@ -101,7 +114,7 @@ final class MotoDesign implements DesignWorkflow
     {
         [$decoded, $error] = JsonAnswer::parse($raw);
 
-        $format = self::themed($manifest) ? MotoContract::DESIGN_FORMAT_V2 : MotoContract::DESIGN_FORMAT;
+        $format = self::format($manifest);
 
         if ($error !== null || ! is_object($decoded)) {
             return [null, MotoDesignCheck::evaluate(null, $run['project_id'], $run['prompt_version'], $run['dna'], $run['source_identity'], $run['model_sheet'], [], [], $format)];
@@ -110,7 +123,7 @@ final class MotoDesign implements DesignWorkflow
         $response = json_decode((string) json_encode($decoded), true);
 
         try {
-            $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, self::schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format === MotoContract::DESIGN_FORMAT_V2);
+            $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, self::schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format !== MotoContract::DESIGN_FORMAT);
         } catch (\Throwable $e) {
             $fault = MotoContract::structureFault($e);
 

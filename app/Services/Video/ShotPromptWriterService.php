@@ -13,6 +13,7 @@ use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
+use App\Video\Moto\MotoDesignStates;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
@@ -712,7 +713,8 @@ abstract class ShotPromptWriterService implements QueuedStageService
         return $this->sourcePins[$projectId] = [
             'script' => (array) $script['document']['data'],
             'script_token' => ['stage_id' => (string) $script['token']['stage_id'], 'content_hash' => (string) $script['token']['content_hash']],
-            'design' => (array) (json_decode($raw, true)['data'] ?? []),
+            // A legacy design is read as it is; a v3 design by its checkpoints, the way every later step reads the states.
+            'design' => MotoDesignStates::normalize((array) json_decode($raw, true)),
             'design_pin' => ['stage_id' => (string) $design->id, 'raw_sha256' => hash('sha256', $raw)],
         ];
     }

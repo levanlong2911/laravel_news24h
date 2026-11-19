@@ -25,11 +25,14 @@ final class MotoPipelineRelease
     /** @var string the release whose design prompt agrees with the refs policy of MotoDesignRefs: refs name only ids the answer defines, and no text holds an id */
     public const CINEMATIC_V5 = 'moto-cinematic-3s-v5';
 
+    /** @var string the release whose design tells seven stages, each physical one with the checkpoints it passes through (moto-design-v3); every later step reads the states through MotoDesignStates */
+    public const CINEMATIC_V7 = 'moto-cinematic-3s-v7';
+
     /** @var string the key of the project metadata that keeps every change of release made to the project after it was pinned, oldest first */
     public const HISTORY_KEY = 'moto_pipeline_release_history';
 
     /** @var list<string> the releases of three-second takes made from references: every one runs the same eventful pipeline, each with its own catalogue of revisions and its own check policy */
-    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4, self::CINEMATIC_V5];
+    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4, self::CINEMATIC_V5, self::CINEMATIC_V7];
 
     /** @return string the release the project pinned, the legacy release when it pinned none */
     public static function of(VideoProject $project): string
@@ -45,6 +48,14 @@ final class MotoPipelineRelease
     public static function cinematic(VideoProject $project): bool
     {
         return in_array(self::of($project), self::CINEMATIC_RELEASES, true);
+    }
+
+    /**
+     * @return bool whether the release of the project designs seven stages with checkpoints: its design_format, read from the pinned release alone like its policy, is moto-design-v3
+     */
+    public static function checkpointed(VideoProject $project): bool
+    {
+        return config('video.superyacht.contracts.workflows.'.MotoContract::WORKFLOW.'.releases.'.self::of($project).'.design_format') === MotoContract::DESIGN_FORMAT_V3;
     }
 
     /**

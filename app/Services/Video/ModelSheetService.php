@@ -1067,7 +1067,8 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      */
     private static function motoSource(VideoPlanningStage $stage, array $design, string $designHash, AiPhase $designPhase): array
     {
-        $themed = self::at($design, 'format') === MotoContract::DESIGN_FORMAT_V2;
+        // A design of seven stages (moto-design-v3) is themed like moto-design-v2; its model sheet reads no build state.
+        $themed = in_array(self::at($design, 'format'), [MotoContract::DESIGN_FORMAT_V2, MotoContract::DESIGN_FORMAT_V3], true);
         $config = MotoSheetPrompt::config($themed);
         $master = self::master(MotoContract::WORKFLOW);
         $data = (array) self::at($design, 'data');

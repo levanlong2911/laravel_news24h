@@ -30,9 +30,13 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
     /** @var string the release of the bound project */
     private string $release = MotoPipelineRelease::LEGACY;
 
+    /** @var bool whether the release designs seven stages with checkpoints, so each beat keeps the checkpoints it runs through */
+    private bool $checkpointed = false;
+
     public function bind(VideoProject $project): void
     {
         $this->eventful = MotoPipelineRelease::cinematic($project);
+        $this->checkpointed = $this->eventful && MotoPipelineRelease::checkpointed($project);
         $this->release = MotoPipelineRelease::of($project);
         $law = MotoPipelineRelease::policy($project, 'scenes')['work_tracking_version'] ?? null;
         $this->law = is_string($law) ? $law : null;
@@ -70,6 +74,7 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
     public function inputsVersion(): string
     {
         return match (true) {
+            $this->checkpointed && $this->law !== null => MotoContract::SCENES_INPUT_V5,
             $this->law !== null => MotoContract::SCENES_INPUT_V4,
             $this->eventful => MotoContract::SCENES_INPUT_V3,
             default => MotoContract::SCENES_INPUT,
@@ -95,7 +100,11 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
         $projectId = (string) $project->id;
         $script = $this->scripts->approvedSource($projectId);
 
-        $scriptFormat = $this->eventful ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
+        $scriptFormat = match (true) {
+            $this->checkpointed => MotoContract::SCRIPT_FORMAT_V3,
+            $this->eventful => MotoContract::SCRIPT_FORMAT_V2,
+            default => MotoContract::SCRIPT_FORMAT,
+        };
         $locationsFormat = $this->eventful ? MotoContract::LOCATIONS_FORMAT_V2 : MotoContract::LOCATIONS_FORMAT;
 
         if (($script['document']['format'] ?? null) !== $scriptFormat) {
@@ -201,6 +210,13 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
     public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false, ?string $law = null): array
     {
         $beatKeys = $eventful ? [...array_values(array_diff(self::BEAT_KEYS, ['duration_s'])), 'events'] : self::BEAT_KEYS;
+        $layout = MotoDesignStates::of($design);
+
+        if ($layout->checkpointed()) {
+            // A beat of a v3 design keeps the checkpoints it opens and ends on, right after its stage.
+            array_splice($beatKeys, (int) array_search('state', $beatKeys, true) + 1, 0, ['checkpoint_start', 'checkpoint_end']);
+        }
+
         $facts = MotoScriptCheck::facts($design);
         $records = array_column((array) ($design['build_states'] ?? []), null, 'id');
         $plates = array_column((array) ($locations['backgrounds'] ?? []), null, 'id');
@@ -238,6 +254,7 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
             $beatFacts[] = [
                 'id' => $id,
                 'state' => $beat['state'] ?? null,
+            ] + ($layout->checkpointed() ? ['checkpoint_start' => $beat['checkpoint_start'] ?? null, 'checkpoint_end' => $beat['checkpoint_end'] ?? null] : []) + [
                 'time_jump' => (string) $beat['time_jump'],
                 'on_screen' => array_values((array) $beat['on_screen']),
                 'start_ms' => $cursor,
@@ -248,7 +265,10 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
             $cursor += $length;
         }
 
-        $used = array_values(array_unique(array_filter(array_column($beats, 'state'), 'is_string')));
+        $used = $layout->checkpointed()
+            // The design stages the beats stand on and every checkpoint a beat runs through.
+            ? array_values(array_unique(array_merge([], ...array_map(static fn (array $beat): array => is_string($beat['state'] ?? null) && ! $layout->physicalStage($beat['state']) ? [$beat['state']] : $layout->span($beat), $beats))))
+            : array_values(array_unique(array_filter(array_column($beats, 'state'), 'is_string')));
         sort($used);
         $progression = self::progression($facts['states'], array_column((array) ($design['parts'] ?? []), 'id'));
         $states = [];
@@ -266,6 +286,7 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
             $state = [
                 'id' => $id,
                 'kind' => $record['kind'] ?? null,
+            ] + ($layout->checkpointed() ? ['stage' => $record['stage'] ?? null, 'label' => $record['label'] ?? null] : []) + [
                 'present' => $facts['states'][$id]['present'],
                 'in_progress' => array_values((array) ($record['in_progress'] ?? [])),
             ] + $progression[$id] + [
@@ -348,7 +369,7 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
                 'characters' => (array) ($script['characters'] ?? []),
                 'source_blocking' => array_values(array_filter((array) ($locations['conflicts'] ?? []), static fn (array $conflict): bool => (bool) $conflict['blocking'])),
                 'total_ms' => $cursor,
-            ],
+            ] + $layout->summary(),
         ];
     }
 
@@ -359,12 +380,13 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
     public static function workDesign(array $design): array
     {
         $parts = array_values(array_filter((array) ($design['parts'] ?? []), static fn (array $part): bool => (bool) ($part['present'] ?? false)));
+        $layout = MotoDesignStates::of($design);
 
         return [
             'first_states' => MotoWork::firstStates(array_values(array_column($parts, 'id')), MotoScriptCheck::facts($design)['states']),
             'parents' => array_map(static fn (array $part): ?string => is_string($part['parent'] ?? null) ? $part['parent'] : null, array_column($parts, null, 'id')),
             'finished' => array_values(array_map(static fn (array $state): string => (string) $state['id'], array_filter((array) ($design['build_states'] ?? []), static fn (array $state): bool => ($state['kind'] ?? null) === 'finished'))),
-        ];
+        ] + ($layout->checkpointed() ? ['order' => $layout->order()] : []);
     }
 
     /**

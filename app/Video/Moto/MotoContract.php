@@ -33,6 +33,9 @@ final class MotoContract
 
     public const DESIGN_FORMAT_V2 = 'moto-design-v2';
 
+    /** @var string the answer of a design of seven stages whose physical stages pass through checkpoints (MotoDesign 3.x, MotoDesignStates) */
+    public const DESIGN_FORMAT_V3 = 'moto-design-v3';
+
     public const SCRIPT_INPUT = 'moto-script-input-v3';
 
     public const SCRIPT_FORMAT = 'moto-script-v1';
@@ -41,6 +44,12 @@ final class MotoContract
 
     public const SCRIPT_FORMAT_V2 = 'moto-script-v2';
 
+    /** @var string the input of a script written from a design of moto-design-v3: the design with its seven stages and their checkpoints, and film_facts by checkpoint */
+    public const SCRIPT_INPUT_V5 = 'moto-script-input-v5';
+
+    /** @var string the answer of such a script: the beats of moto-script-v2, each also naming the checkpoint it opens on and the one it ends on (MotoDesignStates) */
+    public const SCRIPT_FORMAT_V3 = 'moto-script-v3';
+
     public const LOCATIONS_INPUT = 'moto-locations-input-v1';
 
     public const LOCATIONS_FORMAT = 'moto-locations-v1';
@@ -48,6 +57,9 @@ final class MotoContract
     public const LOCATIONS_INPUT_V2 = 'moto-locations-input-v2';
 
     public const LOCATIONS_FORMAT_V2 = 'moto-locations-v2';
+
+    /** @var string the input of locations made from a script of moto-script-v3: each beat with the checkpoints it runs through and the temporary equipment they hold, each build state a checkpoint with its stage and label; the answer stays moto-locations-v2 */
+    public const LOCATIONS_INPUT_V3 = 'moto-locations-input-v3';
 
     public const SCENES_INPUT = 'moto-scenes-input-v2';
 
@@ -62,6 +74,9 @@ final class MotoContract
 
     /** @var string the answer of such a scene plan: no detached parts written by the model, work evidenced by event id, connection changes */
     public const SCENES_FORMAT_V3 = 'moto-scenes-v3';
+
+    /** @var string the input of such a scene plan made from a script of moto-script-v3: each beat with the checkpoints it runs through, and design_states by checkpoint with its stage and label; the answer stays moto-scenes-v3 */
+    public const SCENES_INPUT_V5 = 'moto-scenes-input-v5';
 
     public const SHOTS_INPUT = 'moto-shots-input-v4';
 
@@ -82,6 +97,12 @@ final class MotoContract
 
     /** @var string the input of a shot plan that plays every event of the source within the shot budget (MotoShotsCheck::COVERAGE): the eighth input with film.coverage_policy; its answer is a MotoShots 2.3.0 document */
     public const SHOTS_INPUT_V9 = 'moto-shots-input-v9';
+
+    /** @var string the input of a shot plan made from a design of moto-design-v3: the ninth input with each beat's checkpoints and design_states by checkpoint; its answer is a MotoShots 3.0 document */
+    public const SHOTS_INPUT_V10 = 'moto-shots-input-v10';
+
+    /** @var string the answer of such a shot plan: every shot of moto-shots-v2 also pins the checkpoint its first frame shows and the one its last frame shows */
+    public const SHOTS_FORMAT_V3 = 'moto-shots-v3';
 
     /** @var string the way of making the clip of a shot from reference images, with no keyframe */
     public const REFERENCE_TO_VIDEO = 'reference_to_video';
@@ -119,6 +140,9 @@ final class MotoContract
 
     /** @var string the input of a video prompt a release names in its clip_prompt policy: the shot, its composition and event progress as the plan stored them or null, the scene it belongs to, every event of its coverage once as the approved script wrote it, and the source map as ids and paths with no copy of the values; a shot plan of any eventful schema is read by it */
     public const CLIP_PROMPT_INPUT_V8 = 'moto-clip-prompt-input-v8';
+
+    /** @var string the input of a video prompt of a release whose design tells seven stages with checkpoints: the eighth input with design_context.build_state_end, the checkpoint the shot's end frame shows, beside build_state, the one its first frame shows */
+    public const CLIP_PROMPT_INPUT_V9 = 'moto-clip-prompt-input-v9';
 
     public const CLIP_PROMPT_FORMAT = 'moto-clip-prompt-v1';
 

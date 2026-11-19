@@ -30,9 +30,13 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     /** @var array<string, mixed> what the release of the bound project adds to the check of a shot plan, pinned in the context of each run made under it */
     private array $releasePolicy = [];
 
+    /** @var bool whether the release designs seven stages with checkpoints, so each shot pins the checkpoints its first and last frame show */
+    private bool $checkpointed = false;
+
     public function bind(VideoProject $project): void
     {
         $this->eventful = MotoPipelineRelease::cinematic($project);
+        $this->checkpointed = $this->eventful && MotoPipelineRelease::checkpointed($project);
         $this->releasePolicy = MotoPipelineRelease::policy($project, 'shots');
         $law = MotoPipelineRelease::policy($project, 'scenes')['work_tracking_version'] ?? null;
         $this->law = is_string($law) ? $law : null;
@@ -48,7 +52,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     private const PLAN_ELEVATION = 60;
 
     /** @var array<string, ?string> for each MotoShots major.minor version, the timing a run of it pins: none before 1.2, where the model writes every screen time; MotoShotsCheck::TIMING from 1.2, where code sets whole and closing parts and the shot */
-    private const TIMINGS = ['1.0' => null, '1.1' => null, '1.2' => MotoShotsCheck::TIMING, '1.3' => MotoShotsCheck::TIMING, '2.0' => MotoShotsCheck::TIMING_FIXED, '2.1' => MotoShotsCheck::TIMING_FIXED, '2.2' => MotoShotsCheck::TIMING_FIXED, '2.3' => MotoShotsCheck::TIMING_FIXED];
+    private const TIMINGS = ['1.0' => null, '1.1' => null, '1.2' => MotoShotsCheck::TIMING, '1.3' => MotoShotsCheck::TIMING, '2.0' => MotoShotsCheck::TIMING_FIXED, '2.1' => MotoShotsCheck::TIMING_FIXED, '2.2' => MotoShotsCheck::TIMING_FIXED, '2.3' => MotoShotsCheck::TIMING_FIXED, '3.0' => MotoShotsCheck::TIMING_FIXED];
 
     /** @var int the most action steps the shot schema takes in one shot */
     private const STEPS_PER_SHOT = 6;
@@ -69,7 +73,11 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
 
     public function format(): string
     {
-        return $this->eventful ? MotoContract::SHOTS_FORMAT_V2 : MotoContract::SHOTS_FORMAT;
+        return match (true) {
+            $this->checkpointed => MotoContract::SHOTS_FORMAT_V3,
+            $this->eventful => MotoContract::SHOTS_FORMAT_V2,
+            default => MotoContract::SHOTS_FORMAT,
+        };
     }
 
     public function checkVersion(): string
@@ -86,6 +94,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     {
         return match (true) {
             ! $this->eventful => MotoContract::SHOTS_INPUT,
+            $this->checkpointed => MotoContract::SHOTS_INPUT_V10,
             ($this->releasePolicy['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE => MotoContract::SHOTS_INPUT_V9,
             $this->law !== null => MotoContract::SHOTS_INPUT_V8,
             isset($this->releasePolicy['shot_editing_policy']) => MotoContract::SHOTS_INPUT_V6,
@@ -298,6 +307,13 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
         $beats = [];
         $beatFacts = [];
         $operational = MotoScriptCheck::facts($design)['limits'];
+        $layout = MotoDesignStates::of($design);
+        $beatKeys = self::BEAT_KEYS;
+
+        if ($layout->checkpointed()) {
+            // A beat of a v3 design keeps the checkpoints it opens and ends on, right after its stage.
+            array_splice($beatKeys, (int) array_search('state', $beatKeys, true) + 1, 0, ['checkpoint_start', 'checkpoint_end']);
+        }
 
         foreach ((array) ($script['beats'] ?? []) as $beat) {
             $id = (string) $beat['id'];
@@ -313,7 +329,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
             $limits = MotoLocations::limits($beat, $design);
             $row = ['id' => $id, 'scene' => $sceneOf[$id] ?? null]
                 + ($eventful ? [] : ['start_ms' => (int) ($times[$id]['start_ms'] ?? 0), 'end_ms' => (int) ($times[$id]['end_ms'] ?? 0), 'duration_ms' => (int) ($times[$id]['end_ms'] ?? 0) - (int) ($times[$id]['start_ms'] ?? 0)])
-                + array_combine(array_slice(self::BEAT_KEYS, 1), array_map(static fn (string $key): mixed => $beat[$key] ?? null, array_slice(self::BEAT_KEYS, 1)))
+                + array_combine(array_slice($beatKeys, 1), array_map(static fn (string $key): mixed => $beat[$key] ?? null, array_slice($beatKeys, 1)))
                 + ($eventful ? ['events' => array_values((array) ($beat['events'] ?? []))] : [])
                 + ['uses' => $uses, 'unplated' => $unplated, 'limits' => array_values(array_column($limits, 'source')), 'cards' => $cards];
             $beats[] = $row;
@@ -323,6 +339,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
                 'start_ms' => $row['start_ms'] ?? 0,
                 'end_ms' => $row['end_ms'] ?? 0,
                 'state' => $row['state'],
+            ] + ($layout->checkpointed() ? ['checkpoint_start' => $row['checkpoint_start'], 'checkpoint_end' => $row['checkpoint_end']] : []) + [
                 'time_jump' => (string) $row['time_jump'],
                 'location' => $row['location'] ?? null,
                 'reveal' => (string) $row['reveal'],
@@ -386,7 +403,8 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
             ] : ['physical' => false];
         }
 
-        $work = MotoWork::follow($law, (array) $scenePlan['scenes'], array_column($beatFacts, 'state', 'id'), $facts, MotoScenes::workDesign($design));
+        // The work keeps a part where it left it within a build state; in a v3 design it reads each beat at the checkpoints it runs through.
+        $work = MotoWork::follow($law, (array) $scenePlan['scenes'], array_column($beatFacts, 'state', 'id'), $facts, MotoScenes::workDesign($design), $layout->workSpans(array_column($beatFacts, null, 'id')));
         $scenes = array_map(static fn (array $scene): array => array_replace($scene, ['work' => is_array($scene['work'] ?? null) ? array_map(static fn (array $item): array => $item + [
             'presentations' => array_map(static fn (array $place): array => ['start' => $place['start_status'], 'end' => $place['end_status']], $work['items'][$item['id']]['parts'] ?? []),
         ], $scene['work']) : null]), $scenes);
@@ -485,7 +503,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
                     ...array_column((array) ($design['motorcycle']['signature_moments'] ?? []), 'parts', 'id'),
                 ],
                 'cover_design_refs' => (bool) config('video.moto.shots.check.cover_design_refs'),
-            ],
+            ] + $layout->summary(),
         ];
     }
 
@@ -531,8 +549,11 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
             }
         }
 
+        // The configurations of a beat are those it ends in: at its build state, or in a v3 design at the checkpoint it ends on.
+        $closing = MotoDesignStates::ofFacts($context)->checkpointed() ? 'checkpoint_end' : 'state';
+
         foreach ((array) $context['beats'] as $beat) {
-            $facts = is_string($beat['state']) ? ($context['states'][$beat['state']] ?? null) : null;
+            $facts = is_string($beat[$closing] ?? null) ? ($context['states'][$beat[$closing]] ?? null) : null;
 
             foreach ((array) $beat['configurations'] as $configurationId) {
                 $configuration = $context['configurations'][$configurationId] ?? null;

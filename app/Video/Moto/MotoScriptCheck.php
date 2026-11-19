@@ -52,7 +52,7 @@ final class MotoScriptCheck
      */
     public static function evaluate(?array $response, array $context, array $schema, array $policy): array
     {
-        $format = ($context['format'] ?? null) === MotoContract::SCRIPT_FORMAT_V2 ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
+        $format = in_array($context['format'] ?? null, [MotoContract::SCRIPT_FORMAT_V2, MotoContract::SCRIPT_FORMAT_V3], true) ? (string) $context['format'] : MotoContract::SCRIPT_FORMAT;
 
         return ['format' => $format] + self::scored($response, $context, $schema, $policy, $format);
     }
@@ -67,7 +67,7 @@ final class MotoScriptCheck
      */
     private static function scored(?array $response, array $context, array $schema, array $policy, string $format): array
     {
-        $eventful = $format === MotoContract::SCRIPT_FORMAT_V2;
+        $eventful = $format !== MotoContract::SCRIPT_FORMAT;
 
         if ($response === null) {
             return self::result(self::UNSCORED, null, 'Phản hồi không đọc được JSON.');
@@ -112,6 +112,15 @@ final class MotoScriptCheck
             }
 
             $byId[$beat['id']] = $index;
+        }
+
+        if ($format === MotoContract::SCRIPT_FORMAT_V3) {
+            // The checkpoints a beat opens and ends on are ids of its own stage in the pinned design.
+            $layout = MotoDesignStates::ofFacts($design);
+
+            foreach ($beats as $beat) {
+                $issues = [...$issues, ...$layout->rowProblems($beat, (string) $beat['id'])];
+            }
         }
 
         // The policy the run pinned: under moto-validation-v2 every later rule reads the beats with the refs code projects from their events and in_use.
@@ -163,13 +172,26 @@ final class MotoScriptCheck
         }
 
         $states = [];
+        $layout = MotoDesignStates::of($design);
+        // A legacy design places its states by their stage number, a v3 design by the order of its checkpoints.
+        $order = $layout->checkpointed() ? $layout->order() : null;
 
-        for ($index = self::FIRST_BUILT_STATE; $index <= self::LAST_STATE; $index++) {
-            $states[sprintf('BS%02d', $index)] = [
-                'present' => array_fill_keys(array_keys(array_filter($parts, static fn (array $part): bool => self::lifespan($part, $index))), true),
-                'in_progress' => [],
-                'pinned' => [],
-            ];
+        if ($order === null) {
+            for ($index = self::FIRST_BUILT_STATE; $index <= self::LAST_STATE; $index++) {
+                $states[sprintf('BS%02d', $index)] = [
+                    'present' => array_fill_keys(array_keys(array_filter($parts, static fn (array $part): bool => self::lifespan($part, $index))), true),
+                    'in_progress' => [],
+                    'pinned' => [],
+                ];
+            }
+        } else {
+            foreach ($order as $id => $index) {
+                $states[$id] = [
+                    'present' => array_fill_keys(array_keys(array_filter($parts, static fn (array $part): bool => self::lifespan($part, $index, $order))), true),
+                    'in_progress' => [],
+                    'pinned' => [],
+                ];
+            }
         }
 
         foreach ((array) ($design['build_states'] ?? []) as $buildState) {
@@ -200,14 +222,15 @@ final class MotoScriptCheck
             }
         }
 
+        // A beat names its stage, so the roles of a v3 design are read by stage; temporary items stay by physical state, which is a checkpoint there.
+        $told = $order === null ? (array) ($design['build_states'] ?? []) : $layout->stages();
         $story = isset($design['participant_roles']) ? [
             'roles' => array_values(array_column((array) $design['participant_roles'], 'id')),
             'lights' => array_values(array_merge([], ...array_map(static fn (array $part): array => array_column((array) ($part['lighting'] ?? []), 'id'), (array) ($design['parts'] ?? [])))),
-            'stage_roles' => array_map(static fn (array $state): array => array_values((array) ($state['participant_roles'] ?? [])), array_column((array) ($design['build_states'] ?? []), null, 'id')),
+            'stage_roles' => array_map(static fn (array $state): array => array_values((array) ($state['participant_roles'] ?? [])), array_column($told, null, 'id')),
             'temporary' => array_map(static fn (array $state): array => array_values((array) ($state['temporary'] ?? [])), array_column((array) ($design['build_states'] ?? []), null, 'id')),
         ] : [];
-
-        return $story + [
+        return $story + $layout->summary() + [
             'name' => $design['motorcycle']['name'] ?? null,
             'base' => ['family' => $design['motorcycle']['base']['family'] ?? null, 'model' => $design['motorcycle']['base']['model'] ?? null],
             'specs' => $specs,
@@ -234,7 +257,7 @@ final class MotoScriptCheck
                 'conditions' => (array) ($limit['conditions'] ?? []),
                 'procedures' => (array) ($limit['procedures'] ?? []),
             ], (array) ($design['operational_limits'] ?? [])),
-            'build_states' => array_map(static fn (array $state): array => ['id' => $state['id'], 'refs' => array_values((array) ($state['refs'] ?? []))], (array) ($design['build_states'] ?? [])),
+            'build_states' => array_map(static fn (array $state): array => ['id' => $state['id'], 'refs' => array_values((array) ($state['refs'] ?? []))], $told),
             'other_refs' => array_values(array_column([
                 ...(array) ($design['connections'] ?? []),
                 ...array_merge([], ...array_map(static fn (array $system): array => (array) ($system['lines'] ?? []), (array) ($design['systems'] ?? []))),
@@ -259,6 +282,22 @@ final class MotoScriptCheck
     }
 
     /**
+     * @param  array<string, mixed>  $design  the design facts of facts() for a design of moto-design-v3
+     * @return list<string> the parts the beats of a physical stage must name together: those being made at any of its checkpoints, or, when none is, those that first appear at one of them; [] for a design stage
+     */
+    public static function stageMustName(array $design, string $stage): array
+    {
+        $checkpoints = MotoDesignStates::ofFacts($design)->checkpointsOf($stage);
+        $making = array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => (array) $design['states'][$id]['in_progress'], $checkpoints))));
+
+        if ($making !== []) {
+            return $making;
+        }
+
+        return array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => self::mustName($design, $id), $checkpoints))));
+    }
+
+    /**
      * @param  array<string, mixed>  $design  the design facts of facts()
      * @return array{acts: array<string, array{0: string, 1: string}>, states: array<string, array{on_motorcycle: list<string>, in_progress: list<string>, must_name: list<string>, pinned: array<string, string>, features_complete: list<string>, moments_with_parts: list<string>}>, limits: array<string, array{requires: list<string>, conditions: list<array<string, mixed>>, procedures: list<string>}>, configuration_limits: array<string, list<string>>, in_use_limits: array<string, list<string>>, moments: array<string, array{parts: list<string>, configurations: list<string>, limits: list<string>}>, spec_cards: array<string, array{source_ref: string, value: int|float|string, unit_forms: list<string>, must_say: string}>} the facts a beat needs, worked out by the rules this check applies
      */
@@ -272,15 +311,17 @@ final class MotoScriptCheck
         }
 
         $states = [];
+        $layout = MotoDesignStates::ofFacts($design);
+        $order = $layout->checkpointed() ? $layout->order() : null;
 
         foreach ((array) $design['states'] as $id => $state) {
-            $index = (int) self::stateIndex($id);
+            $index = $order === null ? (int) self::stateIndex($id) : (int) ($order[$id] ?? 0);
             $states[$id] = [
                 'on_motorcycle' => $state['present'],
                 'in_progress' => $state['in_progress'],
                 'must_name' => self::mustName($design, (string) $id),
                 'pinned' => $state['pinned'],
-                'features_complete' => array_keys(array_filter((array) $design['features'], static fn (array $feature): bool => self::featureComplete($feature, $index))),
+                'features_complete' => array_keys(array_filter((array) $design['features'], static fn (array $feature): bool => self::featureComplete($feature, $index, $order))),
                 'moments_with_parts' => array_keys(array_filter((array) $design['moments'], static fn (array $moment): bool => array_diff($moment['parts'], $state['present']) === [])),
             ];
         }
@@ -322,8 +363,16 @@ final class MotoScriptCheck
             $cards[$key] = ['source_ref' => "motorcycle.specs.{$key}", 'value' => $spec['value'], 'unit_forms' => $forms, 'must_say' => self::marker($spec)];
         }
 
+        $stages = $order === null ? [] : ['stages' => array_column(array_map(static fn (array $stage): array => [
+            'id' => (string) $stage['id'],
+            'kind' => $stage['kind'],
+            'checkpoints' => array_values((array) $stage['checkpoints']),
+            'must_name' => self::stageMustName($design, (string) $stage['id']),
+        ], $layout->stages()), null, 'id')];
+
         return [
-            'acts' => array_map(static fn (array $range): array => [sprintf('BS%02d', $range[0]), sprintf('BS%02d', $range[1])], self::ACT_STATES),
+            'acts' => $order === null ? array_map(static fn (array $range): array => [sprintf('BS%02d', $range[0]), sprintf('BS%02d', $range[1])], self::ACT_STATES) : $layout->acts(),
+            ...$stages,
             'states' => $states,
             'limits' => $limits,
             'configuration_limits' => $governing,
@@ -353,8 +402,14 @@ final class MotoScriptCheck
             }
 
             $named = array_values(array_unique(array_merge(...array_map(static fn (array $beat): array => (array) $beat['design_refs'], $main))));
-            $physical = isset($design['states'][$id]);
-            $required = $physical ? self::mustName($design, $id) : (array) $state['refs'];
+            $layout = MotoDesignStates::ofFacts($design);
+
+            if ($layout->checkpointed()) {
+                $required = $layout->physicalStage($id) ? self::stageMustName($design, $id) : (array) $state['refs'];
+            } else {
+                $required = isset($design['states'][$id]) ? self::mustName($design, $id) : (array) $state['refs'];
+            }
+
             $missing = array_values(array_diff($required, $named));
             if ($missing !== []) {
                 $issues[] = Finding::note('MotoScriptCheck.coverageIssues.2', "{$id} thiếu ".implode(', ', $missing).'.');
@@ -421,9 +476,21 @@ final class MotoScriptCheck
             'F' => (array) ($design['features'] ?? []),
             'M' => (array) ($design['moments'] ?? []),
         ];
+        $layout = MotoDesignStates::ofFacts($design);
+
         foreach ($beats as $beat) {
-            $state = self::stateIndex($beat['state']);
-            $at = $state !== null && $state >= self::FIRST_BUILT_STATE ? ($design['states'][$beat['state']] ?? null) : null;
+            if ($layout->checkpointed()) {
+                // A beat of a v3 design runs from the checkpoint it opens on to the one it ends on: a part may be named where any of them has it.
+                $span = array_values(array_filter(array_map(static fn (string $id): ?array => $design['states'][$id] ?? null, $layout->span($beat))));
+                $at = $span === [] ? null : [
+                    'present' => array_values(array_unique(array_merge([], ...array_column($span, 'present')))),
+                    'in_progress' => array_values(array_unique(array_merge([], ...array_column($span, 'in_progress')))),
+                ];
+            } else {
+                $state = self::stateIndex($beat['state']);
+                $at = $state !== null && $state >= self::FIRST_BUILT_STATE ? ($design['states'][$beat['state']] ?? null) : null;
+            }
+
             $present = static fn (string $part): bool => $at === null || in_array($part, $at['present'], true);
 
             foreach ($beat['design_refs'] as $ref) {
@@ -581,6 +648,7 @@ final class MotoScriptCheck
     private static function eventIssues(array $data, array $beats, array $byId, array $design, bool $heldWhenStill = false, bool $projected = false, bool $supportByDesign = false): array
     {
         $issues = [];
+        $layout = MotoDesignStates::ofFacts($design);
         $roles = array_fill_keys((array) ($design['roles'] ?? []), false);
         $characters = [];
 
@@ -636,7 +704,9 @@ final class MotoScriptCheck
                     }
                 }
 
-                $temporary = MotoSupportReferences::allowed((array) ($design['temporary'] ?? []), is_string($beat['state'] ?? null) ? $beat['state'] : null, $supportByDesign);
+                $temporary = $layout->checkpointed() && ! $supportByDesign
+                    ? array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => MotoSupportReferences::allowed((array) ($design['temporary'] ?? []), $id, false), $layout->span($beat)))))
+                    : MotoSupportReferences::allowed((array) ($design['temporary'] ?? []), is_string($beat['state'] ?? null) ? $beat['state'] : null, $supportByDesign);
 
                 foreach (['operating_start', 'operating_end'] as $moment) {
                     $issues = [...$issues, ...self::operatingIssues("{$event['id']}.{$moment}", (array) $event[$moment], $design, array_keys($characters), $temporary, $supportByDesign ? 'temporary của thiết kế' : 'temporary của build state này')];
@@ -794,11 +864,14 @@ final class MotoScriptCheck
         return [];
     }
 
-    /** @param array{present: bool, from: ?string, until: ?string} $part */
-    private static function lifespan(array $part, int $state): bool
+    /**
+     * @param  array{present: bool, from: ?string, until: ?string}  $part
+     * @param  ?array<string, int>  $order  the place of each physical state of a v3 design; null for a legacy design, placed by stage number
+     */
+    private static function lifespan(array $part, int $state, ?array $order = null): bool
     {
-        $from = self::stateIndex($part['from']);
-        $until = self::stateIndex($part['until']);
+        $from = self::place($part['from'], $order);
+        $until = self::place($part['until'], $order);
 
         return $part['present'] && $from !== null && $from <= $state && ($until === null || $state <= $until);
     }
@@ -841,10 +914,22 @@ final class MotoScriptCheck
         return $found;
     }
 
-    /** @param array{from: ?string} $feature */
-    private static function featureComplete(array $feature, int $state): bool
+    /**
+     * @param  array{from: ?string}  $feature
+     * @param  ?array<string, int>  $order  as lifespan()
+     */
+    private static function featureComplete(array $feature, int $state, ?array $order = null): bool
     {
-        return ! (self::stateIndex($feature['from']) > $state);
+        return ! (self::place($feature['from'], $order) > $state);
+    }
+
+    /**
+     * @param  ?array<string, int>  $order  the place of each physical state of a v3 design; null for a legacy design
+     * @return ?int the place of a state in the build: its stage number in a legacy design, its checkpoint order in a v3 design
+     */
+    private static function place(mixed $state, ?array $order): ?int
+    {
+        return $order === null ? self::stateIndex($state) : (is_string($state) ? ($order[$state] ?? null) : null);
     }
 
     /** @param array{basis: ?string} $spec */

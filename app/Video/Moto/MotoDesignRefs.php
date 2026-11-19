@@ -35,7 +35,7 @@ final class MotoDesignRefs
         'moment' => '/^M\d+$/',
         'color' => '/^C[1-9]\d*$/',
         'role' => '/^ROLE\d{2}$/',
-        'state' => '/^BS(?:0[1-9]|1[0-2])$/',
+        'state' => '/^BS(?:0[1-9]|1[0-2])(?:-CP\d{2})?$/',
         'source_issue' => '/^SI\d{2,3}$/',
         'view' => '/^MS[1-8]$/',
         'departure' => '/^D[1-5]$/',

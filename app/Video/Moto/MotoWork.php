@@ -37,13 +37,14 @@ final class MotoWork
      * @param  array<string, ?string>  $beatStates
      * @param  array<string, array<string, mixed>>  $states
      * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design
+     * @param  ?array<string, array{stage: ?string, checkpoints: list<string>}>  $spans  for a design of seven stages (MotoDesignStates::workSpans()): each beat's checkpoints, whose facts the work reads, while $beatStates gives its stage, under which the work keeps a part where it left it; null for a legacy design, read at each beat's own build state
      * @return array<string, mixed> trace() for a plan under LAW_V1 or under no named law, traceConnected() for one under LAW_V2
      *
      * @throws \RuntimeException when the plan names a law this code does not have
      */
-    public static function follow(?string $law, array $scenes, array $beatStates, array $states, array $design): array
+    public static function follow(?string $law, array $scenes, array $beatStates, array $states, array $design, ?array $spans = null): array
     {
-        $trace = self::traced($law, $scenes, $beatStates, $states, $design);
+        $trace = self::traced($law, $scenes, $beatStates, $states, $design, $spans);
 
         // What code derives, pins and plans from keeps the messages as text, exactly as it always read them.
         return ['issues' => array_map('strval', $trace['issues']), 'contradictions' => array_map('strval', $trace['contradictions'])] + $trace;
@@ -56,13 +57,14 @@ final class MotoWork
      * @param  array<string, ?string>  $beatStates
      * @param  array<string, array<string, mixed>>  $states
      * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design
+     * @param  ?array<string, array{stage: ?string, checkpoints: list<string>}>  $spans  as follow()
      * @return array<string, mixed>
      */
-    public static function traced(?string $law, array $scenes, array $beatStates, array $states, array $design): array
+    public static function traced(?string $law, array $scenes, array $beatStates, array $states, array $design, ?array $spans = null): array
     {
         return match ($law) {
-            null, self::LAW_V1 => self::trace($scenes, $beatStates, $states, $design),
-            self::LAW_V2 => self::traceConnected($scenes, $beatStates, $states, $design),
+            null, self::LAW_V1 => self::trace($scenes, $beatStates, $states, $design, $spans),
+            self::LAW_V2 => self::traceConnected($scenes, $beatStates, $states, $design, $spans),
             default => throw new \RuntimeException("Bản chia scene ghim luật work {$law} mà code này không có."),
         };
     }
@@ -104,7 +106,7 @@ final class MotoWork
      * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design
      * @return array{law: string, issues: list<string>, items: array<string, array<string, mixed>>, beats: array<string, array<string, list<array{location: string, status: string, item: string, moment: string}>>>, scenes: array<string, array{start: array<string, array{location: string, status: string, item: string, moment: string}>, end: array<string, array{location: string, status: string, item: string, moment: string}>}>} the work followed under LAW_V2, in the shape of trace(). What differs: making, finishing, painting or assembling a part keeps it where it is and the first such work establishes that place, on the motorcycle or off it; within a build state a place holds until a fitting or a removal; only the parts an item names and the parts a connection of the same build state attaches to them, directly or through other parts, go with it — the design's mounting tree and a shared place attach nothing; a connection is attached or detached by connection_changes of an item that names one of its two parts; attaching two parts in different places, attaching a part still attached elsewhere, detaching a part from another part than the one it is attached to, and moving an attached part away from the part it is attached to with no detach are contradictions, each naming the work, the part and the evidence; so are a connection change on a part its build state neither has nor makes, and an attachment to or of a part whose place is not established. Where a part is at an instant of a build state: where its last work of that state left it, otherwise where its first work of that state starts, otherwise on the motorcycle when the state has it present and does not make it, otherwise not established. The places a scene and a beat hold are read the same way: a part whose first work of the build state comes in a later beat or scene is held, from the start of that build state, where that work starts, named by that work. A connection change is recorded only once it stands; a part detached by the work is known to be attached to nothing until it is attached again, so detaching it once more is a contradiction, while a part no work has attached or detached may be detached on its event
      */
-    public static function traceConnected(array $scenes, array $beatStates, array $states, array $design): array
+    public static function traceConnected(array $scenes, array $beatStates, array $states, array $design, ?array $spans = null): array
     {
         $issues = [];
         $items = [];
@@ -128,19 +130,29 @@ final class MotoWork
             }
         }
 
-        $placed = static function (?string $state) use (&$last, &$on, $first, $states, $design): array {
+        $placed = static function (?string $state, ?string $beat = null, bool $end = false) use (&$last, &$on, $first, $states, $design, $spans): array {
             $held = self::heldAt($last, $state);
-            $facts = is_string($state) ? ($states[$state] ?? null) : null;
+            // One instant: in a v3 design the checkpoint the beat opens on, or at the end of a scene the one its last beat ends on.
+            $at = $end ? self::closingAt($beat, $state, $spans) : self::openingAt($beat, $state, $spans);
+            $facts = $spans === null ? self::factsAt($beat, $state, $states, null) : (is_string($at) ? ($states[$at] ?? null) : null);
 
             if (! is_array($facts) || ! isset($facts['present'])) {
                 return $held;
             }
 
+            if ($spans !== null) {
+                // Where the work left each part, standing as the checkpoint of this instant has it.
+                $held = self::restated($held, $facts, $on, (string) $at, $design);
+            }
+
             foreach ($first[$state] ?? [] as $part => $opening) {
-                if (! isset($held[$part]) && array_key_exists($part, $design['first_states'])) {
+                // Later work of the stage places a part only at a checkpoint that already has it, present or being made.
+                $exists = $spans === null || in_array($part, (array) $facts['present'], true) || in_array($part, (array) $facts['in_progress'], true);
+
+                if (! isset($held[$part]) && $exists && array_key_exists($part, $design['first_states'])) {
                     $held[$part] = [
                         'location' => $opening['location'],
-                        'status' => self::status($opening['location'], in_array($part, (array) $facts['in_progress'], true), self::wasOn($on, (string) $part, $state, $design)),
+                        'status' => self::status($opening['location'], in_array($part, (array) $facts['in_progress'], true), self::wasOn($on, (string) $part, (string) $at, $design)),
                         'item' => $opening['item'],
                         'moment' => 'start',
                     ];
@@ -154,7 +166,7 @@ final class MotoWork
             $sceneId = (string) $scene['id'];
             $order = array_values((array) $scene['beats']);
             $sceneState = $beatStates[$order[0] ?? ''] ?? null;
-            $start = $placed($sceneState);
+            $start = $placed($sceneState, $order[0] ?? null);
             $work = array_values((array) ($scene['work'] ?? []));
             $position = -1;
 
@@ -174,9 +186,12 @@ final class MotoWork
             foreach ($order as $beat) {
                 $state = $beatStates[$beat] ?? null;
 
-                foreach ($placed($state) as $part => $place) {
+                foreach ($placed($state, $beat) as $part => $place) {
                     $beats[$beat][$part] = [$place];
                 }
+
+                // The facts the work of this beat is read against, and the state it opens on: its build state, or in a v3 design its checkpoints and the first of them.
+                $opening = (string) self::openingAt($beat, $state, $spans);
 
                 foreach ($work as $index => $item) {
                     if ($item['beat'] !== $beat) {
@@ -185,7 +200,7 @@ final class MotoWork
 
                     $key = self::key($sceneId, $index);
                     $label = "{$key} ({$item['beat']} {$item['part']} {$item['operation']})";
-                    $facts = is_string($state) ? ($states[$state] ?? null) : null;
+                    $facts = self::factsAt($beat, $state, $states, $spans);
                     $named = array_values(array_unique([(string) $item['part'], ...array_map('strval', (array) ($item['with'] ?? []))]));
                     $unknown = self::unknownParts($named, $design);
 
@@ -213,9 +228,11 @@ final class MotoWork
 
                     $present = static fn (string $part): bool => in_array($part, (array) $facts['present'], true);
                     $making = static fn (string $part): bool => in_array($part, (array) $facts['in_progress'], true);
+                    // The facts of the whole span decide whether the work may be done; how a part stands at an instant is read at that instant's checkpoint.
+                    $shown = self::instants($beat, $state, $states, $spans, $work, $index);
                     $issues = [...$issues, ...self::basisIssues($label, $item, $state, $present, $making)];
-                    $issues = [...$issues, ...self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $state, $design))];
-                    $doubted = self::basisIssues($label, $item, $state, $present, $making) !== [] || self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $state, $design)) !== [];
+                    $issues = [...$issues, ...self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $opening, $design))];
+                    $doubted = self::basisIssues($label, $item, $state, $present, $making) !== [] || self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $opening, $design)) !== [];
                     $mark = count($issues);
                     $from = (string) $item['location_start'];
                     $to = (string) $item['location_end'];
@@ -275,15 +292,15 @@ final class MotoWork
                                 : "{$label}: {$part} đang gắn vào {$link['parent']} (xác lập ở {$link['item']}) nên đi cùng công việc này, nhưng {$part} rời {$before['beat']} ở {$before['location']} còn công việc bắt đầu ở {$from}.");
                         }
 
-                        $wasOn = self::wasOn($on, $part, $state, $design);
+                        $wasOn = self::wasOn($on, $part, $opening, $design);
 
                         if ($item['operation'] === self::ALIGN_CHECK && in_array($part, $named, true) && $wasOn && $present($part) && ($before === null || $before['state'] !== $state)) {
                             $issues[] = Finding::requirement('MotoWork.traceConnected.8', "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.");
                         }
 
-                        $startStatus = self::status($from, $making($part), $wasOn);
+                        $startStatus = self::status($from, $shown === null ? $making($part) : $shown['start']($part), $wasOn);
                         $on[$part] = $wasOn || $from === self::ON || $to === self::ON;
-                        $endStatus = self::status($to, $making($part), $on[$part]);
+                        $endStatus = self::status($to, $shown === null ? $making($part) : $shown['end']($part), $on[$part]);
                         $parts[$part] = ['start' => $from, 'end' => $to, 'start_status' => $startStatus, 'end_status' => $endStatus];
                         $start[$part] ??= ['location' => $from, 'status' => $startStatus, 'item' => $key, 'moment' => 'start'];
                         $beats[$beat][$part] ??= [['location' => $from, 'status' => $startStatus, 'item' => $key, 'moment' => 'start']];
@@ -326,7 +343,7 @@ final class MotoWork
                         }
                     }
 
-                    if (in_array($state, $design['finished'], true) && $to !== self::ON) {
+                    if (in_array($opening, $design['finished'], true) && $to !== self::ON) {
                         $issues[] = Finding::requirement('MotoWork.traceConnected.13', "{$label}: {$state} là xe hoàn thiện — part không được kết thúc ngoài xe.");
                     }
 
@@ -340,7 +357,8 @@ final class MotoWork
                 }
             }
 
-            $held[$sceneId] = ['start' => $start, 'end' => $placed($sceneState)];
+            // The scene ends where its last beat ends; in a legacy design every beat of a scene has the same build state.
+            $held[$sceneId] = ['start' => $start, 'end' => $placed($sceneState, $spans === null ? ($order[0] ?? null) : ($order[count($order) - 1] ?? null), true)];
         }
 
         return ['law' => self::LAW_V2, 'issues' => $ids, 'contradictions' => $issues, 'doubt' => array_map(static fn (array $parts): array => array_map('strval', array_keys($parts)), $doubt), 'items' => $items, 'beats' => $beats, 'scenes' => $held];
@@ -402,7 +420,7 @@ final class MotoWork
      * @param  array{first_states: array<string, ?string>, parents: array<string, ?string>, finished: list<string>}  $design  the first build state with each part of the design on the motorcycle, the part each is mounted on and the finished build states
      * @return array{issues: list<string>, items: array<string, array{beat: string, part: string, operation: string, parts: array<string, array{start: string, end: string, start_status: string, end_status: string}>}>, beats: array<string, array<string, list<array{location: string, status: string, item: string, moment: string}>>>, scenes: array<string, array{start: array<string, array{location: string, status: string, item: string, moment: string}>, end: array<string, array{location: string, status: string, item: string, moment: string}>}>} work outside its scene, out of beat order, before a physical motorcycle exists or on a part the design does not have; making a part its build state does not list in progress and other work on a part it neither has nor makes; installing a part it only makes, which is test-fitted, removed and refitted while being made and starts off the motorcycle until work of that build state puts it on; a move the work does not make, a first fitting of a part that was on, a first test fit included, and a refitting of one never on; a part named by align_check that its build state has on the motorcycle; a part that changes place within a build state with no work between; a finished motorcycle left with a part off. For every item, every beat and every scene, where each part the work moves or keeps in place is and how it is shown — the part, the parts worked with it and the parts mounted on them: a beat holds every part where the last work of its build state left it, from its start, then after each of its items
      */
-    public static function trace(array $scenes, array $beatStates, array $states, array $design): array
+    public static function trace(array $scenes, array $beatStates, array $states, array $design, ?array $spans = null): array
     {
         $issues = [];
         $items = [];
@@ -416,7 +434,7 @@ final class MotoWork
             $sceneId = (string) $scene['id'];
             $order = array_values((array) $scene['beats']);
             $sceneState = $beatStates[$order[0] ?? ''] ?? null;
-            $start = self::heldAt($last, $sceneState);
+            $start = self::heldNow($last, $sceneState, $order[0] ?? null, false, $states, $spans, $on, $design);
             $work = array_values((array) ($scene['work'] ?? []));
             $position = -1;
 
@@ -436,7 +454,7 @@ final class MotoWork
             foreach ($order as $beat) {
                 $state = $beatStates[$beat] ?? null;
 
-                foreach (self::heldAt($last, $state) as $part => $place) {
+                foreach (self::heldNow($last, $state, $beat, false, $states, $spans, $on, $design) as $part => $place) {
                     $beats[$beat][$part] = [$place];
                 }
 
@@ -447,7 +465,8 @@ final class MotoWork
 
                     $key = self::key($sceneId, $index);
                     $label = "{$key} ({$item['beat']} {$item['part']} {$item['operation']})";
-                    $facts = is_string($state) ? ($states[$state] ?? null) : null;
+                    $facts = self::factsAt($beat, $state, $states, $spans);
+                    $opening = (string) self::openingAt($beat, $state, $spans);
                     $named = array_values(array_unique([(string) $item['part'], ...array_map('strval', (array) ($item['with'] ?? []))]));
                     $unknown = self::unknownParts($named, $design);
 
@@ -467,8 +486,9 @@ final class MotoWork
 
                     $present = static fn (string $part): bool => in_array($part, (array) $facts['present'], true);
                     $making = static fn (string $part): bool => in_array($part, (array) $facts['in_progress'], true);
+                    $shown = self::instants($beat, $state, $states, $spans, $work, $index);
                     $issues = [...$issues, ...self::basisIssues($label, $item, $state, $present, $making)];
-                    $issues = [...$issues, ...self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $state, $design))];
+                    $issues = [...$issues, ...self::moveIssues($label, $item, self::wasOn($on, (string) $item['part'], $opening, $design))];
                     $from = (string) $item['location_start'];
                     $to = (string) $item['location_end'];
                     $parts = [];
@@ -482,15 +502,15 @@ final class MotoWork
                             $issues[] = Finding::requirement('MotoWork.trace.3', "{$label}: {$part} đang chế tạo ở {$state} và chưa có công việc nào trong build state này đặt nó lên xe — công việc đầu tiên trên nó phải bắt đầu ở off_motorcycle.");
                         }
 
-                        $wasOn = self::wasOn($on, $part, $state, $design);
+                        $wasOn = self::wasOn($on, $part, $opening, $design);
 
                         if ($item['operation'] === self::ALIGN_CHECK && in_array($part, $named, true) && $wasOn && $present($part) && ($before === null || $before['state'] !== $state)) {
                             $issues[] = Finding::requirement('MotoWork.trace.4', "{$label}: {$part} đang ở trên xe tại {$state} — align_check chỉ đối chiếu khi chi tiết còn ngoài xe.");
                         }
 
-                        $startStatus = self::status($from, $making($part), $wasOn);
+                        $startStatus = self::status($from, $shown === null ? $making($part) : $shown['start']($part), $wasOn);
                         $on[$part] = $wasOn || $from === self::ON || $to === self::ON;
-                        $endStatus = self::status($to, $making($part), $on[$part]);
+                        $endStatus = self::status($to, $shown === null ? $making($part) : $shown['end']($part), $on[$part]);
                         $parts[$part] = ['start' => $from, 'end' => $to, 'start_status' => $startStatus, 'end_status' => $endStatus];
                         $start[$part] ??= ['location' => $from, 'status' => $startStatus, 'item' => $key, 'moment' => 'start'];
                         $beats[$beat][$part] ??= [['location' => $from, 'status' => $startStatus, 'item' => $key, 'moment' => 'start']];
@@ -498,7 +518,7 @@ final class MotoWork
                         $last[$part] = ['state' => $state, 'location' => $to, 'status' => $endStatus, 'beat' => $beat, 'item' => $key];
                     }
 
-                    if (in_array($state, $design['finished'], true) && $to !== self::ON) {
+                    if (in_array($opening, $design['finished'], true) && $to !== self::ON) {
                         $issues[] = Finding::requirement('MotoWork.trace.5', "{$label}: {$state} là xe hoàn thiện — part không được kết thúc ngoài xe.");
                     }
 
@@ -506,7 +526,7 @@ final class MotoWork
                 }
             }
 
-            $held[$sceneId] = ['start' => $start, 'end' => self::heldAt($last, $sceneState)];
+            $held[$sceneId] = ['start' => $start, 'end' => self::heldNow($last, $sceneState, $order[count($order) - 1] ?? null, true, $states, $spans, $on, $design)];
         }
 
         return ['issues' => $ids, 'contradictions' => $issues, 'items' => $items, 'beats' => $beats, 'scenes' => $held];
@@ -656,6 +676,140 @@ final class MotoWork
     }
 
     /**
+     * @param  array<string, array<string, mixed>>  $states  the facts of the physical states, by id
+     * @param  ?array<string, array{stage: ?string, checkpoints: list<string>}>  $spans  MotoDesignStates::workSpans(); null for a legacy design
+     * @return ?array<string, mixed> the facts the work of a beat is read against: those of its build state in a legacy design; in a v3 design those of the checkpoints it runs through, a part present or being made at one of them counting as such for the beat; null when it has no physical state
+     */
+    private static function factsAt(?string $beat, ?string $state, array $states, ?array $spans): ?array
+    {
+        if ($spans === null) {
+            return is_string($state) ? ($states[$state] ?? null) : null;
+        }
+
+        $facts = array_values(array_filter(array_map(static fn (string $checkpoint): mixed => $states[$checkpoint] ?? null, (array) ($spans[(string) $beat]['checkpoints'] ?? [])), 'is_array'));
+
+        if ($facts === [] || ! isset($facts[0]['present'])) {
+            return $facts[0] ?? null;
+        }
+
+        return [
+            'physical' => array_filter($facts, static fn (array $fact): bool => ($fact['physical'] ?? true) !== false) !== [],
+            'present' => array_values(array_unique(array_merge([], ...array_map(static fn (array $fact): array => (array) $fact['present'], $facts)))),
+            'in_progress' => array_values(array_unique(array_merge([], ...array_map(static fn (array $fact): array => (array) ($fact['in_progress'] ?? []), $facts)))),
+        ];
+    }
+
+    /**
+     * @param  ?array<string, array{stage: ?string, checkpoints: list<string>}>  $spans  MotoDesignStates::workSpans(); null for a legacy design
+     * @return ?string the state a beat opens on: its build state in a legacy design, its first checkpoint in a v3 design
+     */
+    private static function openingAt(?string $beat, ?string $state, ?array $spans): ?string
+    {
+        return $spans === null ? $state : ($spans[(string) $beat]['checkpoints'][0] ?? $state);
+    }
+
+    /**
+     * @param  ?array<string, array{stage: ?string, checkpoints: list<string>}>  $spans  MotoDesignStates::workSpans(); null for a legacy design
+     * @return ?string the state a beat ends on: its build state in a legacy design, its last checkpoint in a v3 design
+     */
+    private static function closingAt(?string $beat, ?string $state, ?array $spans): ?string
+    {
+        $checkpoints = $spans === null ? [] : (array) ($spans[(string) $beat]['checkpoints'] ?? []);
+
+        return $checkpoints === [] ? $state : (string) $checkpoints[count($checkpoints) - 1];
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $states  the facts of the physical states, by id
+     * @param  ?array<string, array{stage: ?string, checkpoints: list<string>}>  $spans  MotoDesignStates::workSpans(); null for a legacy design
+     * @param  list<array<string, mixed>>  $work  the work of the scene, in order
+     * @return ?array{start: \Closure(string): bool, end: \Closure(string): bool} for a work item of a v3 design, whether a part is being made where the item starts and where it ends. The make items of the beat on the part are the evidence of its making, wherever the checkpoints between the ends of the beat put it: from its first make item through its last it is being made; before them it stands as the checkpoint the beat opens on has it, after them as the one the beat ends on has it. With no make item, it keeps a state both ends share, otherwise it is complete where the work reaches it. Nothing is set back to the checkpoint the beat opened on, and two equal ends never hide a making between them. The span's facts decide whether the work may be done; these say how the part stands. null for a legacy design, read at its build state
+     */
+    private static function instants(?string $beat, ?string $state, array $states, ?array $spans, array $work, int $index): ?array
+    {
+        if ($spans === null) {
+            return null;
+        }
+
+        $opens = (array) ($states[(string) self::openingAt($beat, $state, $spans)] ?? []);
+        $closes = (array) ($states[(string) self::closingAt($beat, $state, $spans)] ?? []);
+        $making = static fn (array $facts, string $part): bool => in_array($part, (array) ($facts['in_progress'] ?? []), true);
+        // The parts some checkpoint of the beat makes: a make item is evidence of making only for those. A part worked with it (with) is not made by it on that account, and neither is one no checkpoint makes.
+        $made = array_merge([], ...array_map(static fn (string $checkpoint): array => array_map('strval', (array) ($states[$checkpoint]['in_progress'] ?? [])), (array) ($spans[(string) $beat]['checkpoints'] ?? [])));
+        // The make items of the beat on each part a checkpoint makes, by their place in the scene's work.
+        $makes = [];
+
+        foreach ($work as $at => $other) {
+            if (($other['beat'] ?? null) === $beat && ($other['operation'] ?? null) === 'make') {
+                foreach ([(string) $other['part'], ...array_map('strval', (array) ($other['with'] ?? []))] as $part) {
+                    if (in_array($part, $made, true)) {
+                        $makes[$part][] = (int) $at;
+                    }
+                }
+            }
+        }
+
+        $now = static function (string $part) use ($opens, $closes, $making, $makes, $index): bool {
+            $from = $making($opens, $part);
+            $to = $making($closes, $part);
+            $made = $makes[$part] ?? [];
+
+            if ($made === []) {
+                // No make item says when it is made: it keeps a state both ends share, otherwise it is complete wherever the work reaches it.
+                return $from === $to && $from;
+            }
+
+            // The make items are the making, wherever the checkpoints between the ends put it: before the first the part stands as the beat opens, after the last as it ends.
+            return match (true) {
+                $index < min($made) => $from,
+                $index <= max($made) => true,
+                default => $to,
+            };
+        };
+
+        return ['start' => $now, 'end' => $now];
+    }
+
+    /**
+     * @param  array<string, array{location: string, status: string, state: string, beat: string, item: string}>  $last
+     * @param  array<string, array<string, mixed>>  $states
+     * @param  ?array<string, array{stage: ?string, checkpoints: list<string>}>  $spans
+     * @param  array<string, bool>  $on
+     * @return array<string, array{location: string, status: string, item: string, moment: string}> heldAt() for trace(): as it is for a legacy design; for a v3 design restated at the checkpoint the beat opens on, or ends on at the end of a scene
+     */
+    private static function heldNow(array $last, ?string $state, ?string $beat, bool $end, array $states, ?array $spans, array $on, array $design): array
+    {
+        $held = self::heldAt($last, $state);
+
+        if ($spans === null) {
+            return $held;
+        }
+
+        $at = $end ? self::closingAt($beat, $state, $spans) : self::openingAt($beat, $state, $spans);
+
+        return is_string($at) ? self::restated($held, $states[$at] ?? null, $on, $at, $design) : $held;
+    }
+
+    /**
+     * @param  array<string, array{location: string, status: string, item: string, moment: string}>  $held  where the work holds each part, as heldAt() gives it
+     * @param  ?array<string, mixed>  $facts  the facts of the checkpoint of that instant
+     * @param  array<string, bool>  $on  whether each part the work handled has been on the motorcycle
+     * @return array<string, array{location: string, status: string, item: string, moment: string}> for a v3 design, each part where the work left it, standing as the checkpoint of the instant has it: a checkpoint is the state established there, so a part the work left being made is complete once a checkpoint says so
+     */
+    private static function restated(array $held, ?array $facts, array $on, string $at, array $design): array
+    {
+        if (! is_array($facts)) {
+            return $held;
+        }
+
+        foreach ($held as $part => $place) {
+            $held[$part]['status'] = self::status((string) $place['location'], in_array((string) $part, (array) ($facts['in_progress'] ?? []), true), self::wasOn($on, (string) $part, $at, $design));
+        }
+
+        return $held;
+    }
+
+    /**
      * @param  array<string, array{location: string, status: string, state: string, beat: string, item: string}>  $last
      * @return array<string, array{location: string, status: string, item: string, moment: string}> where the work last left each part within the build state, with the item that left it there
      */
@@ -679,7 +833,7 @@ final class MotoWork
      */
     private static function wasOn(array $on, string $part, string $state, array $design): bool
     {
-        return array_key_exists($part, $on) ? $on[$part] : self::earlier($design['first_states'][$part] ?? null, $state);
+        return array_key_exists($part, $on) ? $on[$part] : self::earlier($design['first_states'][$part] ?? null, $state, isset($design['order']) ? (array) $design['order'] : null);
     }
 
     /**
@@ -799,8 +953,13 @@ final class MotoWork
         return $issues;
     }
 
-    private static function earlier(?string $first, string $state): bool
+    /** @param  ?array<string, int>  $order  the place of each checkpoint of a v3 design (MotoScenes::workDesign()); null for a legacy design, placed by stage number */
+    private static function earlier(?string $first, string $state, ?array $order = null): bool
     {
+        if ($order !== null) {
+            return is_string($first) && isset($order[$first], $order[$state]) && $order[$first] < $order[$state];
+        }
+
         return is_string($first) && (int) substr($first, 2) < (int) substr($state, 2);
     }
 }

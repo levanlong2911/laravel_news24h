@@ -978,7 +978,8 @@ class PartsDetailService implements QueuedImageService
         $sheet = app(ModelSheetService::class)->approvedSheet($projectId, true);
         $designStage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($sheet['design_stage_id']);
         $raw = (string) $designStage->raw_response;
-        $design = json_decode($raw, true, 512, JSON_THROW_ON_ERROR)['data'];
+        // A legacy design is read as it is; a v3 design by its checkpoints, the way every later step reads the states.
+        $design = \App\Video\Moto\MotoDesignStates::normalize(json_decode($raw, true, 512, JSON_THROW_ON_ERROR));
         $review = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($sheet['review_stage_id']);
         $crops = [];
 

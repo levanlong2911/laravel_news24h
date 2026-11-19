@@ -29,12 +29,15 @@ final class MotoScenePlanner
         $sourceConflicts = array_values((array) ($context['source_blocking'] ?? []));
         $timed = ($context['timing'] ?? null) !== MotoScenes::ORDINAL;
         $law = is_string($context['work_tracking_version'] ?? null) ? $context['work_tracking_version'] : null;
+        // A design of seven stages: each beat keeps the checkpoints it runs through, and the work reads them; a legacy design reads each beat at its build state.
+        $layout = MotoDesignStates::ofFacts($context);
         $trace = $law === null || ! is_array($context['work_design'] ?? null) ? null : MotoWork::follow(
             $law,
             array_values((array) $data['scenes']),
             array_map(static fn (array $beat): ?string => is_string($beat['state'] ?? null) ? $beat['state'] : null, $facts),
             (array) $context['states'],
             $context['work_design'],
+            $layout->workSpans($facts),
         );
         $events = [];
 
@@ -60,6 +63,7 @@ final class MotoScenePlanner
                     'duration_ms' => $timed ? $fact['end_ms'] - $fact['start_ms'] : null,
                     'characters' => $fact['on_screen'],
                     'state' => $fact['state'],
+                ] + ($layout->checkpointed() ? ['checkpoint_start' => $fact['checkpoint_start'] ?? null, 'checkpoint_end' => $fact['checkpoint_end'] ?? null] : []) + [
                     'time_jump' => $fact['time_jump'],
                     'reveal' => $beat['reveal'],
                     'purpose' => $beat['purpose'],
@@ -84,10 +88,17 @@ final class MotoScenePlanner
             $last = $beatRows === [] ? null : $beatRows[count($beatRows) - 1];
             $states = array_values(array_unique(array_filter(array_column($beatRows, 'state'), 'is_string')));
             $stateFacts = count($states) === 1 ? ($context['states'][$states[0]] ?? null) : null;
+            // A scene of a v3 design opens on the checkpoint its first beat opens on and ends on the one its last beat ends on.
+            $opens = $layout->checkpointed() ? ($first['checkpoint_start'] ?? null) : null;
+            $closes = $layout->checkpointed() ? ($last['checkpoint_end'] ?? null) : null;
+            $momentFacts = $layout->checkpointed()
+                ? ['start' => count($states) === 1 && is_string($opens) ? ($context['states'][$opens] ?? null) : null, 'end' => count($states) === 1 && is_string($closes) ? ($context['states'][$closes] ?? null) : null]
+                : ['start' => $stateFacts, 'end' => $stateFacts];
             $derived = [];
 
             foreach ($law === null ? [] : ['continuity_start' => 'start', 'continuity_end' => 'end'] as $key => $moment) {
                 $held = $trace['scenes'][$scene['id']][$moment] ?? null;
+                $stateFacts = $momentFacts[$moment];
                 $sound = is_array($stateFacts) && is_array($held);
                 $doubted = $sound ? array_values(array_intersect(array_map('strval', array_keys($held)), (array) ($trace['doubt'][$states[0]] ?? []))) : [];
                 $established = $sound ? array_diff_key($held, array_flip($doubted)) : [];
@@ -106,6 +117,7 @@ final class MotoScenePlanner
                 'places' => array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => $facts[$id]['places'], $ids)))),
                 'backgrounds' => array_values(array_unique(array_merge([], ...array_map(static fn (string $id): array => $facts[$id]['backgrounds'], $ids)))),
                 'state' => count($states) === 1 ? $states[0] : null,
+            ] + ($layout->checkpointed() ? ['checkpoint_start' => $opens, 'checkpoint_end' => $closes] : []) + [
                 'characters' => array_values(array_unique(array_merge([], ...array_column($beatRows, 'characters')))),
                 'purpose' => $scene['purpose'],
                 'set_brief' => $scene['set_brief'],

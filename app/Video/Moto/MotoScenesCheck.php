@@ -92,7 +92,7 @@ final class MotoScenesCheck
         $issues = [
             ...$issues,
             ...self::orderIssues($scenes, $beats),
-            ...self::continuationIssues($scenes, $beats, (array) ($context['states'] ?? [])),
+            ...self::continuationIssues($scenes, $beats, (array) ($context['states'] ?? []), self::checkpointed($context)),
             ...self::conflictIssues($conflicts, $scenes, $beats, $input),
         ];
         $held = [];
@@ -196,7 +196,7 @@ final class MotoScenesCheck
      * @param  array<string, mixed>  $states  the physical build states the beats use
      * @return list<string> a scene none of whose beats establishes a build state, opening on the place and story time of a beat with the physical motorcycle: alone it would have no build state, and the shot step reads that as no motorcycle yet
      */
-    private static function continuationIssues(array $scenes, array $beats, array $states): array
+    private static function continuationIssues(array $scenes, array $beats, array $states, bool $checkpointed = false): array
     {
         $issues = [];
         $before = null;
@@ -205,8 +205,10 @@ final class MotoScenesCheck
             $ids = array_values((array) $scene['beats']);
             $first = $beats[$ids[0] ?? ''] ?? null;
             $established = array_filter(array_map(static fn (string $id): mixed => $beats[$id]['state'] ?? null, $ids), 'is_string') !== [];
+            // The beat before shows the physical motorcycle: its state is a physical one, or in a v3 design it ends on a checkpoint.
+            $physical = is_array($before) && ($checkpointed ? isset($states[(string) ($before['checkpoint_end'] ?? '')]) : isset($states[(string) $before['state']]));
 
-            if (is_array($first) && is_array($before) && ! $established && isset($states[(string) $before['state']]) && $first['time_jump'] === $before['time_jump'] && array_intersect((array) $first['places'], (array) $before['places']) !== []) {
+            if (is_array($first) && is_array($before) && ! $established && $physical && $first['time_jump'] === $before['time_jump'] && array_intersect((array) $first['places'], (array) $before['places']) !== []) {
                 $issues[] = Finding::note('MotoScenesCheck.continuationIssues.1', "{$scene['id']}: {$first['id']} không có build state và tiếp nối {$before['id']} cùng nơi, cùng thời gian truyện — phải cùng scene với {$before['id']}.");
             }
 
@@ -388,7 +390,8 @@ final class MotoScenesCheck
             }
         }
 
-        $trace = MotoWork::traced($law, $scenes, array_map(static fn (array $beat): ?string => is_string($beat['state'] ?? null) ? $beat['state'] : null, $beats), (array) $context['states'], $context['work_design']);
+        // The work keeps a part where it left it within a build state; in a v3 design it reads each beat at the checkpoints it runs through.
+        $trace = MotoWork::traced($law, $scenes, array_map(static fn (array $beat): ?string => is_string($beat['state'] ?? null) ? $beat['state'] : null, $beats), (array) $context['states'], $context['work_design'], MotoDesignStates::ofFacts($context)->workSpans($beats));
 
         return [[...$issues, ...$trace['issues']], $trace['scenes']];
     }
@@ -531,5 +534,11 @@ final class MotoScenesCheck
             ...Finding::fields($issues, []),
             'judge' => self::JUDGE,
         ];
+    }
+
+    /** @param  array<string, mixed>  $context  the check context pinned with the run */
+    private static function checkpointed(array $context): bool
+    {
+        return ($context[MotoDesignStates::LAYOUT_KEY] ?? null) === MotoDesignStates::CHECKPOINTS;
     }
 }

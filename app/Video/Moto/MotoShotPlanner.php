@@ -36,9 +36,13 @@ final class MotoShotPlanner
         $rows = [];
         $cursor = 0;
 
+        $layout = MotoDesignStates::ofFacts($context);
+
         foreach ($shots as $index => $shot) {
             $scene = $scenes[$shot['scene']] ?? null;
-            $state = is_array($scene) ? $scene['state'] : null;
+            $stage = is_array($scene) ? $scene['state'] : null;
+            // The state of a shot is what its first frame shows: its scene's build state, or in a v3 design the checkpoint it opens on (its stage on a design stage).
+            $state = $layout->checkpointed() && is_string($shot['checkpoint_start'] ?? null) ? $shot['checkpoint_start'] : $stage;
             $first = $index === 0 || $shots[$index - 1]['scene'] !== $shot['scene'];
             $last = $index === count($shots) - 1 || $shots[$index + 1]['scene'] !== $shot['scene'];
             $previous = $first ? null : $shots[$index - 1];
@@ -60,6 +64,7 @@ final class MotoShotPlanner
                 'coverage_spans' => $coverage,
                 'parts_named' => array_map(static fn (array $item): array => $item + ['name' => $context['parts'][$item['part']] ?? null], (array) $shot['parts']),
                 'state' => $state,
+            ] + ($layout->checkpointed() ? ['stage' => $stage] : []) + [
                 'places' => is_array($scene) ? array_values((array) $scene['places']) : [],
                 'set_brief' => is_array($scene) ? ($scene['set_brief'] ?? null) : null,
                 'transition_in' => $first

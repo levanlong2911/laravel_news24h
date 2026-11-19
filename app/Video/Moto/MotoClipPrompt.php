@@ -40,7 +40,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
     private const EVENT_FIELDS = ['id', 'action', 'result', 'character_ids', 'design_refs', 'operating_start', 'operating_end'];
 
     /** @var list<string> the input formats whose payload carries the composition and event progress of the shot, its scene and the events it plays */
-    private const SOURCED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V7, MotoContract::CLIP_PROMPT_INPUT_V8];
+    private const SOURCED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V7, MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9];
 
     /** @var ?string the input format the adapter writes and reads: that of the bound project for a new run, that of a stored run while it is verified; none before either */
     private ?string $inputFormat = null;
@@ -220,7 +220,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
      */
     public static function inputs(array $shot, array $pinned, array $design, array $script, array $opening, array $sound, string $fingerprint, int $maxPromptChars, ?string $format = null): array
     {
-        $eighth = $format === MotoContract::CLIP_PROMPT_INPUT_V8;
+        $eighth = in_array($format, [MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9], true);
         $seventh = in_array($format, self::SOURCED_FORMATS, true);
         $keyframe = $opening['keyframe'] ?? null;
         $configurations = array_column((array) ($pinned['configurations'] ?? []), null, 'id');
@@ -273,6 +273,10 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
             'design_context' => $themed + [
                 'motorcycle' => array_intersect_key((array) ($design['motorcycle'] ?? []), array_flip(self::MOTORCYCLE_FIELDS)),
                 'build_state' => collect((array) ($design['build_states'] ?? []))->firstWhere('id', $shot['state'] ?? null),
+            ] + ($format === MotoContract::CLIP_PROMPT_INPUT_V9
+                // A shot of a v3 design opens on one checkpoint and may end on a later one: the clip is told both.
+                ? ['build_state_end' => collect((array) ($design['build_states'] ?? []))->firstWhere('id', $shot['checkpoint_end'] ?? $shot['state'] ?? null)]
+                : []) + [
                 'parts' => array_values(array_map(static fn (array $part): array => array_diff_key($part, ['points' => true]), array_filter($designParts, static fn (array $part): bool => in_array($part['id'], $named, true)))),
                 'connections' => array_values(array_filter((array) ($design['connections'] ?? []), static fn (array $connection): bool => array_intersect((array) ($connection['between'] ?? []), $partIds) !== [])),
                 'limits' => $limits,

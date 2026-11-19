@@ -29,6 +29,9 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
     /** @var bool whether the project tells its story as events, with screen time set by the shot plan */
     private bool $eventful = false;
 
+    /** @var bool whether the release designs seven stages with checkpoints, so the beats name the checkpoints they run through */
+    private bool $checkpointed = false;
+
     /** @var array<string, mixed> what the release of the project adds to the check policy of a new run; a run keeps the policy it was made with in its context */
     private array $releasePolicy = [];
 
@@ -49,12 +52,17 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
     public function bind(VideoProject $project): void
     {
         $this->eventful = MotoPipelineRelease::cinematic($project);
+        $this->checkpointed = $this->eventful && MotoPipelineRelease::checkpointed($project);
         $this->releasePolicy = MotoPipelineRelease::policy($project, 'script');
     }
 
     public function format(): string
     {
-        return $this->eventful ? MotoContract::SCRIPT_FORMAT_V2 : MotoContract::SCRIPT_FORMAT;
+        return match (true) {
+            $this->checkpointed => MotoContract::SCRIPT_FORMAT_V3,
+            $this->eventful => MotoContract::SCRIPT_FORMAT_V2,
+            default => MotoContract::SCRIPT_FORMAT,
+        };
     }
 
     public function checkVersion(): string
@@ -94,7 +102,11 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
         [$design, $data, $rawSha256] = $this->pinnedDesign($projectId, $sheet);
         [, $designHash] = $this->sheets->approvedSource($projectId);
 
-        $designFormat = $this->eventful ? MotoContract::DESIGN_FORMAT_V2 : MotoContract::DESIGN_FORMAT;
+        $designFormat = match (true) {
+            $this->checkpointed => MotoContract::DESIGN_FORMAT_V3,
+            $this->eventful => MotoContract::DESIGN_FORMAT_V2,
+            default => MotoContract::DESIGN_FORMAT,
+        };
 
         if ((JsonAnswer::object((string) $design->raw_response)['format'] ?? null) !== $designFormat) {
             throw new RuntimeException('Bản thiết kế đã duyệt không theo định dạng '.$designFormat.' — không viết kịch bản moto từ nó.');
@@ -108,7 +120,8 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
             throw new RuntimeException('Không đọc được source_identity trong chuỗi nguồn của bản thiết kế.');
         }
 
-        $selected = self::select($data);
+        // The check reads the states as later steps do (a v3 design by its checkpoints); the model reads the design as it was written.
+        $selected = self::select(MotoDesignStates::normalize(['format' => $designFormat, 'data' => $data]));
         $facts = MotoScriptCheck::facts($selected);
         $config = (array) config('video.moto.script');
         $baseCard = ! $this->eventful && (bool) $config['base_card'];
@@ -123,7 +136,7 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
                         'tone_notes' => $brief['tone_notes'],
                         'base_card' => $baseCard,
                     ],
-                'design' => $selected,
+                'design' => $this->checkpointed ? self::select($data) : $selected,
                 'film_facts' => MotoScriptCheck::filmFacts($facts),
                 'channel_history' => $history,
             ],
@@ -176,7 +189,7 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
 
     public function derive(array $document, array $context): array
     {
-        if (($context['format'] ?? null) === MotoContract::SCRIPT_FORMAT_V2) {
+        if (in_array($context['format'] ?? null, [MotoContract::SCRIPT_FORMAT_V2, MotoContract::SCRIPT_FORMAT_V3], true)) {
             $derived = [
                 'version' => self::EVENT_PROJECTION_VERSION,
                 'duration_s' => null,
