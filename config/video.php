@@ -2128,6 +2128,79 @@ return [
                                 'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V8],
                             ],
                         ],
+                        // The release whose design tells seven stages, each physical one with the checkpoints the motorcycle passes through (MotoDesign 3.0.0, moto-design-v3), and whose later phases read and carry those checkpoints through MotoDesignStates: the script names the checkpoints of every beat (MotoScript 3.0.0), the locations and scenes read them by beat, every shot pins the checkpoints of its first and last frame (MotoShots 3.0.0) and the video prompt is told both. design_format is read from the pinned release alone, like the policy; a project of another release keeps its twelve stages.
+                        \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V7 => [
+                            'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V5,
+                            'design_format' => \App\Video\Moto\MotoContract::DESIGN_FORMAT_V3,
+                            'phases' => [
+                                'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => '8fb60aad-bb7a-4940-91dd-6e98fc9222fd', 'sha256' => '959cdb845ef73593b657f7dd866641a0cc81fa9db72be6f9be28c277fc90daea']]],
+                                'phase-4' => ['input_format' => 'moto-script-input-v5', 'revisions' => [['id' => '52a23676-24cf-415a-b333-a4f922d4f9ec', 'sha256' => 'b99747735097a75a26dfd808dfa7797eb4ee95d1d4435d2410766cbcaf6bb5a3']]],
+                                'phase-5' => ['input_format' => 'moto-locations-input-v3', 'revisions' => [['id' => '1dc551f8-1cce-48a1-9309-9d49defa1359', 'sha256' => 'a47e84f6ef44e3699c973957f70a05014cc2095655ee13b34b7fe77ba0e49f9f']]],
+                                'phase-6' => ['input_format' => 'moto-scenes-input-v5', 'revisions' => [['id' => '6e0cf7fe-a4fc-4bfd-a54d-cbf96727bf82', 'sha256' => '970e52c5597b36e45cb5e935569855eda011ba7f6c37527451c6509604eac0a7']]],
+                                'phase-7' => ['input_format' => 'moto-shots-input-v10', 'revisions' => [['id' => 'eda5dc96-fa97-4526-8125-aba2db31a5b7', 'sha256' => 'f77619d134d0817f9258d4508a4ff86f77db74766f5d11c7fca5796b7bce7c81']]],
+                                'phase-10' => ['input_format' => 'moto-clip-prompt-input-v9', 'revisions' => [['id' => 'a07e92ea-c82a-4e36-a644-32ee6e20a29b', 'sha256' => '859a611ad86fdbc053bb7c810330e84064cb694bc4121898137279cc668d0177']]],
+                            ],
+                            'actions' => [
+                                'spec.design' => [
+                                    'phase' => 'phase-3',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['design'],
+                                    ],
+                                    'outputs' => [
+                                        'design' => ['namespace' => 'moto', 'schema' => 'MotoDesign', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 3 Output (format moto-design-v3): one object-based themed Harley-Davidson custom design record — motorcycle with its ornament, parts, systems, rider interface, connections, features, operational limits, the five fixed participant roles, seven told build states BS01–BS07 whose physical stages list the checkpoints the motorcycle passes through, identity rules, source issues and the model sheet with its displayed configuration and eight views; every moment that names a state names a checkpoint; release moto-cinematic-3s-v7'],
+                                    ],
+                                ],
+                                'spec.script' => [
+                                    'phase' => 'phase-4',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['script'],
+                                    ],
+                                    'outputs' => [
+                                        'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v3): the story, five characters each playing one fixed role of the design in its order, the beats as ordered events with the operating state before and after each, every beat on a physical stage with the checkpoint it opens on and the one it ends on, the shot directives the brief fixed, the text cards and the music brief; no screen time; release moto-cinematic-3s-v7'],
+                                    ],
+                                ],
+                                'spec.scenes' => [
+                                    'phase' => 'phase-6',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['scenes'],
+                                    ],
+                                    'outputs' => [
+                                        'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '3.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v3): the approved beats grouped into scenes with their blocking, continuity, incoming transition and the work on parts with its connection changes, evidenced by event id; each beat keeps its own checkpoints; the detached parts are derived by code; release moto-cinematic-3s-v7'],
+                                    ],
+                                ],
+                                'spec.shots' => [
+                                    'phase' => 'phase-7',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['shots'],
+                                    ],
+                                    'outputs' => [
+                                        'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v3, policy full-coverage-budget-v1): how every approved scene is filmed within the shot budget, playing every event of the source with no omission — each shot with the checkpoints its first and end frame show, its camera and camera path, composition, action timeline, event progress, first frame, end frame, operating states, parts, people by character id, background and cards; the length and the mode of a take are set by code; release moto-cinematic-3s-v7'],
+                                    ],
+                                ],
+                            ],
+                            'policy' => [
+                                'script' => ['stationary_requires_support' => true],
+                                'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                                'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V9],
+                            ],
+                        ],
                     ],
                     'actions' => [
                         'spec.inspiration' => [

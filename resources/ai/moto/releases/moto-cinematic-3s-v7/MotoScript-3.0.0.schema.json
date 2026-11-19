@@ -1,0 +1,278 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoScript",
+  "title": "Moto Phase 4 — story and script (moto-script-v3)",
+  "description": "One answer of Phase 4 for a themed custom motorcycle designed in seven stages: the story from first sketch to the road, its characters by role, and its beats as ordered events with the state of the motorcycle before and after each; every beat on a physical stage names the checkpoint of the design it opens on and the one it ends on. Screen time is set later, by the shot plan.",
+  "x-word-limits": { "characters.*.description": 60 },
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "phase", "project_id", "prompt_version", "status", "data", "flags"],
+  "properties": {
+    "format": { "const": "moto-script-v3" },
+    "phase": { "const": "4" },
+    "project_id": { "$ref": "#/$defs/text" },
+    "prompt_version": { "$ref": "#/$defs/text" },
+    "status": { "enum": ["ok", "partial", "fail"] },
+    "data": { "type": "object" },
+    "flags": { "type": "array", "items": { "$ref": "#/$defs/text" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "fail" } } },
+      "then": { "properties": { "data": { "maxProperties": 0 }, "flags": { "minItems": 1 } } },
+      "else": { "properties": { "data": { "$ref": "#/$defs/data" } } }
+    },
+    { "if": { "properties": { "status": { "const": "partial" } } }, "then": { "properties": { "flags": { "minItems": 1 } } } }
+  ],
+  "$defs": {
+    "text": { "type": "string", "pattern": "\\S" },
+    "beat_id": { "type": "string", "pattern": "^B[1-9][0-9]*$" },
+    "event_id": { "type": "string", "pattern": "^EV[0-9]{2,3}$" },
+    "character_id": { "type": "string", "pattern": "^CH[0-9]{2}$" },
+    "role_id": { "type": "string", "pattern": "^ROLE[0-9]{2}$" },
+    "card_id": { "type": "string", "pattern": "^CARD[0-9]{2}$" },
+    "directive_id": { "type": "string", "pattern": "^DIR[0-9]{2}$" },
+    "state": { "type": "string", "pattern": "^BS0[1-7]$" },
+    "checkpoint": { "description": "A checkpoint of a physical stage of the design, BS03-CP01 onward: the state the motorcycle has reached at that point.", "type": "string", "pattern": "^BS0[3-7]-CP(0[1-9]|[1-9][0-9])$" },
+    "part_id": { "type": "string", "pattern": "^P[0-9]{2,3}$" },
+    "configuration_id": { "type": "string", "pattern": "^P[0-9]{2,3}-K[0-9]{2}$" },
+    "light_id": { "type": "string", "pattern": "^P[0-9]{2,3}-L[0-9]{2}$" },
+    "support_ref": { "type": "string", "pattern": "^(P[0-9]{2,3}|CH[0-9]{2}|lift_table|frame_jig|engine_stand|wheel_dolly|paddock_stand|mockup_parts)$" },
+    "design_ref": { "type": "string", "pattern": "^(P[0-9]{2,3}|S[0-9]{2}(-W[0-9]{2})?|J[0-9]{2,3}|F[1-3]|M[0-9]+|[A-Z0-9]+-[A-Z0-9-]{1,40})$" },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["story", "characters", "beats", "shot_directives", "text_cards", "music_brief"],
+      "properties": {
+        "story": { "$ref": "#/$defs/story" },
+        "characters": {
+          "description": "Exactly five people, one for each of the five roles of the design and in the same order: CH01 plays ROLE01 through CH05 plays ROLE05.",
+          "type": "array", "minItems": 5, "maxItems": 5,
+          "prefixItems": [
+            { "$ref": "#/$defs/character", "properties": { "id": { "const": "CH01" }, "role_ids": { "const": ["ROLE01"] } } },
+            { "$ref": "#/$defs/character", "properties": { "id": { "const": "CH02" }, "role_ids": { "const": ["ROLE02"] } } },
+            { "$ref": "#/$defs/character", "properties": { "id": { "const": "CH03" }, "role_ids": { "const": ["ROLE03"] } } },
+            { "$ref": "#/$defs/character", "properties": { "id": { "const": "CH04" }, "role_ids": { "const": ["ROLE04"] } } },
+            { "$ref": "#/$defs/character", "properties": { "id": { "const": "CH05" }, "role_ids": { "const": ["ROLE05"] } } }
+          ],
+          "items": false
+        },
+        "beats": { "type": "array", "minItems": 6, "maxItems": 80, "items": { "$ref": "#/$defs/beat" } },
+        "shot_directives": { "type": "array", "items": { "$ref": "#/$defs/directive" } },
+        "text_cards": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/card" } },
+        "music_brief": { "$ref": "#/$defs/music" }
+      }
+    },
+    "character": {
+      "description": "One original adult person of the film, the same person in every scene and shot that names the id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role_ids", "description"],
+      "properties": {
+        "id": { "$ref": "#/$defs/character_id" },
+        "role_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/role_id" } },
+        "description": { "$ref": "#/$defs/text" }
+      }
+    },
+    "story": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["logline", "spine", "hero_beat", "loops", "obstacles"],
+      "properties": {
+        "logline": { "$ref": "#/$defs/text" },
+        "spine": { "$ref": "#/$defs/text" },
+        "hero_beat": { "$ref": "#/$defs/beat_id" },
+        "loops": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["motif", "plant", "payoff"],
+            "properties": {
+              "motif": { "$ref": "#/$defs/text" },
+              "plant": { "$ref": "#/$defs/beat_id" },
+              "payoff": { "$ref": "#/$defs/beat_id" }
+            }
+          }
+        },
+        "obstacles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "problem", "solution", "problem_beat", "solution_beat"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^O[1-9][0-9]*$" },
+              "problem": { "$ref": "#/$defs/text" },
+              "solution": { "$ref": "#/$defs/text" },
+              "problem_beat": { "$ref": "#/$defs/beat_id" },
+              "solution_beat": { "$ref": "#/$defs/beat_id" }
+            }
+          }
+        }
+      }
+    },
+    "situation": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "engine", "side_stand", "speed_kmh", "lean_angle_deg", "dry_road", "procedures"],
+          "properties": {
+            "mode": { "enum": ["representation", "mockup", "in_workshop", "parked", "idling", "riding"] },
+            "engine": { "enum": ["off", "running", null] },
+            "side_stand": { "enum": ["up", "down", null] },
+            "speed_kmh": { "type": ["number", "null"], "minimum": 0 },
+            "lean_angle_deg": { "type": ["number", "null"], "minimum": 0 },
+            "dry_road": { "type": ["boolean", "null"] },
+            "procedures": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" } }
+          }
+        }
+      ]
+    },
+    "operating": {
+      "description": "The state of the motorcycle and what holds it at one instant. Every key is present: null for what does not apply, [] for none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vehicle_motion", "engine", "configurations", "lights", "support_refs"],
+      "properties": {
+        "vehicle_motion": { "enum": ["stationary", "moving", "not_applicable"] },
+        "engine": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["part_id", "state"],
+              "properties": { "part_id": { "$ref": "#/$defs/part_id" }, "state": { "enum": ["off", "starting", "idling", "running"] } }
+            }
+          ]
+        },
+        "configurations": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/configuration_id" } },
+        "lights": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["light_id", "state"],
+            "properties": { "light_id": { "$ref": "#/$defs/light_id" }, "state": { "enum": ["off", "on"] } }
+          }
+        },
+        "support_refs": { "description": "What holds the motorcycle upright, by id only: a part of the design (such as its side stand), a character of this script, or a temporary item a checkpoint the beat runs through lists in its temporary. A real motorcycle that stands still always names what holds it and never stands on its wheels alone. [] only while the motorcycle moves and nobody named here keeps it upright, or when vehicle_motion is not_applicable because no motorcycle that can move is shown.", "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/support_ref" } }
+      }
+    },
+    "event": {
+      "description": "One thing that happens, with a visible result: the smallest unit of story a shot can cover.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "action", "result", "character_ids", "design_refs", "operating_start", "operating_end"],
+      "properties": {
+        "id": { "$ref": "#/$defs/event_id" },
+        "action": { "$ref": "#/$defs/text" },
+        "result": { "$ref": "#/$defs/text" },
+        "character_ids": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/character_id" } },
+        "design_refs": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/design_ref" } },
+        "operating_start": { "$ref": "#/$defs/operating" },
+        "operating_end": { "$ref": "#/$defs/operating" }
+      }
+    },
+    "beat": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "act", "state", "checkpoint_start", "checkpoint_end", "time_jump", "purpose", "visual", "location", "time_light", "reveal", "on_screen", "design_refs", "in_use", "configurations", "situation", "events", "link", "sfx"],
+      "properties": {
+        "id": { "$ref": "#/$defs/beat_id" },
+        "act": { "description": "The film has no hook act: it opens on the idea. The opening seconds shown to the audience are cut from the finished film.", "enum": ["idea", "fabrication", "finish", "experience", "hero", "ending"] },
+        "state": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/state" }] },
+        "checkpoint_start": { "description": "The checkpoint of the beat's stage the beat opens on: the state reached there, before the beat's work. null on a design stage (BS01, BS02) and when the beat has no stage.", "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/checkpoint" }] },
+        "checkpoint_end": { "description": "The checkpoint of the beat's stage the beat ends on: the same as checkpoint_start when the beat changes no state, a later checkpoint of the same stage when its work reaches it. null exactly when checkpoint_start is null.", "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/checkpoint" }] },
+        "time_jump": { "enum": ["none", "flash_forward", "flashback"] },
+        "purpose": { "$ref": "#/$defs/text" },
+        "visual": { "$ref": "#/$defs/text" },
+        "location": { "$ref": "#/$defs/text" },
+        "time_light": { "$ref": "#/$defs/text" },
+        "reveal": { "enum": ["none", "fragment", "shape", "detail", "whole"] },
+        "on_screen": { "description": "Every character an event of the beat names.", "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/character_id" } },
+        "design_refs": { "description": "The design ids the beat shows: parts, systems, lines, connections, features, moments and identity rules.", "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/design_ref" } },
+        "in_use": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^(P[0-9]{2,3}|S[0-9]{2}|F[1-3])$" } },
+        "configurations": { "description": "The configurations the beat ends in: those of the operating_end of its last event.", "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/configuration_id" } },
+        "situation": { "description": "The situation the beat ends in; the limits of the beat are met in it.", "$ref": "#/$defs/situation" },
+        "events": { "type": "array", "minItems": 1, "maxItems": 8, "items": { "$ref": "#/$defs/event" } },
+        "link": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/text" }] },
+        "sfx": { "type": "array", "items": { "$ref": "#/$defs/text" } }
+      },
+      "if": { "properties": { "act": { "const": "ending" } } },
+      "then": { "properties": { "situation": { "type": "null" } } },
+      "else": { "properties": { "state": { "$ref": "#/$defs/state" } } }
+    },
+    "directive": {
+      "description": "A timing the user fixed for one shot, kept as given for the shot plan. Present only when the brief asks for one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "beat_ids", "event_anchors", "required_first_frame", "required_end_frame"],
+      "properties": {
+        "id": { "$ref": "#/$defs/directive_id" },
+        "beat_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/beat_id" } },
+        "event_anchors": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["event_id", "start_ms", "end_ms"],
+            "properties": {
+              "event_id": { "$ref": "#/$defs/event_id" },
+              "start_ms": { "type": "integer", "minimum": 0, "maximum": 3000 },
+              "end_ms": { "type": "integer", "minimum": 0, "maximum": 3000 }
+            }
+          }
+        },
+        "required_first_frame": { "$ref": "#/$defs/text" },
+        "required_end_frame": { "$ref": "#/$defs/text" }
+      }
+    },
+    "card": {
+      "description": "A text card: what it says and the beat, and optionally the event, it belongs to. Its time on screen is set by the shot plan.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "beat", "event", "text", "type", "source_ref"],
+      "properties": {
+        "id": { "$ref": "#/$defs/card_id" },
+        "beat": { "$ref": "#/$defs/beat_id" },
+        "event": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/event_id" }] },
+        "text": { "$ref": "#/$defs/text" },
+        "type": { "enum": ["STAGE", "SPEC", "NAME", "DISCLAIMER", "END"] },
+        "source_ref": { "anyOf": [{ "type": "null" }, { "type": "string", "pattern": "^motorcycle\\.(specs|name)(\\.[a-z_]+)*$" }] }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "SPEC" } } }, "then": { "properties": { "source_ref": { "type": "string" } } } },
+        { "if": { "properties": { "type": { "const": "DISCLAIMER" } } }, "then": { "properties": { "text": { "const": "Fictional concept. No manufacturer affiliation or endorsement." }, "source_ref": { "type": "null" } } } }
+      ]
+    },
+    "music": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bpm", "instruments", "energy", "hits"],
+      "properties": {
+        "bpm": { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "number", "minimum": 40, "maximum": 200 } },
+        "instruments": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "energy": { "$ref": "#/$defs/text" },
+        "hits": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["moment", "beat"],
+            "properties": {
+              "moment": { "enum": ["build", "reveal", "first_fire", "ending"] },
+              "beat": { "$ref": "#/$defs/beat_id" }
+            }
+          }
+        }
+      }
+    }
+  }
+}

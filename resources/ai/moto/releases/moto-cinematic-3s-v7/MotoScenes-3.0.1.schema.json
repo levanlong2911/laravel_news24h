@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoScenes",
+  "title": "Moto Phase 6 — scenes, continuity and tracked work (moto-scenes-v3)",
+  "description": "One answer of Phase 6 for a custom motorcycle film: the approved beats grouped into scenes, with the blocking of people and things, the continuity each scene starts and ends with, its incoming transition and the work its beats show on parts with the connections that work makes or breaks. A scene has no screen time: the shot plan sets it. Environment assignments, events, characters, configurations and motorcycle states stay with the beats and are derived by code; so are the parts off the motorcycle at the start and end of every scene, which the answer never lists.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "phase", "project_id", "prompt_version", "status", "data", "flags"],
+  "properties": {
+    "format": { "const": "moto-scenes-v3" },
+    "phase": { "const": "6" },
+    "project_id": { "$ref": "#/$defs/text" },
+    "prompt_version": { "$ref": "#/$defs/text" },
+    "status": { "enum": ["ok", "partial", "fail"] },
+    "data": { "type": "object" },
+    "flags": {
+      "description": "Short notes for the reviewer. With status partial, name briefly what blocks, including a blocking conflict carried from the background text, without copying whole conflicts. With status fail, name the fault in the input.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/text" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "fail" } } },
+      "then": { "properties": { "data": { "maxProperties": 0 }, "flags": { "minItems": 1 } } },
+      "else": { "properties": { "data": { "$ref": "#/$defs/data" } } }
+    },
+    {
+      "if": { "properties": { "status": { "const": "partial" } } },
+      "then": { "properties": { "flags": { "minItems": 1 } } }
+    }
+  ],
+  "$defs": {
+    "text": { "type": "string", "pattern": "\\S" },
+    "text_or_null": { "oneOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] },
+    "texts": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+    "beat_id": { "type": "string", "pattern": "^B[1-9][0-9]*$" },
+    "scene_id": { "type": "string", "pattern": "^SC[0-9]{2}$" },
+    "part_id": { "type": "string", "pattern": "^P[0-9]{2,3}$" },
+    "light_id": { "type": "string", "pattern": "^P[0-9]{2,3}-L[0-9]{2}$" },
+    "evidence": {
+      "description": "Evidence paths resolve against this Phase 6 input; do not copy another phase's internal evidence paths unchanged or rewrite them by adding a prefix. path: dot-separated keys starting at a top-level key of this input; a list item is named by its id, by its beat or by its zero-based index, e.g. script.beats.B4.link, locations.beats.B11.uses.0.background, design_states.states.BS07.previously_present. A conflict of the background text is cited through its record kept in this input, e.g. locations.conflicts.0.note. quote: text copied verbatim from a text field or an item of a text list. value: the exact value and type of an id, an enumerated value, a number, a boolean, null or structured data; ids and enumerated values are never quoted.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^(variables|script|locations|design_states)(\\.[A-Za-z0-9_-]+)+$" },
+        "quote": { "$ref": "#/$defs/text" },
+        "value": {}
+      },
+      "oneOf": [
+        { "required": ["quote"], "not": { "required": ["value"] } },
+        { "required": ["value"], "not": { "required": ["quote"] } }
+      ]
+    },
+    "event_evidence": {
+      "description": "The script event that shows a work item or a connection change, cited by its id: path script.beats.<beat>.events.<event>.id of the item's own beat, value that event id, e.g. {\"path\":\"script.beats.B11.events.EV55.id\",\"value\":\"EV55\"}. The event's text is never quoted here: code reads its action and result from the script.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "value"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^script\\.beats\\.B[1-9][0-9]*\\.events\\.EV[0-9]{2,3}\\.id$" },
+        "value": { "type": "string", "pattern": "^EV[0-9]{2,3}$" }
+      }
+    },
+    "connection_change": {
+      "description": "A connection between two parts that an event of the beat shows being made or broken. attach: part is fixed to parent; from then on, within the build state, moving parent moves part with it. detach: part is taken off parent. The design's parent of a part, a shared place and with join nothing by themselves; record a connection only where an event shows it. One of the two parts is the item's part or one of its with.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["part", "parent", "change", "evidence"],
+      "properties": {
+        "part": { "$ref": "#/$defs/part_id" },
+        "parent": { "$ref": "#/$defs/part_id" },
+        "change": { "enum": ["attach", "detach"] },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/event_evidence" } }
+      }
+    },
+    "protection": {
+      "description": "One character present at that moment. items: null when the character's equipment is unknown, [] when it is established that they wear none, otherwise what they wear for their action, a visor only when their helmet has one.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["character", "items"],
+      "properties": {
+        "character": { "description": "The id of a character of script.characters.", "type": "string", "pattern": "^CH[0-9]{2}$" },
+        "items": { "oneOf": [{ "$ref": "#/$defs/texts" }, { "type": "null" }] }
+      }
+    },
+    "continuity": {
+      "description": "The staging state at the start or end of the scene beyond the source records. Use null only where the schema allows it; keep every required key. null marks an unestablished or inapplicable detail, [] an established absence. lights_on is null in a scene without a physical build state (a stage of kind build or finished). The parts off the motorcycle are not written here: code derives them from work. Protection is always an array; use items: null for a character whose equipment is unknown.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["placement", "lights_on", "surface_condition", "protection", "weather"],
+      "properties": {
+        "placement": { "$ref": "#/$defs/text_or_null" },
+        "lights_on": {
+          "description": "Ids from design_states.lights that are on, each on a part present at the scene's build state and installed and operable no later than that state.",
+          "oneOf": [{ "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/light_id" } }, { "type": "null" }]
+        },
+        "surface_condition": { "enum": ["clean", "dusty", "grimy", null] },
+        "protection": {
+          "description": "The characters present at that moment, each once; [] when no character needs a record then, never to hide what is unknown. A character may enter or leave within the scene.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/protection" }
+        },
+        "weather": { "$ref": "#/$defs/text_or_null" }
+      }
+    },
+    "transition": {
+      "description": "A match_cut cites the link, visual or sfx of the last beat before the scene or of its first beat. A time_jump cites the time_jump value, other than none, of one of those two beats.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "description", "evidence"],
+      "properties": {
+        "kind": { "enum": ["cut", "match_cut", "time_jump", "dip"] },
+        "description": { "$ref": "#/$defs/text" },
+        "evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+      },
+      "if": { "properties": { "kind": { "enum": ["match_cut", "time_jump"] } } },
+      "then": { "properties": { "evidence": { "minItems": 1 } } }
+    },
+    "work_item": {
+      "description": "What is done to a part in one beat of the scene and where it is at the start and the end of that work, in beat order. with: the other parts the same action handles, in the same place as the part at the start and at the end; with joins nothing. How far a part is made and where it is are separate: a part the build state lists in progress is being made on the motorcycle or off it, as the event shows. make only while the build state lists the part in progress; make, finish, assemble and paint never change where the part is; test_fit puts on, to try it, a part that has not been on the motorcycle; remove takes off a part that is on; reinstall puts back one that was on before, by its first_state or by earlier work; install puts on for the first time a part the build state has present. A part the build state lists only in progress may be tried on, taken off and put back, and is never installed; its first test_fit counts as having been on, so it goes back on with reinstall. Within a build state a part stays where its last work left it until a test_fit, install, reinstall or remove moves it; at a finished state every part ends on. connection_changes: the connections between parts this work makes or breaks, [] when none. Evidence is the event of the item's own beat that shows the work, by id.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat", "part", "operation", "with", "location_start", "location_end", "connection_changes", "evidence"],
+      "properties": {
+        "beat": { "$ref": "#/$defs/beat_id" },
+        "part": { "$ref": "#/$defs/part_id" },
+        "operation": { "enum": ["make", "finish", "test_fit", "assemble", "paint", "remove", "install", "reinstall", "align_check"] },
+        "with": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/part_id" } },
+        "location_start": { "enum": ["on_motorcycle", "off_motorcycle"] },
+        "location_end": { "enum": ["on_motorcycle", "off_motorcycle"] },
+        "connection_changes": { "type": "array", "items": { "$ref": "#/$defs/connection_change" } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/event_evidence" } }
+      }
+    },
+    "scene": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "beats", "purpose", "set_brief", "blocking", "continuity_from", "continuity_start", "continuity_end", "transition_in", "work", "assumptions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/scene_id" },
+        "beats": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/beat_id" } },
+        "purpose": { "description": "One sentence on what the scene does in the story; never a rewrite of its beats.", "$ref": "#/$defs/text" },
+        "set_brief": { "description": "The arrangement of the place the scene needs beyond the background records, as staging notes; never a repeat of the background or a render prompt; null when nothing is needed.", "$ref": "#/$defs/text_or_null" },
+        "blocking": { "description": "Where each person and each thing stands at the start of the scene and how they move through its events: who works and who watches, from which side a person or a part comes in, which hand or tool meets which part, and the jig, stand or support that holds the motorcycle or the part. People are named by character id, parts by part id. Staging only: no camera, no lens, no timing.", "$ref": "#/$defs/text" },
+        "continuity_from": { "oneOf": [{ "$ref": "#/$defs/scene_id" }, { "type": "null" }] },
+        "continuity_start": { "$ref": "#/$defs/continuity" },
+        "continuity_end": { "$ref": "#/$defs/continuity" },
+        "transition_in": { "oneOf": [{ "$ref": "#/$defs/transition" }, { "type": "null" }] },
+        "work": { "type": "array", "items": { "$ref": "#/$defs/work_item" } },
+        "assumptions": { "$ref": "#/$defs/texts" }
+      }
+    },
+    "conflict": {
+      "description": "Names what it affects: at least one scene or beat; when it names scenes, every beat it names lies in one of them. A conflict about a beat that cannot fit the grouping rules, such as a beat assigned to more than one place, blocks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenes", "beats", "evidence", "blocking", "note"],
+      "anyOf": [
+        { "properties": { "scenes": { "minItems": 1 } } },
+        { "properties": { "beats": { "minItems": 1 } } }
+      ],
+      "properties": {
+        "scenes": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/scene_id" } },
+        "beats": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/beat_id" } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/evidence" } },
+        "blocking": { "type": "boolean" },
+        "note": { "$ref": "#/$defs/text" }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scenes", "conflicts"],
+      "properties": {
+        "scenes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/scene" } },
+        "conflicts": { "type": "array", "items": { "$ref": "#/$defs/conflict" } }
+      }
+    }
+  }
+}
