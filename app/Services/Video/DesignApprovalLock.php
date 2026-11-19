@@ -12,10 +12,10 @@ use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
-use App\Video\DesignDna\DnaCheck;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoDesignCheck;
 use App\Video\Llm\JsonAnswer;
+use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\YachtDesign\DesignRunPolicy;
 use App\Video\YachtDesign\YachtDesignCheck;
 
@@ -50,7 +50,7 @@ final class DesignApprovalLock
         return $design !== null && $this->approves($projectId, $design);
     }
 
-    /** @return bool an approved master of this design, its set, its selected artifact, the canonical hash they pinned and the review that approved them all agree */
+    /** @return bool an approved master of this design, its set, its selected artifact, the canonical hash they pinned and the review that approved them all agree; the sets, the artifacts and the reviews of every master are each read in one query, however many masters there are */
     public function approves(string $projectId, VideoPlanningStage $design): bool
     {
         $canonicalHash = ModelSheetService::designHash($design, (string) ($design->input_json['workflow'] ?? ''));
@@ -67,23 +67,35 @@ final class DesignApprovalLock
             ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(prompt_spec_json, '$.design_stage_id')) = ?", [(string) $design->id])
             ->get();
 
+        if ($images->isEmpty()) {
+            return false;
+        }
+
+        $setIds = $images->map(static fn (VideoDesignImage $image): mixed => ((array) $image->prompt_spec_json)['model_sheet_set_id'] ?? null)->filter(static fn (mixed $id): bool => is_string($id) && $id !== '')->unique()->values();
+        $sets = VideoPlanningStage::query()->withoutSnapshot()->whereIn('id', $setIds)->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::MODEL_SHEET->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->get()->keyBy('id');
+        $artifacts = VideoArtifact::query()->whereIn('id', $images->pluck('selected_artifact_id')->unique()->values())->where('project_id', $projectId)->get()->keyBy('id');
+        $reviews = [];
+
         foreach ($images as $image) {
             $spec = (array) $image->prompt_spec_json;
-            $set = VideoPlanningStage::query()->withoutSnapshot()->whereKey($spec['model_sheet_set_id'] ?? null)->where('project_id', $projectId)
-                ->where('stage', PlanningStageName::MODEL_SHEET->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first();
-            $artifact = VideoArtifact::query()->whereKey($image->selected_artifact_id)->where('project_id', $projectId)->first();
+            $set = $sets->get($spec['model_sheet_set_id'] ?? '');
+            $artifact = $artifacts->get($image->selected_artifact_id);
 
             if ($set === null || $artifact === null || ($set->input_json['design_stage_id'] ?? null) !== (string) $design->id
                 || ($spec['design_canonical_hash'] ?? null) !== $canonicalHash) {
                 continue;
             }
 
-            if ($this->stageStore->latestSucceededForInput($projectId, PlanningStageName::MODEL_SHEET_REVIEW, ModelSheetService::reviewInput($set, $image, $artifact)) !== null) {
-                return true;
-            }
+            $reviews[] = $this->stageStore->inputHash(ModelSheetService::reviewInput($set, $image, $artifact));
         }
 
-        return false;
+        return $reviews !== [] && VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::MODEL_SHEET_REVIEW->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->whereIn('input_hash', array_values(array_unique($reviews)))
+            ->exists();
     }
 
     /** @return ?string why a stored design cannot be trusted: its own records, and the DNA it says it was written from */
@@ -121,12 +133,8 @@ final class DesignApprovalLock
 
         $pinned = $design->input_json['dna_stage_id'] ?? null;
         $newest = VideoPlanningStage::query()
+            ->passedDna()
             ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::DESIGN_DNA->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->where('output_json->check->verdict', DnaCheck::PASS)
-            ->where(static fn ($query) => $query->whereNull('output_json->check->requirements')->orWhereJsonLength('output_json->check->requirements', 0))
-            ->whereNull('input_json->orphan_of_stage_id')
             ->orderByDesc('planning_revision')
             ->value('id');
 
@@ -192,12 +200,39 @@ final class DesignApprovalLock
 
         try {
             $adapter = YachtDesignService::adapter($workflow);
+            $modelSheet = YachtDesignService::modelSheet($adapter->modelSheetConfig($manifest));
+
+            if (($input['assembly_protocol'] ?? null) !== null) {
+                $modelSheet = $this->pinnedModelSheet($design);
+
+                if ($modelSheet === null) {
+                    return $unverified('không đọc được bản chụp đầu vào của lượt chạy, nơi ghim camera của model sheet');
+                }
+
+                $assembly = $adapter->assembly((string) $prompt->prompt_content, [
+                    'project_id' => (string) $design->project_id,
+                    'prompt_version' => YachtDesignService::instructionVersion($prompt),
+                    'dna' => $dna,
+                    'model_sheet' => $modelSheet,
+                    'schemas' => PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest)->outputSchemas(),
+                ]);
+
+                if ($assembly === null || ! hash_equals((string) ($input['assembly_dna_sha256'] ?? ''), $assembly['dna_sha256'])) {
+                    return $unverified('Design DNA nguồn không còn khớp mã băm mà lượt đã lưu cho toàn bộ khối dna — DNA đã đổi sau khi thiết kế được ghép');
+                }
+
+                if (! hash_equals((string) ($input['assembly_sources_sha256'] ?? ''), $assembly['sources_sha256'])) {
+                    return $unverified('nguồn đã ghim của lượt chạy (camera model sheet, schema, giá trị hệ thống điền) không còn khớp mã băm mà lượt đã lưu');
+                }
+            }
+
             $check = $adapter->evaluate($raw, [
                 'project_id' => (string) $design->project_id,
                 'prompt_version' => YachtDesignService::instructionVersion($prompt),
                 'dna' => $dna,
+                'assembly' => $input['assembly_protocol'] ?? null,
                 'source_identity' => [],
-                'model_sheet' => YachtDesignService::modelSheet($adapter->modelSheetConfig($manifest)),
+                'model_sheet' => $modelSheet,
                 'forbidden' => [],
             ], $manifest)[1];
         } catch (\Throwable $e) {
@@ -205,6 +240,34 @@ final class DesignApprovalLock
         }
 
         return $this->checks[$key] = $check;
+    }
+
+    /**
+     * @param  VideoPlanningStage  $design  a design joined under an assembly protocol, or a hand revision of one
+     * @return ?array<string, mixed> the model-sheet presentation the run was sent with, read from the request it stored — for a hand revision, from the run it was revised from: the cameras the record was joined with, whatever the configuration says now; null when no stored request can be read
+     */
+    private function pinnedModelSheet(VideoPlanningStage $design): ?array
+    {
+        $stage = $design;
+
+        for ($step = 0; $step < 12 && $stage !== null; $step++) {
+            try {
+                $payload = $this->stageStore->payloadOf($stage);
+            } catch (\RuntimeException) {
+                return null;
+            }
+
+            if ($payload !== null) {
+                $sheet = json_decode($payload, true)['model_sheet'] ?? null;
+
+                return is_array($sheet) ? $sheet : null;
+            }
+
+            $source = $stage->input_json['revision_of'] ?? null;
+            $stage = is_string($source) ? VideoPlanningStage::query()->withoutSnapshot()->whereKey($source)->where('project_id', $design->project_id)->first() : null;
+        }
+
+        return null;
     }
 
     /** @var string the key under which a check that could not be made again carries what the run stored, as history only */

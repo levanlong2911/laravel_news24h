@@ -56,6 +56,7 @@ use App\Video\Inspiration\SourceCheck;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Moto\MotoContract;
 use App\Video\Superyacht\Spec\PhaseResolver;
+use App\Video\Superyacht\Spec\ResolvedPhase;
 use App\Video\Reference\ReferenceEnvironment;
 use App\Video\Reference\ReferenceView;
 use App\Video\Render\Video\FilmSegmentPrompt;
@@ -401,10 +402,13 @@ class VideoProjectService implements QueuedStageService
         };
     }
 
-    /** @return array<string, mixed> */
-    public function latestInspiration(string $projectId): array
+    /**
+     * @param  ?VideoProject  $loaded  that project when the caller already read it with its article and category, so it is not read again
+     * @return array<string, mixed>
+     */
+    public function latestInspiration(string $projectId, ?VideoProject $loaded = null): array
     {
-        $project = $this->videoProjectRepository->getById($projectId);
+        $project = $loaded !== null && (string) $loaded->id === $projectId ? $loaded : $this->videoProjectRepository->getById($projectId);
 
         if ($project === null) {
             return $this->emptyInspiration('Khong tim thay du an');
@@ -445,10 +449,11 @@ class VideoProjectService implements QueuedStageService
         $stored = $succeeded && is_array($latest->output_json) ? $latest->output_json : [];
         $phaseOne = ClaudeInspirationAnalyst::isPhaseOneRun($latest);
         $runInput = is_array($latest->input_json) ? $latest->input_json : [];
-        $pinnedProblem = $phaseOne && $succeeded ? $this->pinnedInspirationProblem($latest, $articleBlock) : null;
+        $pinnedBundle = null;
+        $pinnedProblem = $phaseOne && $succeeded ? $this->pinnedInspirationProblem($latest, $articleBlock, $prompt, $pinnedBundle) : null;
         $sourceCurrent = $phaseOne && $succeeded && $pinnedProblem === null;
         $sourceCheck = match (true) {
-            $sourceCurrent => self::sourceCheckOf((string) ($stored['raw_text'] ?? ''), (string) $articleBlock, (string) ($runInput['execution'] ?? ''), self::inspirationManifest($latest)),
+            $sourceCurrent => self::sourceCheckOf((string) ($stored['raw_text'] ?? ''), (string) $articleBlock, (string) ($runInput['execution'] ?? ''), self::inspirationManifest($latest), $pinnedBundle),
             $phaseOne && is_array($stored['source'] ?? null) => $stored['source'],
             default => null,
         };
@@ -496,12 +501,14 @@ class VideoProjectService implements QueuedStageService
      * Mot luot Phase 1 con la nguon dung duoc khi prompt no da dung con nguyen hash, bai viet chua doi
      * va (v2) hop dong no da ghim con khop DB. Prompt hay thong so moi hon khong lam no het hieu luc.
      *
+     * @param  ?AiPhase  $read  a Phase 1 revision this request already read; it stands for the pinned one only when it is that very row
+     * @param  ?ResolvedPhase  $replayed  receives the pinned contract once it replayed, so the check that follows reads its schemas from it
      * @return ?string why the stage can no longer serve as the source; null when it can
      */
-    private function pinnedInspirationProblem(VideoPlanningStage $stage, ?string $articleBlock): ?string
+    private function pinnedInspirationProblem(VideoPlanningStage $stage, ?string $articleBlock, ?AiPhase $read = null, ?ResolvedPhase &$replayed = null): ?string
     {
         $input = is_array($stage->input_json) ? $stage->input_json : [];
-        $phase = AiPhase::query()->find($input['phase_id'] ?? null);
+        $phase = $read !== null && (string) $read->id === ($input['phase_id'] ?? null) ? $read : AiPhase::query()->find($input['phase_id'] ?? null);
 
         if ($phase === null) {
             return 'Prompt Phase 1 mà lượt này đã dùng không còn trong DB.';
@@ -522,7 +529,7 @@ class VideoProjectService implements QueuedStageService
 
         if (in_array($input['execution'] ?? null, [ClaudeInspirationAnalyst::EXECUTION_V2, MotoContract::EVIDENCE_EXECUTION], true)) {
             try {
-                PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest(self::inspirationManifest($stage) ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
+                $replayed = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest(self::inspirationManifest($stage) ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
             } catch (\Throwable $e) {
                 return 'Hợp đồng mà lượt Phase 1 này đã ghim không còn khớp DB: '.$e->getMessage();
             }
@@ -4512,9 +4519,7 @@ class VideoProjectService implements QueuedStageService
             return [false, 'Chua co luot viet nen tang nao'];
         }
 
-        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
-            ? [true, 'ok']
-            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+        return $this->stageStore->resetRun($projectId, (string) $latest->id, 'Lượt này không còn — không có gì để reset.');
     }
 
     /**
@@ -4599,9 +4604,7 @@ class VideoProjectService implements QueuedStageService
             return [false, 'Chua co luot tao phan canh nao'];
         }
 
-        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
-            ? [true, 'ok']
-            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+        return $this->stageStore->resetRun($projectId, (string) $latest->id, 'Lượt này không còn — không có gì để reset.');
     }
 
     private function latestSceneExpansionStage(string $projectId): ?VideoPlanningStage
@@ -4839,9 +4842,7 @@ class VideoProjectService implements QueuedStageService
             return [false, 'Chua co luot viet prompt nao'];
         }
 
-        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
-            ? [true, 'ok']
-            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+        return $this->stageStore->resetRun($projectId, (string) $latest->id, 'Lượt này không còn — không có gì để reset.');
     }
 
     private function rawArticleFromModel(\App\Models\Article $article): RawArticle
@@ -4914,7 +4915,7 @@ class VideoProjectService implements QueuedStageService
         }
 
         $articleBlock ??= $this->inspirationArticle($project);
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject((string) $project->id, ClaudeInspirationAnalyst::ACTION);
+        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($project, ClaudeInspirationAnalyst::ACTION);
 
         $moto = MotoContract::is($workflow);
 
@@ -4923,7 +4924,7 @@ class VideoProjectService implements QueuedStageService
         }
 
         $manifest = $bundle->manifest();
-        $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
+        $prompt = $bundle->phase();
         $markers = $moto
             ? [MotoContract::EVIDENCE_FORMAT, 'Input format: `'.MotoContract::ARTICLE_INPUT.'`']
             : [PhaseOneEvidence::FORMAT_V2, 'Input format: `'.PhaseOneEvidence::INPUT_FORMAT.'`'];
@@ -4978,9 +4979,10 @@ class VideoProjectService implements QueuedStageService
      * luot v1 kiem nhu cu; luot v2 chi nhan cau tra loi v2 va kiem truoc JSON Schema da ghim.
      *
      * @param  ?array<string, mixed>  $manifest  the contract the run pinned; only a v2 run needs it
+     * @param  ?ResolvedPhase  $bundle  that contract when this request already replayed it from the manifest; its schemas are read from it and the manifest is not replayed again
      * @return array<string, mixed>
      */
-    private static function sourceCheckOf(string $rawText, string $articleBlock, string $execution, ?array $manifest = null): array
+    private static function sourceCheckOf(string $rawText, string $articleBlock, string $execution, ?array $manifest = null, ?ResolvedPhase $bundle = null): array
     {
         $answer = JsonAnswer::object($rawText);
         $contract = match ($execution) {
@@ -4999,7 +5001,7 @@ class VideoProjectService implements QueuedStageService
 
         try {
             [$decoded] = JsonAnswer::parse($rawText);
-            $schemas = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))->outputSchemas();
+            $schemas = ($bundle ?? PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng')))->outputSchemas();
             // A moto evidence answer is held to its JSON structure only, like every moto AI answer.
             $errors = $moto ? MotoContract::structureErrors($decoded, $schemas) : PhaseOneEvidence::schemaErrors($decoded, $schemas);
         } catch (\Throwable $e) {

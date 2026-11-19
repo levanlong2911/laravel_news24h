@@ -2,6 +2,9 @@
 
 namespace App\Models;
 
+use App\Enums\PlanningStageName;
+use App\Enums\VideoPlanningStageStatus;
+use App\Video\DesignDna\DnaCheck;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Model;
 
@@ -45,6 +48,22 @@ class VideoPlanningStage extends Model
     public function scopeWithoutSnapshot($query)
     {
         return $query->select(array_map(fn (string $column): string => $this->qualifyColumn($column), self::LISTING_COLUMNS));
+    }
+
+    /**
+     * The DNA runs a design may be built from: a succeeded DNA run that is not an attempt recorded apart, passed its check, and left no requirement open — a DNA that passed with a condition still open is not one of them. The workflow, the project and the order are the caller's.
+     *
+     * @param  \Illuminate\Database\Eloquent\Builder<self>  $query
+     * @return \Illuminate\Database\Eloquent\Builder<self>
+     */
+    public function scopePassedDna($query)
+    {
+        return $query
+            ->where('stage', PlanningStageName::DESIGN_DNA->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->whereNull('input_json->orphan_of_stage_id')
+            ->where('output_json->check->verdict', DnaCheck::PASS)
+            ->where(static fn ($open) => $open->whereNull('output_json->check->requirements')->orWhereJsonLength('output_json->check->requirements', 0));
     }
 
     public function project()

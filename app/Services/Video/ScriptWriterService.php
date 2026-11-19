@@ -242,13 +242,13 @@ final class ScriptWriterService implements QueuedStageService
                     : 'Lượt lưu bị giành mất — tải lại rồi thử lại.';
             });
         } catch (\Throwable $e) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không lưu được: '.$e->getMessage());
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không lưu được: '.$e->getMessage(), (string) $token);
 
             throw $e;
         }
 
         if ($problem !== null) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không được công bố: '.$problem);
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kịch bản không được công bố: '.$problem, (string) $token);
 
             return ['reason' => $problem] + $report;
         }

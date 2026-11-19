@@ -7,6 +7,7 @@ namespace App\Video\Moto;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Superyacht\Spec\PhaseResolver;
+use App\Video\Superyacht\Support\CanonicalJson;
 use App\Video\YachtDesign\DesignWorkflow;
 use RuntimeException;
 
@@ -55,6 +56,17 @@ final class MotoDesign implements DesignWorkflow
             ->outputSchemas());
     }
 
+    /**
+     * @param  ?array<string, mixed>  $manifest  the bundle a run is sent with
+     * @return list<array{label: string, json_schema_id: string, sha256: string, content: string}> the output schemas of the bundle exactly as they are pinned, with every constraint: what a record joined under an assembly protocol is held to
+     */
+    public static function pinnedSchemas(?array $manifest): array
+    {
+        return PhaseResolver::fromConfig((array) config('video.superyacht'))
+            ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
+            ->outputSchemas();
+    }
+
     /** @param  ?array<string, mixed>  $manifest  the bundle a run is sent with */
     public static function themed(?array $manifest): bool
     {
@@ -78,6 +90,35 @@ final class MotoDesign implements DesignWorkflow
     public function schemaText(string $content): string
     {
         return MotoContract::compactSchema($content);
+    }
+
+    public function assembly(string $prompt, array $context): ?array
+    {
+        if (MotoDesignAssembly::protocolOf($prompt) === null) {
+            return null;
+        }
+
+        $final = $context['schemas'][0] ?? throw new RuntimeException('Không ghép được bản thiết kế: hợp đồng đã ghim không có schema MotoDesign — không gọi model.');
+        $sources = MotoDesignAssembly::sources($context['project_id'], $context['prompt_version'], $context['dna'], $context['model_sheet'], (string) $final['content']);
+        $generation = MotoDesignAssembly::generationSchema((string) $final['content'], $sources);
+
+        return [
+            'protocol' => MotoDesignAssembly::PROTOCOL,
+            'sources' => $sources,
+            'sources_sha256' => hash('sha256', (string) json_encode($sources, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)),
+            'dna_sha256' => CanonicalJson::hash($context['dna']),
+            'input' => MotoDesignAssembly::input($sources),
+            'schema' => $generation['content'],
+            'schema_id' => $generation['id'],
+            'schema_sha256' => hash('sha256', $generation['content']),
+            'final_schema_sha256' => (string) $final['sha256'],
+            'label' => "{$final['label']} — generation schema (".MotoDesignAssembly::PROTOCOL.')',
+        ];
+    }
+
+    public function assemble(string $raw, array $assembly): array
+    {
+        return MotoDesignAssembly::assemble($raw, $assembly);
     }
 
     /** @return array<string, mixed> */
@@ -121,9 +162,10 @@ final class MotoDesign implements DesignWorkflow
         }
 
         $response = json_decode((string) json_encode($decoded), true);
+        $assembled = ($run['assembly'] ?? null) !== null;
 
         try {
-            $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, self::schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format !== MotoContract::DESIGN_FORMAT);
+            $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, $assembled ? self::pinnedSchemas($manifest) : self::schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format !== MotoContract::DESIGN_FORMAT);
         } catch (\Throwable $e) {
             $fault = MotoContract::structureFault($e);
 
@@ -145,6 +187,7 @@ final class MotoDesign implements DesignWorkflow
             $run['forbidden'],
             $schemaErrors,
             $format,
-        )) + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION]];
+            $assembled,
+        )) + ['technical_schema' => $assembled ? MotoDesignAssembly::FINAL_SCHEMA_CHECK : MotoContract::TECHNICAL_SCHEMA_VERSION]];
     }
 }

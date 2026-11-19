@@ -390,7 +390,7 @@ final class SceneWriterService implements QueuedStageService
         try {
             $recorded = $this->stageStore->finishSucceeded((string) $claimed->id, $token, $raw, $this->output($run, $result), ['instruction_version' => $run['prompt_version'], 'tokens_in' => 0, 'tokens_out' => 0, 'cost_usd' => 0]);
         } catch (\Throwable $e) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa scene không lưu được');
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa scene không lưu được', (string) $token);
 
             throw $e;
         }

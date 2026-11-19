@@ -687,7 +687,7 @@ TEXT;
                 ['instruction_version' => $correction['version'], 'tokens_in' => 0, 'tokens_out' => 0, 'cost_usd' => 0],
             );
         } catch (\Throwable $e) {
-            $this->stageStore->releaseClaim($claimed->id, 'Design correction could not be recorded');
+            $this->stageStore->releaseClaim($claimed->id, 'Design correction could not be recorded', $token);
 
             throw $e;
         }
@@ -1060,9 +1060,7 @@ TEXT;
             return [false, 'Chua co luot thiet ke tau nao'];
         }
 
-        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
-            ? [true, 'ok']
-            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+        return $this->stageStore->resetRun($projectId, (string) $latest->id, 'Lượt này không còn — không có gì để reset.');
     }
 
     /** @return array<string, mixed> */

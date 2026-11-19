@@ -20,13 +20,14 @@ use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoDnaCheck;
 use App\Video\Moto\MotoPipelineRelease;
 use App\Video\Superyacht\Spec\PhaseResolver;
+use App\Video\Superyacht\Spec\ResolvedPhase;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
 
 final class DesignDnaService implements QueuedStageService
 {
-    public const EXECUTION = 'db-phase-2-v1';
-
     public const EXECUTION_V2 = 'db-phase-2-v2';
 
     public const ACTION = 'spec.dna';
@@ -34,6 +35,15 @@ final class DesignDnaService implements QueuedStageService
     public const SCHEMA_HEADING = 'Phase 2 output JSON Schema';
 
     public const PHASE_CODE = 'phase-2';
+
+    /** @var string the key of the project metadata that holds the Phase 2 contract a moto project keeps once a design is built from its DNA: the manifest of that DNA run, so a later Phase 2 revision of its release never asks the project for another DNA */
+    public const CONTRACT_KEY = 'phase_2_contract';
+
+    /** @var int how many passed DNA runs of other projects one read of the concept history takes; it reads on, batch after batch, until it holds enough concepts or no run is left, so this bounds a read and never the history */
+    private const HISTORY_BATCH = 200;
+
+    /** @var string the index a read of the concept history is held to: with a row limit the database otherwise scans the whole table, every large column of every run included, which measured about eighty times slower */
+    private const HISTORY_INDEX = 'video_planning_stages_project_revision_stage_unique';
 
     public function __construct(
         private readonly PlanningStageStore $stageStore,
@@ -45,15 +55,23 @@ final class DesignDnaService implements QueuedStageService
 
     /**
      * @param  ?array{id: string, name: string}  $requester  who sent the run
+     * @param  ?VideoProject  $loaded  that project when the request already read it, with its article and category, to check who may run it: the run is prepared from it and it is not read again; what the claim stores is still written from the project read under the lock
      * @return array{0: ?VideoPlanningStage, 1: string} reason queued when a worker runs it later
      */
-    public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
+    public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null, ?VideoProject $loaded = null): array
     {
+        $held = null;
+
         return (new StageQueue($this->stageStore))->submit(
             'dna',
             $projectId,
             PlanningStageName::DESIGN_DNA,
-            fn (): array => $this->prepare($this->pinned($this->project($projectId))),
+            function () use ($projectId, $loaded): array {
+                $project = $loaded !== null && (string) $loaded->id === $projectId && $loaded->article !== null ? $loaded : $this->project($projectId);
+                $release = $this->release($project);
+
+                return $this->prepare($release === null ? $project : self::under($project, $release), release: $release);
+            },
             fn (VideoPlanningStage $served, array $run): bool => $regenerate && $this->replaceable($served, $run),
             $operationId,
             $requester,
@@ -64,7 +82,14 @@ final class DesignDnaService implements QueuedStageService
                 ? [null, 'DNA đã lưu cho đúng Phase 1 và prompt này chưa đạt kiểm kỹ thuật — bấm "Tạo lại DNA" để tạo bản mới. Không gọi model.']
                 : null,
             'Chưa gọi model DNA: ',
-            fn (array $run): ?string => $this->refusal($projectId),
+            function (array $run) use ($projectId, &$held): ?string {
+                return $this->refusal($projectId) ?? $this->moved($projectId, $run, $held);
+            },
+            static function (array $run) use (&$held): void {
+                if ($held !== null && is_string($run['release'] ?? null)) {
+                    MotoPipelineRelease::keep($held, $run['release']);
+                }
+            },
         );
     }
 
@@ -84,16 +109,17 @@ final class DesignDnaService implements QueuedStageService
         }
 
         $history = is_array($stage->input_json) ? ($stage->input_json['concept_history_stage_ids'] ?? null) : null;
+        $queued = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['manifest'] ?? null;
 
         return (new StageQueue($this->stageStore))->execute(
             $stageId,
             $token,
-            function () use ($stage, $history): array {
+            function () use ($stage, $history, $queued): array {
                 if ($this->approval->holds((string) $stage->project_id)) {
                     throw new RuntimeException(DesignApprovalLock::MESSAGE);
                 }
 
-                return $this->prepare($this->project((string) $stage->project_id), is_array($history) ? $history : null);
+                return $this->prepare($this->project((string) $stage->project_id), is_array($history) ? $history : null, null, is_array($queued) ? $queued : null);
             },
             $this->perform(),
             'tạo DNA',
@@ -115,16 +141,161 @@ final class DesignDnaService implements QueuedStageService
         return $project !== null && $project->article !== null ? $project : throw new RuntimeException('Không tìm thấy dự án hoặc dự án không gắn bài viết.');
     }
 
-    /** @return VideoProject the project, a moto one with the release it keeps from its first Phase 2 run on stored */
-    private function pinned(VideoProject $project): VideoProject
+    /**
+     * @return ?string the release a new Phase 2 run of the project is prepared under, read without storing it: the one a moto project pinned, else the one it would keep from its first run on; null for any other workflow. A project that pinned one costs no query
+     *
+     * @throws RuntimeException when the configured release of new projects is not declared
+     */
+    private function release(VideoProject $project): ?string
     {
         $workflow = config('video.superyacht.contracts.categories')[$project->article?->category?->slug ?? ''] ?? null;
 
-        if (MotoContract::is($workflow)) {
-            MotoPipelineRelease::pin($project, VideoPlanningStage::query()->where('project_id', $project->id)->where('stage', PlanningStageName::DESIGN_DNA->value)->exists());
+        return MotoContract::is($workflow)
+            ? MotoPipelineRelease::chosen($project, static fn (): bool => VideoPlanningStage::query()->where('project_id', $project->id)->where('stage', PlanningStageName::DESIGN_DNA->value)->exists())
+            : null;
+    }
+
+    /**
+     * @param  string  $release  what release() gave for the project
+     * @return VideoProject a copy of the project that reads as holding that release, for preparing a run only: every step of the preparation resolves its revisions under the release the claim will store. The copy is never saved; the claim writes the release from the project it reads under the lock
+     */
+    private static function under(VideoProject $project, string $release): VideoProject
+    {
+        $copy = clone $project;
+        $copy->setAttribute('metadata_json', [...(array) $project->metadata_json, MotoPipelineRelease::KEY => $release]);
+
+        return $copy;
+    }
+
+    /**
+     * @param  array<string, mixed>  $run  the prepared run, with the release and the contract it was prepared under
+     * @param  ?VideoProject  $held  receives the project as it is stored now, read inside the claim transaction under its lock, so what the claim stores is written from this copy and never from the one the run was prepared with
+     * @return ?string why the run may not open: the release of the project, or the Phase 2 contract it pinned, is no longer the one the run was prepared under; null when both still are, and for a workflow without releases. Reads only
+     */
+    private function moved(string $projectId, array $run, ?VideoProject &$held): ?string
+    {
+        if (! is_string($run['release'] ?? null)) {
+            return null;
         }
 
-        return $project;
+        $held = VideoProject::query()->with('article.category')->find($projectId);
+
+        if ($held === null) {
+            return 'Không tìm thấy dự án.';
+        }
+
+        $now = $this->release($held);
+
+        if ($now !== $run['release']) {
+            return "Bản phát hành của dự án đã đổi từ {$run['release']} sang {$now} trong lúc chuẩn bị — bấm lại để chạy theo bản hiện tại.";
+        }
+
+        $pinned = $held->metadata_json[self::CONTRACT_KEY]['bundle_hash'] ?? null;
+
+        return is_string($pinned) && ! hash_equals($pinned, (string) $run['input']['bundle_hash'])
+            ? 'Hợp đồng Phase 2 của dự án vừa được ghim khác với hợp đồng lượt này đã chuẩn bị — bấm lại để chạy theo hợp đồng đã ghim.'
+            : null;
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $queued  the manifest a queued run was sent with, so a worker prepares it under the contract it was queued with
+     * @return ResolvedPhase the Phase 2 contract a run is prepared under: for a worker, the one the queued run was sent with, whatever the project pinned since; otherwise the one the project pinned, else the one its release lists now
+     *
+     * @throws RuntimeException when a pinned or queued contract can no longer be replayed; the project is never moved to another revision by itself
+     */
+    private function contract(VideoProject $project, ?array $queued = null): ResolvedPhase
+    {
+        $resolver = PhaseResolver::fromConfig((array) config('video.superyacht'));
+        $pinned = $project->metadata_json[self::CONTRACT_KEY]['manifest'] ?? null;
+        $manifest = $queued ?? (is_array($pinned) ? $pinned : null);
+
+        if (! is_array($manifest)) {
+            return $resolver->forProject($project, self::ACTION);
+        }
+
+        try {
+            return $resolver->fromManifest($manifest);
+        } catch (RuntimeException $e) {
+            throw new RuntimeException('Hợp đồng Phase 2 '.($queued !== null ? 'của lượt đã xếp hàng' : 'đã ghim của dự án').' không còn dựng lại được: '.$e->getMessage().' — không tự chuyển sang revision khác, không gọi model.', 0, $e);
+        }
+    }
+
+    /**
+     * @param  string  $dnaStageId  the DNA run a design of the project is built from
+     * @return array{0: ?array{manifest: array<string, mixed>, bundle_hash: string, phase_revision: int, dna_stage_id: string}, 1: ?string} the Phase 2 contract a moto project would keep from that DNA run, or why it cannot: the run is a passed, usable DNA run of this very project and its manifest still replays to the rows it names. Reads only; the preview of the command and the pin itself decide from this one answer
+     */
+    public function contractFrom(string $projectId, string $dnaStageId): array
+    {
+        $project = VideoProject::query()->with('article.category')->find($projectId);
+
+        if ($project === null) {
+            return [null, 'Không tìm thấy dự án.'];
+        }
+
+        if (! MotoContract::is(config('video.superyacht.contracts.categories')[$project->article?->category?->slug ?? ''] ?? null)) {
+            return [null, 'Dự án không thuộc luồng moto — không ghim.'];
+        }
+
+        $stage = VideoPlanningStage::query()->withoutSnapshot()->whereKey($dnaStageId)->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::DESIGN_DNA->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first();
+
+        if ($stage === null) {
+            return [null, 'Lượt DNA nguồn của thiết kế không còn, chưa chạy xong hoặc không thuộc dự án.'];
+        }
+
+        if (! MotoCheckRules::usable((array) ($stage->output_json['check'] ?? []))) {
+            return [null, 'Lượt DNA nguồn chưa đạt kiểm kỹ thuật hoặc còn điều kiện chưa đạt.'];
+        }
+
+        $manifest = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['manifest'] ?? null;
+
+        if (! is_array($manifest)) {
+            return [null, 'Lượt DNA nguồn không lưu manifest.'];
+        }
+
+        [$bundleHash, $problem] = self::replay($manifest);
+
+        return $problem !== null
+            ? [null, 'Manifest của lượt DNA nguồn không còn dựng lại được: '.$problem]
+            : [['manifest' => $manifest, 'bundle_hash' => $bundleHash, 'phase_revision' => (int) $manifest['phase']['revision'], 'dna_stage_id' => (string) $stage->id], null];
+    }
+
+    /**
+     * @param  array<string, mixed>  $manifest  the manifest of a Phase 2 run
+     * @return array{0: ?string, 1: ?string} the bundle hash the manifest replays to, or why it no longer replays to the rows it names
+     */
+    public static function replay(array $manifest): array
+    {
+        try {
+            return [PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest)->bundleHash(), null];
+        } catch (RuntimeException $e) {
+            return [null, $e->getMessage()];
+        }
+    }
+
+    /**
+     * @param  string  $dnaStageId  the DNA run a design of the project is built from
+     * @return ?string why the contract was not pinned, null when the project keeps one: the one it already pinned, or now the contract contractFrom() reads from that DNA run. Pinned once, under the lock of the project; nothing else of the project is touched
+     */
+    public function pinContract(string $projectId, string $dnaStageId): ?string
+    {
+        return DB::transaction(function () use ($projectId, $dnaStageId): ?string {
+            $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->first();
+
+            if ($project !== null && is_array($project->metadata_json[self::CONTRACT_KEY]['manifest'] ?? null)) {
+                return null;
+            }
+
+            [$contract, $problem] = $this->contractFrom($projectId, $dnaStageId);
+
+            if ($contract === null) {
+                return $problem;
+            }
+
+            $project->forceFill(['metadata_json' => [...(array) $project->metadata_json, self::CONTRACT_KEY => $contract + ['pinned_at' => now()->toIso8601String()]]])->save();
+
+            return null;
+        });
     }
 
     /** @return array{model: string, effort: string, max_tokens: int, timeout_seconds: int, stream: bool, retry_times: int} */
@@ -144,7 +315,7 @@ final class DesignDnaService implements QueuedStageService
 
     /**
      * @param  ?array<string, mixed>  $inspiration  the Phase 1 panel this page already built, so it is not built again
-     * @return array<string, mixed>
+     * @return array<string, mixed> the DNA of the project as the screen and Phase 3 read it: its newest run, except for a project that pinned its Phase 2 contract, which goes on from the passed DNA of that contract — a later run written to another contract stays in the history and never takes its place once it is no longer waiting or running
      */
     public function panel(string $projectId, ?array $inspiration = null): array
     {
@@ -169,10 +340,22 @@ final class DesignDnaService implements QueuedStageService
             skipOrphans: true,
         );
         $next = $run === null ? null : self::label((int) $run['prompt']->revision, (string) $run['input']['workflow']);
-        $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::DESIGN_DNA, $run['input']);
+        $served = match (true) {
+            $run === null => null,
+            $matchesInput && $latest?->status === VideoPlanningStageStatus::SUCCEEDED->value => $latest,
+            default => $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::DESIGN_DNA, $run['input']),
+        };
+
+        if ($served !== null && ! $matchesInput && isset($project?->metadata_json[self::CONTRACT_KEY]) && ! in_array($latest?->status, [VideoPlanningStageStatus::PENDING->value, VideoPlanningStageStatus::RUNNING->value], true)) {
+            [$latest, $matchesInput] = [$served, true];
+        }
+
+        $shown = $served !== null && $latest !== null && (string) $served->id === (string) $latest->id;
+        $parsed = $latest?->status === VideoPlanningStageStatus::SUCCEEDED->value ? JsonAnswer::parse((string) ($latest->output_json['raw_text'] ?? '')) : null;
+        $servedCheck = $served === null ? null : self::checkOf($served, $run, $shown ? $parsed : null);
         $locked = $this->approval->holds($projectId);
         $canRun = ! $locked && $run !== null && $served === null;
-        $canRegenerate = ! $locked && $run !== null && $served !== null && $this->replaceable($served, $run);
+        $canRegenerate = ! $locked && $servedCheck !== null && ! MotoCheckRules::usable($servedCheck);
         $empty = ['stage_id' => null, 'analysed' => false, 'status' => null, 'running' => false, 'pending' => false, 'stuck' => false, 'error' => null, 'stream' => null, 'task' => null,
             'source' => null, 'current' => false, 'check' => null, 'novelty' => null, 'phase3_ready' => false, 'json' => null, 'json_error' => null];
 
@@ -183,12 +366,13 @@ final class DesignDnaService implements QueuedStageService
         $succeeded = $latest->status === VideoPlanningStageStatus::SUCCEEDED->value;
         $claimed = $latest->status === VideoPlanningStageStatus::RUNNING->value;
         $stored = $succeeded && is_array($latest->output_json) ? $latest->output_json : [];
-        $raw = (string) ($stored['raw_text'] ?? '');
         $current = $succeeded && $matchesInput && $run !== null;
-        $check = $current
-            ? self::checkOf($latest, $run)
-            : (is_array($stored['check'] ?? null) ? $stored['check'] : null);
-        [$parsed, $parseError] = $succeeded ? JsonAnswer::parse($raw) : [null, null];
+        $check = match (true) {
+            $current && $shown => $servedCheck,
+            $current => self::checkOf($latest, $run, $parsed),
+            default => is_array($stored['check'] ?? null) ? $stored['check'] : null,
+        };
+        [$decoded, $parseError] = $parsed ?? [null, null];
         $recorded = is_array($latest->input_json) ? $latest->input_json : [];
         $phase3Ready = $current && MotoCheckRules::usable((array) $check);
 
@@ -209,12 +393,12 @@ final class DesignDnaService implements QueuedStageService
             'source' => isset($recorded['phase_revision']) ? self::label((int) $recorded['phase_revision'], (string) ($recorded['workflow'] ?? '')) : null,
             'current' => $current,
             'check' => $check,
-            'novelty' => $phase3Ready ? self::ownNovelty($raw) : null,
+            'novelty' => $phase3Ready ? self::ownNovelty($parsed) : null,
             'can_regenerate' => $canRegenerate,
             'locked' => $locked,
             'phase3_ready' => $phase3Ready,
             'json' => $succeeded && $parseError === null
-                ? (string) json_encode($parsed, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                ? (string) json_encode($decoded, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                 : null,
             'json_error' => $parseError,
         ];
@@ -234,11 +418,13 @@ final class DesignDnaService implements QueuedStageService
     /**
      * @param  ?list<string>  $queuedHistory  the concept history stages a queued run was sent with, so a concept passed by another project while it waited changes nothing
      * @param  ?array<string, mixed>  $inspiration  the Phase 1 panel when the caller already read it
-     * @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>}
+     * @param  ?array<string, mixed>  $queuedManifest  the manifest a queued run was sent with, so the worker prepares it under that contract
+     * @param  ?string  $release  the release a new run of a moto project was prepared under, as release() read it; it is returned with the run so the claim checks and stores that very one
+     * @return array{prompt: AiPhase, system: string, manifest: array<string, mixed>, schemas: list<array<string, string>>, release: ?string, payload: string, prompt_version: string, settings: array<string, mixed>, input: array<string, mixed>, metadata: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>}
      */
-    private function prepare(VideoProject $project, ?array $queuedHistory = null, ?array $inspiration = null): array
+    private function prepare(VideoProject $project, ?array $queuedHistory = null, ?array $inspiration = null, ?array $queuedManifest = null, ?string $release = null): array
     {
-        $phaseOne = $inspiration ?? $this->videoProjects->latestInspiration((string) $project->id);
+        $phaseOne = $inspiration ?? $this->videoProjects->latestInspiration((string) $project->id, $project);
 
         if (! $phaseOne['source_passed'] || ! is_string($phaseOne['stage_id'])) {
             throw new RuntimeException('Phase 1 chưa đạt đánh giá nguồn, hoặc lượt đã ghim không còn khớp bài viết và prompt mà nó đã dùng.');
@@ -252,7 +438,7 @@ final class DesignDnaService implements QueuedStageService
         }
 
         $moto = MotoContract::is($workflow);
-        $stage = VideoPlanningStage::query()->findOrFail($phaseOne['stage_id']);
+        $stage = VideoPlanningStage::query()->select(['id', 'output_json'])->findOrFail($phaseOne['stage_id']);
         $inspiration = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($stage->output_json['raw_text'] ?? '')));
 
         if (! is_array($inspiration) || array_is_list($inspiration)) {
@@ -267,14 +453,14 @@ final class DesignDnaService implements QueuedStageService
             throw new RuntimeException('Kết quả Phase 1 không có mục exterior, interior, technology, visual hay signature nào mang ID để departure — không gọi model.');
         }
 
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject((string) $project->id, self::ACTION);
+        $bundle = $this->contract($project, $queuedManifest);
 
         if (! $bundle->ready()) {
-            throw new RuntimeException('Hợp đồng '.self::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).' — phát hành gói '.($moto ? 'moto-phase-2-dna-v1' : 'phase-2-design-dna-v4').' cho chủ đề này trước, không gọi model.');
+            throw new RuntimeException('Hợp đồng '.self::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).' — dữ liệu phát hành Phase 2 của chủ đề này còn thiếu (prompt và hash vẫn khớp, chỉ thiếu schema hoặc liên kết schema): '.($moto ? 'chạy php artisan db:seed --class=AiPhaseSeeder' : 'phát hành gói phase-2-design-dna-v4').' trước, không gọi model.');
         }
 
         $manifest = $bundle->manifest();
-        $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
+        $prompt = $bundle->phase();
         $themed = $moto && MotoContract::generation($manifest, 'MotoDna') >= 2;
         $markers = match (true) {
             $themed => [MotoContract::DNA_FORMAT_V2, 'Input format: `'.MotoContract::DNA_INPUT_V2.'`'],
@@ -288,9 +474,10 @@ final class DesignDnaService implements QueuedStageService
             }
         }
 
+        $outputSchemas = $bundle->outputSchemas();
         $schemas = array_map(
             static fn (array $schema): string => '## '.self::SCHEMA_HEADING." — {$schema['label']}\n\n```json\n".trim($schema['content'])."\n```",
-            $bundle->outputSchemas(),
+            $outputSchemas,
         );
         $flags = array_values(array_filter((array) ($phaseOne['source_check']['flags'] ?? []), 'is_string'));
         $brief = $moto ? self::motoBrief($themed ? $project : null) : [];
@@ -308,6 +495,8 @@ final class DesignDnaService implements QueuedStageService
             'prompt' => $prompt,
             'system' => implode("\n\n", [...array_column($bundle->parts(), 'content'), ...$schemas]),
             'manifest' => $manifest,
+            'schemas' => $outputSchemas,
+            'release' => $release,
             'payload' => $payload,
             'prompt_version' => self::instructionVersion($prompt),
             'settings' => self::settings(),
@@ -333,38 +522,46 @@ final class DesignDnaService implements QueuedStageService
 
     /**
      * @param  array{inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>}  $run
+     * @param  ?array{0: mixed, 1: ?string}  $parsed  the answer of the stage as JsonAnswer::parse() already read it in this request
      * @return array<string, mixed> the check of the contract the stage pinned; the answer's own format never chooses it
      */
-    private static function checkOf(VideoPlanningStage $stage, array $run): array
+    private static function checkOf(VideoPlanningStage $stage, array $run, ?array $parsed = null): array
     {
         $raw = (string) (is_array($stage->output_json) ? ($stage->output_json['raw_text'] ?? '') : '');
         $input = is_array($stage->input_json) ? $stage->input_json : [];
         $execution = (string) ($input['execution'] ?? '');
+        $parsed ??= JsonAnswer::parse($raw);
 
         if (! in_array($execution, [self::EXECUTION_V2, MotoContract::DNA_EXECUTION], true)) {
-            return DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], null, DnaCheck::FORMAT);
+            return DnaCheck::evaluate(JsonAnswer::objectOf($parsed), $run['inspiration'], $run['flags'], null, DnaCheck::FORMAT);
         }
 
-        return self::checkV2($raw, $run, PlanningStageStore::metadataOf($input)['manifest'] ?? null, $execution);
+        return self::checkV2($parsed, $run, PlanningStageStore::metadataOf($input)['manifest'] ?? null, $execution);
     }
 
     /**
-     * @param  array{inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>}  $run
-     * @param  mixed  $manifest  the contract the run pinned
+     * A fault of the check itself — a schema that cannot be read or compiled — leaves a moto answer unscored with that cause; it is never a verdict on the answer.
+     *
+     * @param  array{0: mixed, 1: ?string}  $parsed  the answer as JsonAnswer::parse() read it
+     * @param  array{manifest: array<string, mixed>, schemas: list<array<string, string>>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>}  $run
+     * @param  mixed  $manifest  the contract the run pinned; when it is the very contract $run was prepared under, the schemas already read for $run are used and the manifest is not replayed again
      * @param  string  $execution  the execution the run pinned; a moto run is checked as moto-dna-v1
      * @return array<string, mixed>
      */
-    private static function checkV2(string $raw, array $run, mixed $manifest, string $execution): array
+    private static function checkV2(array $parsed, array $run, mixed $manifest, string $execution): array
     {
         $moto = $execution === MotoContract::DNA_EXECUTION;
         $schemas = [];
         $fault = null;
+        $answer = JsonAnswer::objectOf($parsed);
 
         try {
-            [$decoded] = JsonAnswer::parse($raw);
-            $schemas = PhaseResolver::fromConfig((array) config('video.superyacht'))
-                ->fromManifest(is_array($manifest) ? $manifest : throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
-                ->outputSchemas();
+            [$decoded] = $parsed;
+            $schemas = is_array($manifest) && $manifest == $run['manifest']
+                ? $run['schemas']
+                : PhaseResolver::fromConfig((array) config('video.superyacht'))
+                    ->fromManifest(is_array($manifest) ? $manifest : throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
+                    ->outputSchemas();
             $errors = is_object($decoded) ? ($moto ? MotoContract::structureErrors($decoded, $schemas) : PhaseOneEvidence::schemaErrors($decoded, $schemas)) : ['phản hồi không phải một object JSON'];
         } catch (\Throwable $e) {
             $fault = $moto ? MotoContract::structureFault($e, $schemas) : null;
@@ -372,13 +569,12 @@ final class DesignDnaService implements QueuedStageService
         }
 
         if (! $moto) {
-            return DnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
+            return DnaCheck::evaluate($answer, $run['inspiration'], $run['flags'], $errors, DnaCheck::FORMAT_V2);
         }
 
         $format = MotoContract::generation(is_array($manifest) ? $manifest : [], 'MotoDna') >= 2 ? MotoContract::DNA_FORMAT_V2 : MotoContract::DNA_FORMAT;
-        // A fault of the check itself leaves the answer unscored with that cause; it is never a verdict on the answer.
         $check = $fault === null
-            ? MotoCheckRules::apply(MotoDnaCheck::evaluate(JsonAnswer::object($raw), $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors, $format))
+            ? MotoCheckRules::apply(MotoDnaCheck::evaluate($answer, $run['inspiration'], $run['flags'], $run['brief'], $run['history'], $errors, $format))
             : ['error' => $fault, 'config_fault' => true] + MotoDnaCheck::evaluate(null, $run['inspiration'], $run['flags'], $run['brief'], $run['history'], [], $format);
 
         return $check + ['technical_schema' => MotoContract::TECHNICAL_SCHEMA_VERSION];
@@ -403,36 +599,26 @@ final class DesignDnaService implements QueuedStageService
     /**
      * @param  array{phase_id: string, bundle_hash: string, inspiration_stage_id: string}  $contract  what this DNA run is pinned to
      * @param  ?list<string>  $queued  the history stages a queued run was sent with; they win over every other source
-     * @return array{0: list<array{id: string, theme: string, silhouette: string, features: list<string>, motifs: list<string>}>, 1: list<string>} the passed moto concepts of other projects with the DNA stages they come from: the snapshot a queued run or a passed run of this project and contract was sent with, or, while there is none, every concept passed before now, newest first
+     * @return array{0: list<array{id: string, theme: string, silhouette: string, features: list<string>, motifs: list<string>}>, 1: list<string>} the passed moto concepts of other projects with the DNA stages they come from: the snapshot a queued run or a passed run of this project and contract was sent with, in its stored order, or, while there is none, the newest concept of every other project passed before now, newest first, up to the configured number. Those are read HISTORY_BATCH runs at a time, newest finished first and by id among runs finished together, with only the columns the history is built from; a project already in the history is left out of the next read, so many runs of one project never hide the others
      */
     private static function conceptHistory(VideoProject $project, array $contract, ?array $queued = null): array
     {
-        $passed = static fn () => VideoPlanningStage::query()
-            ->where('stage', PlanningStageName::DESIGN_DNA->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->where('input_json->execution', MotoContract::DNA_EXECUTION)
-            ->whereNull('input_json->orphan_of_stage_id')
-            ->where('output_json->check->verdict', DnaCheck::PASS)
-            // A DNA that passed RULE with a condition still open is not one the design may be built from.
-            ->where(static fn ($query) => $query->whereNull('output_json->check->requirements')->orWhereJsonLength('output_json->check->requirements', 0));
-        $pinned = $queued ?? $passed()
+        $passed = static fn (): Builder => VideoPlanningStage::query()->passedDna()->where('input_json->execution', MotoContract::DNA_EXECUTION);
+        $pinned = $queued ?? ($passed()
             ->where('project_id', $project->id)
             ->where('input_json->phase_id', $contract['phase_id'])
             ->where('input_json->bundle_hash', $contract['bundle_hash'])
             ->where('input_json->inspiration_stage_id', $contract['inspiration_stage_id'])
             ->orderBy('created_at')
-            ->first()?->input_json['concept_history_stage_ids'] ?? null;
-        $stages = is_array($pinned)
-            ? VideoPlanningStage::query()->whereIn('id', $pinned)->get()->sortBy(static fn (VideoPlanningStage $stage): int => (int) array_search((string) $stage->id, $pinned, true))->values()
-            : $passed()->where('project_id', '!=', $project->id)->orderByDesc('finished_at')->get();
+            ->first(['id', 'input_json'])?->input_json['concept_history_stage_ids'] ?? null);
+        $limit = (int) config('video.moto.concept_history_limit');
         $history = [];
         $sources = [];
-
-        foreach ($stages as $stage) {
-            $dna = JsonAnswer::object((string) ($stage->output_json['raw_text'] ?? ''))['dna'] ?? null;
+        $take = static function (VideoPlanningStage $stage, mixed $output) use (&$history, &$sources, $limit): bool {
+            $dna = JsonAnswer::object((string) (is_array($output) ? ($output['raw_text'] ?? '') : ''))['dna'] ?? null;
 
             if (isset($history[$stage->project_id]) || ! is_array($dna)) {
-                continue;
+                return false;
             }
 
             $history[$stage->project_id] = [
@@ -444,10 +630,70 @@ final class DesignDnaService implements QueuedStageService
             ];
             $sources[] = (string) $stage->id;
 
-            if (count($history) >= (int) config('video.moto.concept_history_limit')) {
-                break;
+            return count($history) >= $limit;
+        };
+
+        if (is_array($pinned)) {
+            $stages = VideoPlanningStage::query()->whereIn('id', $pinned)->get(['id', 'project_id', 'output_json'])
+                ->sortBy(static fn (VideoPlanningStage $stage): int => (int) array_search((string) $stage->id, $pinned, true));
+
+            foreach ($stages as $stage) {
+                if ($take($stage, $stage->output_json)) {
+                    break;
+                }
             }
+
+            return [array_values($history), $sources];
         }
+
+        $after = null;
+
+        do {
+            $batch = $passed()
+                ->forceIndex(self::HISTORY_INDEX)
+                ->where('project_id', '!=', $project->id)
+                ->when($history !== [], static fn (Builder $query) => $query->whereNotIn('project_id', array_keys($history)))
+                ->when($after !== null, static fn (Builder $query) => $query->where(static function (Builder $older) use ($after): void {
+                    [$finishedAt, $id] = $after;
+
+                    if ($finishedAt === null) {
+                        $older->whereNull('finished_at')->where('id', '<', $id);
+                    } else {
+                        $older->where('finished_at', '<', $finishedAt)->orWhereNull('finished_at')
+                            ->orWhere(static fn (Builder $same) => $same->where('finished_at', $finishedAt)->where('id', '<', $id));
+                    }
+                }))
+                ->orderByDesc('finished_at')
+                ->orderByDesc('id')
+                ->limit(self::HISTORY_BATCH)
+                ->get(['id', 'project_id', 'finished_at'])
+                ->values();
+            $outputs = [];
+
+            foreach ($batch as $position => $stage) {
+                if (isset($history[$stage->project_id])) {
+                    continue;
+                }
+
+                if (! array_key_exists((string) $stage->id, $outputs)) {
+                    $next = $batch->slice($position)
+                        ->reject(static fn (VideoPlanningStage $row): bool => isset($history[$row->project_id]) || array_key_exists((string) $row->id, $outputs))
+                        ->unique('project_id')
+                        ->pluck('id');
+
+                    foreach (VideoPlanningStage::query()->whereIn('id', $next)->get(['id', 'output_json']) as $row) {
+                        $outputs[(string) $row->id] = $row->output_json;
+                    }
+                }
+
+                if ($take($stage, $outputs[(string) $stage->id] ?? null)) {
+                    break 2;
+                }
+            }
+
+            $last = $batch->last();
+            $after = $last === null ? null : [$last->getRawOriginal('finished_at'), (string) $last->id];
+        } while ($batch->count() === self::HISTORY_BATCH);
 
         return [array_values($history), $sources];
     }
@@ -458,21 +704,24 @@ final class DesignDnaService implements QueuedStageService
         return ! MotoCheckRules::usable(self::checkOf($served, $run));
     }
 
-    /** @return array{judge_score: mixed, closest_known: mixed} */
-    private static function ownNovelty(string $raw): array
+    /**
+     * @param  array{0: mixed, 1: ?string}  $parsed  the answer as JsonAnswer::parse() read it
+     * @return array{judge_score: mixed, closest_known: mixed} the novelty a yacht answer scored itself, which the yacht design reads from the panel
+     */
+    private static function ownNovelty(array $parsed): array
     {
-        $novelty = JsonAnswer::object($raw)['novelty'] ?? [];
+        $novelty = JsonAnswer::objectOf($parsed)['novelty'] ?? [];
 
         return ['judge_score' => $novelty['judge_score'] ?? null, 'closest_known' => $novelty['closest_known'] ?? null];
     }
 
     /**
-     * @param  array{input: array<string, mixed>, manifest: array<string, mixed>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>}  $run
+     * @param  array{input: array<string, mixed>, manifest: array<string, mixed>, schemas: list<array<string, string>>, inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>}  $run
      * @return array<string, mixed>
      */
     private function output(array $run, string $raw): array
     {
-        [, $error] = JsonAnswer::parse($raw);
+        $parsed = JsonAnswer::parse($raw);
 
         return [
             'execution' => (string) $run['input']['execution'],
@@ -480,8 +729,8 @@ final class DesignDnaService implements QueuedStageService
             'inspiration_stage_id' => $run['input']['inspiration_stage_id'],
             'flags' => $run['flags'],
             'raw_text' => $raw,
-            'json_parse_error' => $error,
-            'check' => self::checkV2($raw, $run, $run['manifest'], (string) $run['input']['execution']),
+            'json_parse_error' => $parsed[1],
+            'check' => self::checkV2($parsed, $run, $run['manifest'], (string) $run['input']['execution']),
         ];
     }
 

@@ -20,9 +20,13 @@ final class PhaseResolver
         return new self((array) ($config['contracts'] ?? []));
     }
 
-    public function forProject(string $projectId, string $action, ?TaskContext $context = null): ResolvedPhase
+    /**
+     * @param  string|VideoProject  $project  the id of the project, or the project a caller already read: its article and the category of that article are then read from it, loaded or not, and never asked for again
+     */
+    public function forProject(string|VideoProject $project, string $action, ?TaskContext $context = null): ResolvedPhase
     {
-        $project = VideoProject::query()->find($projectId) ?? throw new RuntimeException("Project {$projectId} does not exist.");
+        $projectId = $project instanceof VideoProject ? (string) $project->id : $project;
+        $project = $project instanceof VideoProject ? $project : (VideoProject::query()->find($project) ?? throw new RuntimeException("Project {$projectId} does not exist."));
         $article = $project->article ?? throw new RuntimeException("Project {$projectId} has no article.");
         $categoryId = (string) $article->category_id;
 
@@ -34,19 +38,21 @@ final class PhaseResolver
             throw new RuntimeException("The task context belongs to project {$context->projectId}, not {$project->id}.");
         }
 
-        return $this->resolve($categoryId, $action, (string) $project->id, $context, $this->releaseOf($project, $categoryId));
+        $category = $article->category ?? throw new RuntimeException("Category {$categoryId} does not exist.");
+
+        return $this->resolve($category, $action, (string) $project->id, $context, $this->releaseOf($project, $category));
     }
 
     /** @param ?string $release the release of a workflow that declares releases; without one such a workflow resolves its legacy release */
     public function forCategory(string $categoryId, string $action, ?TaskContext $context = null, ?string $release = null): ResolvedPhase
     {
-        return $this->resolve($categoryId, $action, $context?->projectId, $context, $release);
+        return $this->resolve(Category::query()->find($categoryId) ?? throw new RuntimeException("Category {$categoryId} does not exist."), $action, $context?->projectId, $context, $release);
     }
 
     /** @return ?string the release the project pinned for a workflow that declares releases, null when it pinned none or the workflow declares none */
-    private function releaseOf(VideoProject $project, string $categoryId): ?string
+    private function releaseOf(VideoProject $project, Category $category): ?string
     {
-        $slug = Category::query()->find($categoryId)?->slug;
+        $slug = $category->slug;
         $workflow = $slug === null ? null : ($this->contracts['categories'][$slug] ?? null);
         $key = $workflow === null ? null : ($this->contracts['workflows'][$workflow]['release_key'] ?? null);
         $pinned = is_string($key) ? ($project->metadata_json[$key] ?? null) : null;
@@ -73,12 +79,15 @@ final class PhaseResolver
 
         $category = Category::query()->find($manifest['category']['id'] ?? null)
             ?? throw new RuntimeException('The category of the manifest no longer exists.');
-        $phase = AiPhase::query()->find($manifest['phase']['id'] ?? null)
+        $phaseId = $manifest['phase']['id'] ?? null;
+        $instructionIds = array_map(static fn (array $item): mixed => $item['id'] ?? null, (array) $manifest['instructions']);
+        $rows = AiPhase::query()->whereIn('id', array_values(array_unique(array_filter([$phaseId, ...$instructionIds], 'is_string'))))->get()->keyBy('id');
+        $phase = (is_string($phaseId) ? $rows->get($phaseId) : null)
             ?? throw new RuntimeException('The phase revision of the manifest no longer exists.');
         $instructions = array_map(
-            static fn (array $item): AiPhase => AiPhase::query()->find($item['id'] ?? null)
+            static fn (mixed $id): AiPhase => (is_string($id) ? $rows->get($id) : null)
                 ?? throw new RuntimeException('An instruction revision of the manifest no longer exists.'),
-            (array) $manifest['instructions'],
+            $instructionIds,
         );
         $action = (array) $manifest['action'];
         $key = (string) ($action['key'] ?? '');
@@ -94,9 +103,8 @@ final class PhaseResolver
         return $bundle;
     }
 
-    private function resolve(string $categoryId, string $actionKey, ?string $projectId, ?TaskContext $context, ?string $release = null): ResolvedPhase
+    private function resolve(Category $category, string $actionKey, ?string $projectId, ?TaskContext $context, ?string $release = null): ResolvedPhase
     {
-        $category = Category::query()->find($categoryId) ?? throw new RuntimeException("Category {$categoryId} does not exist.");
         $workflow = $this->contracts['categories'][$category->slug]
             ?? throw new RuntimeException("Category {$category->slug} has no configured workflow.");
         $contract = $this->release($workflow, $release);
@@ -160,8 +168,31 @@ final class PhaseResolver
             ->all();
 
         return self::choose($rows, $range) ?? throw new RuntimeException(isset($range['revisions'])
-            ? "{$code} of {$workflow} has no published revision of its release catalogue (id, hash and input format ".json_encode($range['input_format'] ?? null).') for this category.'
+            ? "{$code} of {$workflow} has no published revision of its release catalogue (id, hash and input format ".json_encode($range['input_format'] ?? null).') for this category: '.self::catalogueFault($rows, $range).'.'
             : "{$code} of {$workflow} has no published revision from ".(int) ($range['from'] ?? 1).(isset($range['to']) ? ' to '.(int) $range['to'] : '').' for this category.');
+    }
+
+    /**
+     * @param  list<AiPhase>  $rows  every revision of the phase stored for the category
+     * @param  array<string, mixed>  $rule  a catalogue of revisions that chose none of them
+     * @return string why: no listed revision is stored at all, which is release data that was never seeded, or, for each one that is stored, what keeps it out — not published, a text whose hash is not the listed one, or a text that does not declare the input format
+     */
+    private static function catalogueFault(array $rows, array $rule): string
+    {
+        $listed = array_column((array) $rule['revisions'], 'sha256', 'id');
+        $marker = is_string($rule['input_format'] ?? null) ? 'Input format: `'.$rule['input_format'].'`' : null;
+        $stored = array_values(array_filter($rows, static fn (AiPhase $row): bool => isset($listed[(string) $row->id])));
+
+        if ($stored === []) {
+            return 'none of the '.count($listed).' listed revisions is stored, the release data was not seeded';
+        }
+
+        return implode('; ', array_map(static fn (AiPhase $row): string => "revision {$row->revision} is stored but ".match (true) {
+            $row->status !== AiPhase::PUBLISHED => 'not published',
+            ! hash_equals((string) $listed[(string) $row->id], (string) $row->content_sha256) => 'its text hash is not the one the catalogue lists',
+            $marker !== null && ! str_contains((string) $row->prompt_content, $marker) => 'its text does not declare '.$marker,
+            default => 'was not chosen',
+        }, $stored));
     }
 
     /**
@@ -296,27 +327,45 @@ final class PhaseResolver
             ->sortBy(static fn ($link): string => $link->role.'|'.$link->slot_key)
             ->values();
         $schemas = [];
+        $read = [];
+
+        foreach ($links as $link) {
+            if ($link->schema !== null) {
+                $read[$link->schema_id] = $link->schema;
+            }
+        }
+
         $queue = $links->pluck('schema_id')->all();
 
         while ($queue !== []) {
-            $id = array_shift($queue);
+            $unread = array_values(array_unique(array_filter($queue, static fn (mixed $id): bool => ! isset($read[$id]))));
 
-            if (isset($schemas[$id])) {
-                continue;
+            foreach ($unread === [] ? [] : AiJsonSchema::query()->whereIn('id', $unread)->get() as $row) {
+                $read[$row->id] = $row;
             }
 
-            $schema = AiJsonSchema::query()->find($id) ?? throw new RuntimeException("Schema {$id} is missing.");
+            $next = [];
 
-            if ($schema->status !== AiJsonSchema::PUBLISHED) {
-                throw new RuntimeException("Schema {$schema->namespace}/{$schema->schema_key}@{$schema->version} is not published.");
+            foreach ($queue as $id) {
+                if (isset($schemas[$id])) {
+                    continue;
+                }
+
+                $schema = $read[$id] ?? throw new RuntimeException("Schema {$id} is missing.");
+
+                if ($schema->status !== AiJsonSchema::PUBLISHED) {
+                    throw new RuntimeException("Schema {$schema->namespace}/{$schema->schema_key}@{$schema->version} is not published.");
+                }
+
+                if (! hash_equals($schema->schema_sha256, hash('sha256', $schema->schema_content))) {
+                    throw new RuntimeException("Schema {$schema->namespace}/{$schema->schema_key}@{$schema->version} does not match its hash.");
+                }
+
+                $schemas[$id] = $schema;
+                array_push($next, ...array_values((array) $schema->dependencies));
             }
 
-            if (! hash_equals($schema->schema_sha256, hash('sha256', $schema->schema_content))) {
-                throw new RuntimeException("Schema {$schema->namespace}/{$schema->schema_key}@{$schema->version} does not match its hash.");
-            }
-
-            $schemas[$id] = $schema;
-            array_push($queue, ...array_values((array) $schema->dependencies));
+            $queue = $next;
         }
 
         uasort($schemas, static fn (AiJsonSchema $a, AiJsonSchema $b): int => [$a->namespace, $a->schema_key, $a->version] <=> [$b->namespace, $b->schema_key, $b->version]);
@@ -371,6 +420,7 @@ final class PhaseResolver
                 'json_schema_id' => $schema->json_schema_id,
                 'content' => $schema->schema_content,
             ], $schemas),
+            $phase,
         );
     }
 }

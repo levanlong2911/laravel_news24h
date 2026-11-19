@@ -10,9 +10,6 @@ final class MotoDnaCheck
 {
     public const VERSION = 'moto-dna-check-v3';
 
-    /** @var list<string> the self-checks of a moto-dna-v1 answer, in their fixed order */
-    public const CHECKS = ['source_floor', 'brief', 'theme', 'departures', 'features', 'plausibility', 'coherence', 'silhouette', 'must_avoid', 'history', 'hero', 'contract_and_names'];
-
     /** @var list<string> the source lists whose ids a departure may cite */
     private const SOURCE_LISTS = ['styling', 'chassis', 'powertrain', 'technology', 'visuals'];
 

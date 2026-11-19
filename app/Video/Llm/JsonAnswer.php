@@ -33,7 +33,16 @@ final class JsonAnswer
     /** @return array<mixed>|null */
     public static function object(string $text): ?array
     {
-        [$decoded, $error] = self::parse($text);
+        return self::objectOf(self::parse($text));
+    }
+
+    /**
+     * @param  array{0: mixed, 1: ?string}  $parsed  what parse() gave for an answer
+     * @return array<mixed>|null the same value object() gives for that answer, without reading its text again
+     */
+    public static function objectOf(array $parsed): ?array
+    {
+        [$decoded, $error] = $parsed;
         $array = $error === null ? json_decode((string) json_encode($decoded), true) : null;
 
         return is_array($array) && ! array_is_list($array) ? $array : null;

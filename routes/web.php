@@ -142,10 +142,13 @@ Route::group(
             Route::post('/from-article/{article}', [VideoProjectsController::class, 'store'])->name('video-projects.store');
             Route::get('/', [VideoProjectsController::class, 'index'])->name('video-projects.index');
             Route::get('/{id}/anchor', [VideoProjectsController::class, 'anchor'])->name('video-projects.anchor');
+            //phase 1
             Route::post('/{id}/inspiration', [VideoProjectsController::class, 'inspiration'])->name('video-projects.inspiration');
             Route::post('/{id}/inspiration/reset', [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
+            //phase 2
             Route::post('/{id}/design-dna', [VideoProjectsController::class, 'designDna'])->name('video-projects.design-dna');
-            Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');            //tạo phân cảnh
+            Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');
+            //phase 3
             Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
             Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
             Route::post('/{id}/model-sheet/qa', [VideoProjectsController::class, 'qaModelSheet'])->name('video-projects.model-sheet-qa');
@@ -154,7 +157,7 @@ Route::group(
             Route::post('/{id}/model-sheet/approve', [VideoProjectsController::class, 'approveModelSheet'])->name('video-projects.model-sheet-approve');
             Route::post('/{id}/model-sheet/reject', [VideoProjectsController::class, 'rejectModelSheet'])->name('video-projects.model-sheet-reject');
             Route::post('/{id}/model-sheet/process', [VideoProjectsController::class, 'processModelSheet'])->name('video-projects.model-sheet-process');
-            // kịch bản
+            //phase 4
             Route::post('/{id}/script', [VideoProjectsController::class, 'writeScript'])->name('video-projects.script');
             Route::post('/{id}/script/reset', [VideoProjectsController::class, 'resetScript'])->name('video-projects.script-reset');
             Route::post('/{id}/script/brief', [VideoProjectsController::class, 'saveScriptBrief'])->name('video-projects.script-brief');

@@ -68,12 +68,12 @@ final class MotoPipelineRelease
     }
 
     /**
-     * @param  bool  $hasRuns  whether the project already ran Phase 2 under no pinned release
-     * @return string the release the project keeps from now on: the one it pinned, the legacy release when it already ran, otherwise the configured release of new projects
+     * @param  bool|\Closure(): bool  $hasRuns  whether the project already ran Phase 2 under no pinned release; a closure is asked only when the project pinned none
+     * @return string the release the project keeps: the one it pinned, the legacy release when it already ran, otherwise the configured release of new projects. Reads only, nothing is stored
      *
      * @throws RuntimeException when the configured release of new projects is not declared
      */
-    public static function pin(VideoProject $project, bool $hasRuns): string
+    public static function chosen(VideoProject $project, bool|\Closure $hasRuns): string
     {
         $pinned = $project->metadata_json[self::KEY] ?? null;
 
@@ -82,15 +82,40 @@ final class MotoPipelineRelease
         }
 
         $workflow = (array) config('video.superyacht.contracts.workflows.'.MotoContract::WORKFLOW);
-        $release = $hasRuns ? self::LEGACY : (string) ($workflow['default_release'] ?? self::LEGACY);
+        $release = ($hasRuns instanceof \Closure ? $hasRuns() : $hasRuns) ? self::LEGACY : (string) ($workflow['default_release'] ?? self::LEGACY);
 
         if (! isset($workflow['releases'][$release])) {
             throw new RuntimeException("Release {$release} chưa được khai trong cấu hình moto — không ghim, không gọi model.");
         }
 
-        $project->forceFill(['metadata_json' => [...(array) $project->metadata_json, self::KEY => $release]])->save();
+        return $release;
+    }
+
+    /**
+     * @param  bool  $hasRuns  whether the project already ran Phase 2 under no pinned release
+     * @return string the release chosen() gives, stored with the project when it pinned none; the caller holds the project as it is stored now, since every other key of its metadata is written back from this copy
+     *
+     * @throws RuntimeException when the configured release of new projects is not declared
+     */
+    public static function pin(VideoProject $project, bool $hasRuns): string
+    {
+        $release = self::chosen($project, $hasRuns);
+        self::keep($project, $release);
 
         return $release;
+    }
+
+    /**
+     * @param  string  $release  what chosen() gave for this project
+     * @return void the release is stored with a project that pinned none, and a project that pinned one is not written
+     */
+    public static function keep(VideoProject $project, string $release): void
+    {
+        $pinned = $project->metadata_json[self::KEY] ?? null;
+
+        if (! is_string($pinned) || $pinned === '') {
+            $project->forceFill(['metadata_json' => [...(array) $project->metadata_json, self::KEY => $release]])->save();
+        }
     }
 
     /**
@@ -117,6 +142,18 @@ final class MotoPipelineRelease
         'phase-7' => ['stage' => 'shots', 'selection' => 'shots_selection'],
     ];
 
+    /** @var array<string, list<string>> the phases a change of release moves only for a project that never ran them, with the planning stages their runs are kept in: a run of any status, waiting, running, failed or finished, holds the phase */
+    private const UNSTARTED = [
+        'phase-1' => ['inspiration'],
+        'phase-2' => ['design_dna'],
+        'phase-4' => ['script'],
+        'phase-5' => ['locations'],
+        'phase-8' => ['reference_review'],
+        'phase-9' => ['keyframe_prompt'],
+        'phase-10' => ['clip_plan', 'clip_prompt'],
+        'phase-11' => ['film_plan'],
+    ];
+
     /** @return list<string> the planning stages whose runs keep a project from moving while one waits or runs */
     public static function movableStages(): array
     {
@@ -129,9 +166,10 @@ final class MotoPipelineRelease
      * @param  array<string, ?array<string, mixed>>  $rulesNext  the same for the release it moves to
      * @param  list<string>  $busy  the planning stages of the project with a run waiting or running
      * @param  bool  $designApproved  the design of the project was approved with its model sheet, read under the project lock
-     * @return list<string> why the project cannot move: it pinned no release, the release is not declared or does not extend the one it has, it replaces a phase other than design, scenes and shots, or a step it replaces is held — a design approved with its model sheet, a selection — or has a run in progress
+     * @param  ?list<string>  $ran  the planning stages the project has any run of, read under the project lock; null when the caller did not read them, and then a phase other than design, scenes and shots never moves
+     * @return list<string> why the project cannot move: it pinned no release, the release is not declared or does not extend the one it has, it replaces a phase other than design, scenes and shots that the project already ran (or whose stages this code does not know), or a step it replaces is held — a design approved with its model sheet, a selection — or has a run in progress
      */
-    public static function moveProblems(VideoProject $project, string $to, array $rulesNow, array $rulesNext, array $busy, bool $designApproved = false): array
+    public static function moveProblems(VideoProject $project, string $to, array $rulesNow, array $rulesNext, array $busy, bool $designApproved = false, ?array $ran = null): array
     {
         $workflow = (array) config('video.superyacht.contracts.workflows.'.MotoContract::WORKFLOW);
         $pinned = $project->metadata_json[self::KEY] ?? null;
@@ -158,7 +196,13 @@ final class MotoPipelineRelease
             $step = self::MOVABLE[$code] ?? null;
 
             if ($step === null) {
-                $problems[] = "{$to} đổi revision của {$code} — nguồn đã có của dự án ở bước này sẽ không còn khớp; lệnh này chỉ chuyển Design, Scene và Shot.";
+                $held = $ran === null || ! isset(self::UNSTARTED[$code]) ? null : array_values(array_intersect(self::UNSTARTED[$code], $ran));
+
+                if ($held === null) {
+                    $problems[] = "{$to} đổi revision của {$code} — nguồn đã có của dự án ở bước này sẽ không còn khớp; lệnh này chỉ chuyển Design, Scene và Shot.";
+                } elseif ($held !== []) {
+                    $problems[] = "{$to} đổi revision của {$code} và dự án đã có lượt ".implode(', ', $held).' ở bước này — nguồn đã có sẽ không còn khớp; bước này chỉ chuyển khi dự án chưa chạy nó.';
+                }
             } elseif ($step['selection'] === null && $designApproved) {
                 $problems[] = 'Bản thiết kế của dự án đã duyệt cùng model sheet — các bước sau đã dựng trên nó, không chuyển sang revision Design khác.';
             } elseif ($step['selection'] !== null && is_array($project->metadata_json[$step['selection']] ?? null)) {

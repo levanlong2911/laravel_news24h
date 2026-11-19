@@ -318,9 +318,7 @@ final class ScreenplayExpansionService
             return [false, 'Chua co luot nao de reset'];
         }
 
-        return $this->stageStore->releaseClaim($latest->id, 'Nguoi dung reset thu cong')
-            ? [true, 'ok']
-            : [false, 'Luot nay khong con giu claim — khong co gi de reset'];
+        return $this->stageStore->resetRun($projectId, (string) $latest->id, 'Lượt này không còn — không có gì để reset.');
     }
 
     /** @return array<string, mixed>|null */

@@ -17,6 +17,9 @@ class PlanningStageStore
 
     public const METADATA_KEY = '_meta';
 
+    /** @var string the metadata key of an attempt recorded apart from the run that lost its claim: why it was lost and whether the usage stored with it is the whole usage of the call */
+    public const ORPHAN_KEY = 'orphan';
+
     private const PRICING_METADATA_KEYS = ['pricing', 'pricing_version', 'design_repair'];
 
     /** @var array<string, ?string> the snapshot payloads already read in this request, by stage id */
@@ -137,15 +140,14 @@ class PlanningStageStore
             return DB::transaction(function () use ($projectId, $stage, $stored, $hash, $claimToken, $force, $operationId, $status, $snapshot, $push, $refuse, $reuseExpired) {
                 VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
 
-                $rows = VideoPlanningStage::query()
+                $rows = static fn (): Builder => VideoPlanningStage::query()
                     ->withoutSnapshot()
                     ->where('project_id', $projectId)
-                    ->where('stage', $stage->value)
-                    ->get();
+                    ->where('stage', $stage->value);
 
-                $replayed = $operationId === null ? null : $rows
-                    ->filter(static fn (VideoPlanningStage $row): bool => (self::metadataOf(is_array($row->input_json) ? $row->input_json : null)['operation_id'] ?? null) === $operationId)
-                    ->sortByDesc('planning_revision')
+                $replayed = $operationId === null ? null : $rows()
+                    ->where('input_json->'.self::METADATA_KEY.'->operation_id', $operationId)
+                    ->orderByDesc('planning_revision')
                     ->first();
 
                 if ($replayed !== null) {
@@ -156,7 +158,11 @@ class PlanningStageStore
                     return [null, null, 'refused'];
                 }
 
-                $live = $rows->first(fn ($r) => $r->claim_token !== null && (
+                $open = $rows()
+                    ->whereIn('status', [VideoPlanningStageStatus::PENDING->value, VideoPlanningStageStatus::RUNNING->value])
+                    ->orderBy('planning_revision')
+                    ->get();
+                $live = $open->first(fn ($r) => $r->claim_token !== null && (
                     ($r->status === VideoPlanningStageStatus::RUNNING->value && $r->lease_expires_at?->isFuture())
                     || $r->status === VideoPlanningStageStatus::PENDING->value
                 ));
@@ -165,9 +171,10 @@ class PlanningStageStore
                     return [$live, null, 'claimed_by_other'];
                 }
 
-                $done = $rows->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+                $done = $rows()
+                    ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
                     ->where('input_hash', $hash)
-                    ->sortByDesc('planning_revision')
+                    ->orderByDesc('planning_revision')
                     ->first();
 
                 if ($done !== null && ! ($force instanceof \Closure ? $force($done) : $force)) {
@@ -187,7 +194,7 @@ class PlanningStageStore
                     'error_message' => null,
                 ];
 
-                $expired = $reuseExpired ? $rows->firstWhere('status', VideoPlanningStageStatus::RUNNING->value) : null;
+                $expired = $reuseExpired ? $open->firstWhere('status', VideoPlanningStageStatus::RUNNING->value) : null;
 
                 if ($expired !== null) {
                     $expired->update($attributes);
@@ -195,7 +202,7 @@ class PlanningStageStore
                 } else {
                     $row = VideoPlanningStage::create($attributes + [
                         'project_id' => $projectId,
-                        'planning_revision' => ((int) $rows->max('planning_revision')) + 1,
+                        'planning_revision' => ((int) $rows()->max('planning_revision')) + 1,
                         'stage' => $stage->value,
                     ]);
                 }
@@ -650,7 +657,8 @@ class PlanningStageStore
     /** @return bool false when the stored tokens and cost are only what was known before the call broke */
     public static function costKnown(VideoPlanningStage $stage): bool
     {
-        return $stage->status === VideoPlanningStageStatus::SUCCEEDED->value || (self::streamOf($stage)['usage_complete'] ?? false) === true;
+        return $stage->status === VideoPlanningStageStatus::SUCCEEDED->value || (self::streamOf($stage)['usage_complete'] ?? false) === true
+            || (self::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)[self::ORPHAN_KEY]['usage_complete'] ?? false) === true;
     }
 
     /**
@@ -670,20 +678,63 @@ class PlanningStageStore
         ) > 0 || VideoPlanningStage::query()->whereKey($stageId)->where('claim_token', $claimToken)->where('status', $running)->exists();
     }
 
-    /** @return array{0: bool, 1: string} the latest run of a step reset; reason pending when it was still waiting in the queue */
+    /**
+     * @return array{0: bool, 1: string} the latest run of a step reset, read again under the project lock; reason pending when it was still waiting in the queue. A waiting run is cancelled and a running one is reset only once its lease ran out: a run whose worker still holds its lease is refused, a finished run is left as it is. The write names the claim token, the status and the expired lease it read, so a run that was accepted, renewed or claimed again in between keeps its claim and the reset says the state changed
+     */
     public function resetLatest(string $projectId, PlanningStageName $stage, string $none): array
     {
-        [$latest] = $this->latestStageForProject($projectId, $stage, [], skipOrphans: true);
+        return $this->resetRead($projectId, static fn (Builder $runs) => $runs
+            ->where('stage', $stage->value)
+            ->whereNull('input_json->orphan_of_stage_id')
+            ->orderByDesc('planning_revision'), $none);
+    }
 
-        if ($latest === null) {
-            return [false, $none];
-        }
+    /**
+     * @param  string  $stageId  the run a caller found as the one its screen shows, by its own rule for what the latest run of its step is
+     * @return array{0: bool, 1: string} that run reset under the rule of resetLatest(): read again under the project lock, a waiting run cancelled, a running one reset only once its lease ran out, and nothing written when it moved on in between
+     */
+    public function resetRun(string $projectId, string $stageId, string $none): array
+    {
+        return $this->resetRead($projectId, static fn (Builder $runs) => $runs->whereKey($stageId), $none);
+    }
 
-        $pending = $latest->status === VideoPlanningStageStatus::PENDING->value;
+    /**
+     * @param  \Closure(Builder): Builder  $choose  narrows the runs of the project to the one to reset
+     * @return array{0: bool, 1: string}
+     */
+    private function resetRead(string $projectId, \Closure $choose, string $none): array
+    {
+        return DB::transaction(function () use ($projectId, $choose, $none): array {
+            VideoProject::query()->whereKey($projectId)->lockForUpdate()->first();
+            $latest = $choose(VideoPlanningStage::query()->where('project_id', $projectId))
+                ->first(['id', 'status', 'claim_token', 'lease_expires_at']);
 
-        return $this->releaseClaim((string) $latest->id, $pending ? 'Người dùng huỷ lượt đang chờ trong hàng đợi' : 'Người dùng reset thủ công')
-            ? [true, $pending ? 'pending' : 'ok']
-            : [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+            if ($latest === null) {
+                return [false, $none];
+            }
+
+            $pending = $latest->status === VideoPlanningStageStatus::PENDING->value;
+            $running = $latest->status === VideoPlanningStageStatus::RUNNING->value;
+
+            if ($latest->claim_token === null || ! ($pending || $running)) {
+                return [false, 'Lượt này không còn giữ claim — không có gì để reset.'];
+            }
+
+            if ($running && $latest->lease_expires_at?->isFuture() === true) {
+                return [false, 'Lượt này đang chạy và còn giữ quyền đến '.$latest->lease_expires_at->format('H:i:s').' — không reset; đợi lượt xong hoặc hết hạn giữ quyền rồi thử lại.'];
+            }
+
+            $released = VideoPlanningStage::query()
+                ->whereKey($latest->id)
+                ->where('claim_token', $latest->claim_token)
+                ->where('status', $latest->status)
+                ->when($running, static fn (Builder $query) => $query->where(static fn (Builder $lease) => $lease->whereNull('lease_expires_at')->orWhere('lease_expires_at', '<=', now())))
+                ->update(self::releasedAttributes($pending ? 'Người dùng huỷ lượt đang chờ trong hàng đợi' : 'Người dùng reset thủ công')) > 0;
+
+            return $released
+                ? [true, $pending ? 'pending' : 'ok']
+                : [false, 'Trạng thái của lượt này vừa đổi (đã được nhận, gia hạn hoặc chạy lại) — không reset; tải lại trang để xem trạng thái mới.'];
+        });
     }
 
     /** @return ?string the payload a stage was sent with: its snapshot for a run queued with one, its metadata for a run made before snapshots */
@@ -716,19 +767,30 @@ class PlanningStageStore
         return $this->payloads[$id] = $payload;
     }
 
-    public function releaseClaim(string $stageId, string $reason): bool
+    /**
+     * @param  ?string  $claimToken  the claim the caller holds or read: with it only that very claim is released, so a run claimed again since keeps its own
+     * @return bool false when the run holds no claim, or no longer the one named
+     */
+    public function releaseClaim(string $stageId, string $reason, ?string $claimToken = null): bool
     {
         return VideoPlanningStage::query()
             ->whereKey($stageId)
             ->whereNotNull('claim_token')
-            ->update([
-                'status' => VideoPlanningStageStatus::FAILED->value,
-                'error_message' => $reason,
-                'claim_token' => null,
-                'claimed_at' => null,
-                'lease_expires_at' => null,
-                'finished_at' => now(),
-            ]) > 0;
+            ->when($claimToken !== null, static fn (Builder $query) => $query->where('claim_token', $claimToken))
+            ->update(self::releasedAttributes($reason)) > 0;
+    }
+
+    /** @return array<string, mixed> what a run becomes when its claim is released without an answer */
+    private static function releasedAttributes(string $reason): array
+    {
+        return [
+            'status' => VideoPlanningStageStatus::FAILED->value,
+            'error_message' => $reason,
+            'claim_token' => null,
+            'claimed_at' => null,
+            'lease_expires_at' => null,
+            'finished_at' => now(),
+        ];
     }
 
     private function succeeded(string $column, string $id, PlanningStageName $stage): Builder

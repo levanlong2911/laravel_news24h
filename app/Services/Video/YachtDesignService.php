@@ -33,6 +33,9 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
 
     public const ACTION = 'spec.design';
 
+    /** @var string the key of a stored design output that holds what its assembly found and the answer of the model as it was received, with its hash; the record every later step reads is the joined one */
+    public const ASSEMBLY_KEY = 'assembly';
+
     public function __construct(
         private readonly PlanningStageStore $stageStore,
         private readonly VideoProjectRepositoryInterface $projects,
@@ -62,8 +65,23 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
                 ? [null, 'Bản thiết kế đã lưu cho đúng DNA và prompt này chưa đạt kiểm RULE hoặc còn cảnh báo — bấm "Thiết kế lại" nếu muốn tạo bản mới. Không gọi model.']
                 : null,
             'Chưa gọi model thiết kế: ',
-            fn (array $run): ?string => $this->refusal($projectId, $run, $regenerate),
+            fn (array $run): ?string => $this->refusal($projectId, $run, $regenerate) ?? $this->dnaContractProblem($projectId, $run),
         );
+    }
+
+    /**
+     * @param  array{input: array<string, mixed>}  $run  the prepared design run
+     * @return ?string why the design run may not start: the Phase 2 contract of the DNA it stands on could not be kept with the project. Read under the project lock, in the transaction that opens the run, so the contract is pinned before the run exists and neither is written without the other; a design run of another workflow pins nothing. A project that has no design yet pins nothing and takes the Phase 2 revision its release lists
+     */
+    private function dnaContractProblem(string $projectId, array $run): ?string
+    {
+        if (! MotoContract::is($run['input']['workflow'] ?? null)) {
+            return null;
+        }
+
+        $problem = $this->dna->pinContract($projectId, (string) ($run['input']['dna_stage_id'] ?? ''));
+
+        return $problem === null ? null : 'không giữ được hợp đồng Phase 2 của DNA mà thiết kế dựng trên đó ('.$problem.') — chưa gửi lượt thiết kế.';
     }
 
     /**
@@ -175,11 +193,15 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
 
     /**
      * @param  array<string, mixed>  $run  a run of runFor()
-     * @return array<string, mixed> the output a succeeded design run stores for this answer
+     * @param  string  $raw  a design record: the whole record as it is stored, such as one revised by hand — never the answer of a model, so nothing is joined here
+     * @param  ?VideoPlanningStage  $source  the design the record was made from; what its assembly found, with the answer its model gave, is kept with the new record as its origin
+     * @return array<string, mixed> the output a succeeded design run stores for this record
      */
-    public function outputFor(array $run, string $raw): array
+    public function outputFor(array $run, string $raw, ?VideoPlanningStage $source = null): array
     {
-        return $this->output($run, $raw);
+        $origin = is_array($source?->output_json) ? ($source->output_json[self::ASSEMBLY_KEY] ?? null) : null;
+
+        return $this->recorded($run, $raw) + (is_array($origin) ? [self::ASSEMBLY_KEY => $origin + ['kept_from_stage_id' => (string) $source->id]] : []);
     }
 
     private static function workflowOf(?VideoProject $project): string
@@ -372,15 +394,25 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
         }
 
         $modelSheet = self::modelSheet($adapter->modelSheetConfig($manifest));
+        $outputSchemas = $bundle->outputSchemas();
+        $assembly = $adapter->assembly((string) $prompt->prompt_content, [
+            'project_id' => (string) $project->id,
+            'prompt_version' => self::instructionVersion($prompt),
+            'dna' => $dna,
+            'model_sheet' => $modelSheet,
+            'schemas' => $outputSchemas,
+        ]);
         $payload = (string) json_encode(
-            $adapter->payload((string) $project->id, self::instructionVersion($prompt), $dna, $source, $dnaPanel, $modelSheet),
+            $adapter->payload((string) $project->id, self::instructionVersion($prompt), $dna, $source, $dnaPanel, $modelSheet) + ($assembly === null ? [] : ['assembly' => $assembly['input']]),
             JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES,
         );
         $heading = (string) config('video.superyacht.design.schema_heading');
-        $schemas = array_map(
-            static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".$adapter->schemaText((string) $schema['content'])."\n```",
-            $bundle->outputSchemas(),
-        );
+        $schemas = $assembly !== null
+            ? ["## {$heading} — {$assembly['label']}\n\n```json\n{$assembly['schema']}\n```"]
+            : array_map(
+                static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".$adapter->schemaText((string) $schema['content'])."\n```",
+                $outputSchemas,
+            );
         $settings = array_replace(self::settings(), array_intersect_key($adapter->runSettings(), self::settings()));
 
         return [
@@ -396,7 +428,14 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
             'project_id' => (string) $project->id,
             'model_sheet' => $modelSheet,
             'adapter' => $adapter,
-            'input' => [
+            'assembly' => $assembly,
+            'input' => ($assembly === null ? [] : [
+                'assembly_protocol' => $assembly['protocol'],
+                'assembly_sources_sha256' => $assembly['sources_sha256'],
+                'assembly_dna_sha256' => $assembly['dna_sha256'],
+                'generation_schema_sha256' => $assembly['schema_sha256'],
+                'final_schema_sha256' => $assembly['final_schema_sha256'],
+            ]) + [
                 'execution' => $adapter->execution(),
                 'article_id' => (string) $project->article->id,
                 'category_id' => (string) $category->id,
@@ -501,14 +540,33 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
      */
     private function output(array $run, string $raw): array
     {
-        [$filled, $check] = $this->evaluate($raw, $run, $run['manifest']);
-        [, $error] = JsonAnswer::parse($raw);
+        if (! is_array($run['assembly'] ?? null)) {
+            return $this->recorded($run, $raw);
+        }
+
+        [$record, $found] = $run['adapter']->assemble($raw, $run['assembly']);
+
+        return $this->recorded($run, $record) + [
+            self::ASSEMBLY_KEY => $found + ['provider_raw_text' => $raw, 'provider_sha256' => hash('sha256', $raw), 'dna_stage_id' => $run['input']['dna_stage_id']],
+            StageQueue::RECORD => $record,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $run  the prepared run
+     * @param  string  $record  the whole design record: the answer of a model that writes it whole, a record joined from an answer, or a record revised by hand
+     * @return array<string, mixed> the stored output of that record, checked as it is
+     */
+    private function recorded(array $run, string $record): array
+    {
+        [$filled, $check] = $this->evaluate($record, $run, $run['manifest']);
+        [, $error] = JsonAnswer::parse($record);
 
         return [
             'execution' => (string) $run['input']['execution'],
             'prompt' => array_intersect_key($run['input'], array_flip(['category_id', 'workflow', 'phase_id', 'phase_revision', 'prompt_sha256'])),
             'dna_stage_id' => $run['input']['dna_stage_id'],
-            'raw_text' => $raw,
+            'raw_text' => $record,
             'json_parse_error' => $error,
             'design' => $filled,
             'check' => $check,

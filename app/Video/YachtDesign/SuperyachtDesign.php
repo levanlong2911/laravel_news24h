@@ -41,6 +41,17 @@ final class SuperyachtDesign implements DesignWorkflow
         return trim($content);
     }
 
+    /** @return null the yacht design is written whole by the model */
+    public function assembly(string $prompt, array $context): ?array
+    {
+        return null;
+    }
+
+    public function assemble(string $raw, array $assembly): array
+    {
+        throw new \LogicException('The yacht design has no assembly protocol.');
+    }
+
     /** @return array<string, mixed> */
     public function runSettings(): array
     {

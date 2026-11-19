@@ -167,9 +167,9 @@ class VideoProjectsController extends Controller
 
     public function designDna(Request $request, string $id)
     {
-        $this->ownedProject($id);
+        $project = $this->ownedProject($id);
         $data = $request->validate(['operation_id' => ['required', 'uuid']], ['operation_id.*' => 'Thiếu mã thao tác — tải lại trang.']);
-        [$stage, $reason] = app(DesignDnaService::class)->run($id, $request->boolean('regenerate'), (string) $data['operation_id'], $this->requester());
+        [$stage, $reason] = app(DesignDnaService::class)->run($id, $request->boolean('regenerate'), (string) $data['operation_id'], $this->requester(), $project);
 
         if ($stage === null) {
             return back()->with('error', $reason);

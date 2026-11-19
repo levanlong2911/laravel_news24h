@@ -22,6 +22,9 @@ final class StageQueue
 {
     public const SNAPSHOT_FORMAT = 'planning-request-v1';
 
+    /** @var string a key the output of a single call may carry: the record of the run when it is not the answer of the model itself, as a text. It is stored as the raw response of a succeeded run and never kept in the output; a run that fails or loses its claim still keeps the answer the model gave */
+    public const RECORD = '_record';
+
     public function __construct(private readonly PlanningStageStore $stageStore) {}
 
     /**
@@ -32,9 +35,10 @@ final class StageQueue
      * @param  \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string}  $perform  calls the model for a claimed run and stores what it answered; the last argument queues a rate-limited run again
      * @param  ?\Closure(?VideoPlanningStage, string, array<string, mixed>): ?array{0: ?VideoPlanningStage, 1: string}  $refusal  the answer to a refused claim, null keeps the default one
      * @param  ?\Closure(array<string, mixed>): ?string  $guard  read under the project lock before the claim, so nothing can slip in after it; a text refuses the run with that reason
+     * @param  ?\Closure(array<string, mixed>, VideoPlanningStage): void  $claimed  called inside the claim transaction, under the project lock, once the row of the new run exists: what may be stored only when a run really opens; a throw opens no run and stores nothing
      * @return array{0: ?VideoPlanningStage, 1: string} reason queued|cached|replayed|ok|requeued, or why nothing ran
      */
-    public function submit(string $step, string $projectId, PlanningStageName $name, \Closure $prepare, bool|\Closure $force, string $operationId, ?array $requester, \Closure $perform, string $label, string $log, ?\Closure $refusal = null, string $notCalled = 'Chưa gọi model: ', ?\Closure $guard = null): array
+    public function submit(string $step, string $projectId, PlanningStageName $name, \Closure $prepare, bool|\Closure $force, string $operationId, ?array $requester, \Closure $perform, string $label, string $log, ?\Closure $refusal = null, string $notCalled = 'Chưa gọi model: ', ?\Closure $guard = null, ?\Closure $claimed = null): array
     {
         if (! Str::isUuid($operationId)) {
             return [null, 'Mã thao tác không hợp lệ — tải lại trang.'];
@@ -63,6 +67,7 @@ final class StageQueue
         }
 
         $refused = null;
+        $push = $queued ? static fn (VideoPlanningStage $stage, string $token) => self::push($stage, $token, ProviderRateLimit::cooldownRemaining(ProviderRateLimit::ANTHROPIC, (string) $run['settings']['model'])) : null;
 
         [$stage, $token, $reason] = $this->stageStore->queueProjectStage(
             $projectId,
@@ -71,7 +76,13 @@ final class StageQueue
             $force instanceof \Closure ? static fn (VideoPlanningStage $served): bool => $force($served, $run) : $force,
             array_diff_key($run['metadata'], ['payload' => true]) + ['step' => $step, 'operation_id' => $operationId, 'requested_by' => $requester, 'queued_at' => now()->toIso8601String(), 'job_timeout' => $jobTimeout],
             self::snapshot($run),
-            $queued ? static fn (VideoPlanningStage $stage, string $token) => self::push($stage, $token, ProviderRateLimit::cooldownRemaining(ProviderRateLimit::ANTHROPIC, (string) $run['settings']['model'])) : null,
+            $claimed === null ? $push : static function (VideoPlanningStage $stage, string $token) use ($claimed, $push, $run): void {
+                $claimed($run, $stage);
+
+                if ($push !== null) {
+                    $push($stage, $token);
+                }
+            },
             $guard === null ? null : static function () use ($guard, $run, &$refused): bool {
                 $refused = $guard($run);
 
@@ -157,6 +168,9 @@ final class StageQueue
             $version = (string) $run['prompt_version'];
             $stageId = (string) $stage->id;
             $usage = [];
+            $usageComplete = false;
+            $received = null;
+            $stored = [];
 
             try {
                 $response = $llm->complete(new LlmRequest(
@@ -173,48 +187,89 @@ final class StageQueue
                     (array) ($run['images'] ?? []),
                 ));
                 $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
+                $usageComplete = $response->usageComplete;
+                $received = $response->text;
 
                 try {
                     $stored = $output($run, $response->text);
                 } catch (\Throwable $e) {
-                    Log::error("{$log}: the check threw on a received answer", ['stage_id' => $stageId, 'exception' => $e]);
-                    $this->stageStore->finishFailed($stageId, $token, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận: '.$e->getMessage(), $usage, $response->text);
+                    $rejected = $e instanceof StageAnswerRejected;
+                    Log::log($rejected ? 'warning' : 'error', "{$log}: ".($rejected ? 'the received answer could not become a record' : 'the check threw on a received answer'), ['stage_id' => $stageId, 'exception' => $e]);
+                    $message = $rejected ? $e->getMessage() : 'Bộ kiểm lỗi khi đọc phản hồi đã nhận: '.$e->getMessage();
 
-                    return [null, 'Bộ kiểm lỗi khi đọc phản hồi đã nhận — phản hồi và usage đã được lưu: '.$e->getMessage()];
-                }
-
-                if (! $this->stageStore->finishSucceeded($stageId, $token, $response->text, $stored, $usage)) {
-                    try {
-                        $this->stageStore->recordOrphanAttempt((string) $stage->project_id, $name, $run['input'], [], $stageId, $token, 'claim_lost', $usage, $response->text, $stored);
-                    } catch (\Throwable $e) {
-                        Log::warning("{$log}: recordOrphanAttempt threw", ['stage_id' => $stageId, 'exception' => $e]);
+                    if (! $this->stageStore->finishFailed($stageId, $token, $message, $usage, $response->text)) {
+                        return [null, $message.' — '.$this->lost($stage, $name, $run, $token, $rejected ? 'answer_rejected' : 'check_threw', $message, $usage, $response->text, [], $response->usageComplete, $label, $log)];
                     }
 
-                    return [null, "Lượt {$label} bị giành mất khi lưu — kết quả đã trả tiền không được dùng. Tải lại trang rồi bấm lại nếu cần."];
+                    return [null, $rejected
+                        ? $message.' Phản hồi và usage của cú gọi này đã được lưu; không tự gọi lại model.'
+                        : 'Bộ kiểm lỗi khi đọc phản hồi đã nhận — phản hồi và usage đã được lưu: '.$e->getMessage()];
+                }
+
+                $record = is_string($stored[self::RECORD] ?? null) ? $stored[self::RECORD] : $response->text;
+                unset($stored[self::RECORD]);
+
+                if (! $this->stageStore->finishSucceeded($stageId, $token, $record, $stored, $usage)) {
+                    return [null, $this->lost($stage, $name, $run, $token, 'answered', 'claim_lost', $usage, $response->text, $stored, $response->usageComplete, $label, $log)];
                 }
 
                 return [VideoPlanningStage::query()->withoutSnapshot()->find($stageId), 'ok'];
             } catch (\Throwable $e) {
-                $queued = $usage === [] && $rateLimited !== null ? $rateLimited($e) : null;
+                $billed = $e instanceof LlmUnavailable ? $e->billed : null;
+                $queued = $usage === [] && $billed === null && $rateLimited !== null ? $rateLimited($e) : null;
 
                 if ($queued !== null) {
                     return $queued;
                 }
 
                 Log::error("{$log}: the run failed", ['stage_id' => $stageId, 'exception' => $e]);
-                $billed = $e instanceof LlmUnavailable ? $e->billed : null;
                 $message = self::failure($e);
-                $this->stageStore->finishFailed(
-                    $stageId,
-                    $token,
-                    $message,
-                    $usage !== [] ? $usage : ($billed === null ? ['model' => $settings['model'], 'instruction_version' => $version] : ClaudeInspirationAnalyst::usageOf($billed, $version)),
-                    $billed?->text ?? '',
-                );
+                $spent = $usage !== [] ? $usage : ($billed === null ? ['model' => $settings['model'], 'instruction_version' => $version] : ClaudeInspirationAnalyst::usageOf($billed, $version));
+
+                $text = $received ?? $billed?->text ?? '';
+
+                if (! $this->stageStore->finishFailed($stageId, $token, $message, $spent, $text, $stored)) {
+                    return [null, $message.' — '.$this->lost($stage, $name, $run, $token, $received === null ? 'provider_error' : 'save_failed', $message, $spent, $text, $stored, $usage !== [] ? $usageComplete : ($billed?->usageComplete ?? false), $label, $log)];
+                }
 
                 return [null, $message];
             }
         };
+    }
+
+    /**
+     * @param  array<string, mixed>  $run  the run as it was sent
+     * @param  string  $token  the claim the run was sent with and no longer holds
+     * @param  string  $cause  answered|check_threw|answer_rejected|provider_error|save_failed: where the run stood when it found its claim gone
+     * @param  array<string, mixed>  $usage  what the call is known to have cost
+     * @param  array<string, mixed>  $output  the checked output of an answer that passed
+     * @param  bool  $usageComplete  false when the usage is only what was known before the call broke
+     * @return string what the user is told: the answer and its usage were kept as an attempt of their own in the history, under the run and the claim that were lost so the same attempt is never recorded or billed twice; or, plainly, that they could not be kept
+     */
+    private function lost(VideoPlanningStage $stage, PlanningStageName $name, array $run, string $token, string $cause, string $error, array $usage, string $raw, array $output, bool $usageComplete, string $label, string $log): string
+    {
+        $stageId = (string) $stage->id;
+
+        try {
+            $this->stageStore->recordOrphanAttempt(
+                (string) $stage->project_id,
+                $name,
+                $run['input'],
+                [PlanningStageStore::ORPHAN_KEY => ['cause' => $cause, 'usage_complete' => $usageComplete]],
+                $stageId,
+                $token,
+                $error,
+                $usage,
+                $raw,
+                $output,
+            );
+        } catch (\Throwable $e) {
+            Log::error("{$log}: the run lost its claim and its answer and usage could not be recorded", ['stage_id' => $stageId, 'cause' => $cause, 'usage' => $usage, 'exception' => $e]);
+
+            return "Lượt {$label} đã bị reset hoặc chạy lại trong lúc chờ model, và KHÔNG lưu được phản hồi cùng usage của cú gọi này: ".$e->getMessage().' — chi phí của nó chỉ còn trong log.';
+        }
+
+        return "Lượt {$label} đã bị reset hoặc chạy lại trong lúc chờ model — kết quả không được dùng; phản hồi và usage của cú gọi này đã được lưu thành một lượt riêng trong lịch sử".($usageComplete ? '.' : ' (usage chưa đủ, chỉ là mức tối thiểu đã biết).').' Tải lại trang rồi bấm lại nếu cần.';
     }
 
     /** @return string the failure text of a run, which says plainly when the provider account has run out */

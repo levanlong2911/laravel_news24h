@@ -299,13 +299,13 @@ final class ShotWriterService implements QueuedStageService
                 return $this->stageStore->finishSucceeded((string) $claimed->id, $token, $raw, $this->output($run, $result), ['instruction_version' => $run['prompt_version'], 'tokens_in' => 0, 'tokens_out' => 0, 'cost_usd' => 0]);
             });
         } catch (\Throwable $e) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kế hoạch shot không lưu được');
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa kế hoạch shot không lưu được', (string) $token);
 
             throw $e;
         }
 
         if ($recorded === null) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Nguồn của kế hoạch shot đổi trong lúc lưu bản sửa tay');
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Nguồn của kế hoạch shot đổi trong lúc lưu bản sửa tay', (string) $token);
 
             return ['reason' => 'Bản chia scene đã duyệt hoặc nguồn của nó đổi trong lúc lưu bản sửa — không lưu; xem trước lại từ nguồn hiện hành.'] + $report;
         }

@@ -2,6 +2,7 @@
 
 namespace App\Video\Superyacht\Spec;
 
+use App\Models\AiPhase;
 use App\Video\Superyacht\Validation\ValidationReport;
 use App\Video\Superyacht\Validation\Violation;
 use Opis\JsonSchema\Errors\ErrorFormatter;
@@ -26,7 +27,18 @@ final class ResolvedPhase
         private readonly array $manifest,
         private readonly array $parts,
         private readonly array $schemas,
+        private readonly ?AiPhase $phase = null,
     ) {}
+
+    /**
+     * @return AiPhase the phase revision the bundle was built from, the row the resolver read and checked against its hash
+     *
+     * @throws RuntimeException for a bundle built without its row
+     */
+    public function phase(): AiPhase
+    {
+        return $this->phase ?? throw new RuntimeException('The bundle was built without its phase row.');
+    }
 
     /** @return array<string, mixed> */
     public function manifest(): array

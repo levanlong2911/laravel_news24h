@@ -42,9 +42,9 @@ final class MotoDesignCheck
      * @param  string  $format  the answer format the run pinned
      * @return array{version: string, format: string, verdict: string, status: ?string, issues: list<string>, warnings: list<string>, error: ?string, design_hash: ?string, parts_by_state: array<string, list<string>>}
      */
-    public static function evaluate(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors, string $format = MotoContract::DESIGN_FORMAT): array
+    public static function evaluate(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors, string $format = MotoContract::DESIGN_FORMAT, bool $assembled = false): array
     {
-        return ['format' => $format] + self::scored($response, $projectId, $promptVersion, $dna, $sourceIdentity, $modelSheet, $forbidden, $schemaErrors, $format);
+        return ['format' => $format] + self::scored($response, $projectId, $promptVersion, $dna, $sourceIdentity, $modelSheet, $forbidden, $schemaErrors, $format, $assembled);
     }
 
     /**
@@ -56,7 +56,7 @@ final class MotoDesignCheck
      * @param  list<string>  $schemaErrors
      * @return array{version: string, format: string, verdict: string, status: ?string, issues: list<string>, warnings: list<string>, error: ?string, design_hash: ?string, parts_by_state: array<string, list<string>>}
      */
-    private static function scored(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors, string $format): array
+    private static function scored(?array $response, string $projectId, string $promptVersion, array $dna, array $sourceIdentity, array $modelSheet, array $forbidden, array $schemaErrors, string $format, bool $assembled = false): array
     {
         $themed = $format !== MotoContract::DESIGN_FORMAT;
 
@@ -110,7 +110,8 @@ final class MotoDesignCheck
             ...$issues,
             ...$ids['issues'],
             ...self::referenceIssues($states, $ids, $themed),
-            ...self::dnaIssues($data, $dna),
+            ...self::dnaIssues($data, $dna, $assembled),
+            ...($assembled ? self::inheritedIssues($data, $dna) : []),
             ...$geometry['issues'],
             ...self::configurationIssues($data, $ids, $themed),
             ...($themed ? self::storyIssues($data, $ids) : []),
@@ -416,31 +417,71 @@ final class MotoDesignCheck
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, mixed>  $dna
+     * @param  bool  $assembled  the record was joined under an assembly protocol, where the features and departures of the DNA are ids the record must hold: a missing or foreign one then keeps the design from being used, instead of being a note
      * @return list<string>
      */
-    private static function dnaIssues(array $data, array $dna): array
+    private static function dnaIssues(array $data, array $dna, bool $assembled = false): array
     {
         $issues = [];
+        $finding = static fn (string $code, string $message): Finding => $assembled ? Finding::requirement($code, $message) : Finding::note($code, $message);
         $wanted = array_column((array) ($dna['features'] ?? []), null, 'id');
         $found = array_column($data['features'], null, 'id');
 
         foreach (array_diff_key($found, $wanted) as $id => $feature) {
-            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.1', "features có {$id}, không phải signature feature của DNA (".implode(', ', array_keys($wanted)).').');
+            $issues[] = $finding('MotoDesignCheck.dnaIssues.1', "features có {$id}, không phải signature feature của DNA (".implode(', ', array_keys($wanted)).').');
         }
 
         foreach (array_diff_key($wanted, $found) as $id => $feature) {
-            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.2', "features thiếu {$id} của DNA.");
+            $issues[] = $finding('MotoDesignCheck.dnaIssues.2', "features thiếu {$id} của DNA.");
         }
 
         $departures = array_column((array) ($dna['departures'] ?? []), 'id');
         $covered = array_column($data['motorcycle']['departures'], 'departure');
 
         foreach (array_diff($covered, $departures) as $id) {
-            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.3', "motorcycle.departures có {$id}, không phải departure của DNA.");
+            $issues[] = $finding('MotoDesignCheck.dnaIssues.3', "motorcycle.departures có {$id}, không phải departure của DNA.");
         }
 
         foreach (array_diff($departures, $covered) as $id) {
-            $issues[] = Finding::note('MotoDesignCheck.dnaIssues.4', "motorcycle.departures chưa nói {$id} của DNA nằm ở đâu trong thiết kế.");
+            $issues[] = $finding('MotoDesignCheck.dnaIssues.4', "motorcycle.departures chưa nói {$id} của DNA nằm ở đâu trong thiết kế.");
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data  the data of a record joined under an assembly protocol
+     * @param  array<string, mixed>  $dna  the DNA the run pinned
+     * @return list<Finding> every value the code filled from the DNA that the record no longer holds as the DNA gives it: the base, the rider's height and build, and the name, kind and visibility at rest of each DNA feature. A record changed after it was joined — by hand or otherwise — is reported, never corrected
+     */
+    private static function inheritedIssues(array $data, array $dna): array
+    {
+        $issues = [];
+        $differs = static function (string $path, mixed $pinned, mixed $written) use (&$issues): void {
+            if ($pinned !== $written) {
+                $issues[] = Finding::blocking('MotoDesignCheck.inherited.1', "{$path} là ".json_encode($written, JSON_UNESCAPED_UNICODE).'; nguồn đã ghim của lượt chạy là '.json_encode($pinned, JSON_UNESCAPED_UNICODE).' — trường này do hệ thống điền từ DNA, không được đổi.');
+            }
+        };
+        $platform = (array) ($dna['brief']['platform'] ?? []);
+
+        foreach (['family', 'model', 'era', 'engine_family'] as $key) {
+            $differs("motorcycle.base.{$key}", $platform[$key] ?? null, $data['motorcycle']['base'][$key] ?? null);
+        }
+
+        foreach (['height_cm', 'build'] as $key) {
+            $differs("rider_interface.rider.{$key}", $dna['brief']['rider'][$key] ?? null, $data['rider_interface']['rider'][$key] ?? null);
+        }
+
+        $written = array_column((array) $data['features'], null, 'id');
+
+        foreach ((array) ($dna['features'] ?? []) as $feature) {
+            if (! isset($written[$feature['id'] ?? ''])) {
+                continue;
+            }
+
+            foreach (['name', 'kind', 'visible_at_rest'] as $key) {
+                $differs("features {$feature['id']}.{$key}", $feature[$key] ?? null, $written[$feature['id']][$key] ?? null);
+            }
         }
 
         return $issues;

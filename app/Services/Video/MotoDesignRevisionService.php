@@ -216,7 +216,7 @@ final class MotoDesignRevisionService
         }
 
         try {
-            $output = $this->runs->outputFor($run, $raw);
+            $output = $this->runs->outputFor($run, $raw, $stage);
             // The claim only reserved the row: the revision becomes the design here, under the project lock, from the source as it is now.
             $previewInput = $this->stageStore->inputHash((array) $run['input']);
             $problem = DB::transaction(function () use ($projectId, $stage, $claimed, $token, $raw, $output, $report, $previewInput): ?string {
@@ -241,13 +241,13 @@ final class MotoDesignRevisionService
                 ]) ? null : 'Lượt lưu bị giành mất — tải lại rồi thử lại.';
             });
         } catch (\Throwable $e) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa thiết kế không lưu được: '.$e->getMessage());
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa thiết kế không lưu được: '.$e->getMessage(), (string) $token);
 
             throw $e;
         }
 
         if ($problem !== null) {
-            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa thiết kế không được công bố: '.$problem);
+            $this->stageStore->releaseClaim((string) $claimed->id, 'Bản sửa thiết kế không được công bố: '.$problem, (string) $token);
 
             return ['reason' => $problem] + $report;
         }
