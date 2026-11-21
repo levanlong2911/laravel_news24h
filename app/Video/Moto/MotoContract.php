@@ -47,6 +47,9 @@ final class MotoContract
     /** @var string the input of a script written from a design of moto-design-v3: the design with its seven stages and their checkpoints, and film_facts by checkpoint */
     public const SCRIPT_INPUT_V5 = 'moto-script-input-v5';
 
+    /** @var string the input of a script written within the film limits of its release (MotoPipelineRelease::filmLimits): the fifth input with variables.film in place of shot_duration_ms and target_film_duration_ms; its answer is a MotoScript 3.1 document */
+    public const SCRIPT_INPUT_V6 = 'moto-script-input-v6';
+
     /** @var string the answer of such a script: the beats of moto-script-v2, each also naming the checkpoint it opens on and the one it ends on (MotoDesignStates) */
     public const SCRIPT_FORMAT_V3 = 'moto-script-v3';
 
@@ -100,6 +103,9 @@ final class MotoContract
 
     /** @var string the input of a shot plan made from a design of moto-design-v3: the ninth input with each beat's checkpoints and design_states by checkpoint; its answer is a MotoShots 3.0 document */
     public const SHOTS_INPUT_V10 = 'moto-shots-input-v10';
+
+    /** @var string the input of a shot plan made within the film limits of its release (MotoPipelineRelease::filmLimits): the tenth input with film.shot_limits, the most events one shot plays and the most people it shows; its answer stays a MotoShots 3.0 document */
+    public const SHOTS_INPUT_V11 = 'moto-shots-input-v11';
 
     /** @var string the answer of such a shot plan: every shot of moto-shots-v2 also pins the checkpoint its first frame shows and the one its last frame shows */
     public const SHOTS_FORMAT_V3 = 'moto-shots-v3';

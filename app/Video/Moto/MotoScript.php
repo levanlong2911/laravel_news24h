@@ -14,11 +14,49 @@ use App\Video\Llm\JsonAnswer;
 use App\Video\Script\ProjectsScriptDocument;
 use App\Video\Script\ScriptWorkflow;
 use App\Video\Script\StructureChecked;
+use App\Video\Superyacht\Spec\ResolvedPhase;
 use RuntimeException;
 
 final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWorkflow, StructureChecked
 {
-    use ChecksJsonStructure;
+    use ChecksJsonStructure {
+        schemaViolations as private structureViolations;
+    }
+
+    /**
+     * The structure of the answer (ChecksJsonStructure) and, once it holds, the act of every beat against the acts the pinned
+     * schema declares. The act is an identifier code reads — which beats are the main progress, which one is the ending — and the
+     * only thing that tells a release without a hook beat from the one before it, so an act the pinned schema does not declare is
+     * reported under MotoScriptCheck::UNDECLARED_ACT: the check holds the script back by a rule of its own, never as a fault of
+     * the structure.
+     *
+     * @return list<array{code: string, path: string, message: string}>
+     */
+    public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
+    {
+        $violations = $this->structureViolations($decoded, $bundle, $projectId);
+        $schema = json_decode((string) ($this->answerSchemas($bundle)[0]['content'] ?? ''), true);
+        $declared = is_array($schema) ? ($schema['$defs']['beat']['properties']['act']['enum'] ?? null) : null;
+        $beats = is_object($decoded->data ?? null) ? ($decoded->data->beats ?? null) : null;
+
+        if ($violations !== [] || ! is_array($declared) || ! is_array($beats)) {
+            return $violations;
+        }
+
+        foreach (array_values($beats) as $index => $beat) {
+            $act = is_object($beat) ? ($beat->act ?? null) : null;
+
+            if (is_string($act) && ! in_array($act, $declared, true)) {
+                $violations[] = [
+                    'code' => MotoScriptCheck::UNDECLARED_ACT,
+                    'path' => "/data/beats/{$index}/act",
+                    'message' => (is_string($beat->id ?? null) ? $beat->id : 'Beat thứ '.($index + 1)).": act {$act} không có trong các act mà hợp đồng kịch bản này khai (".implode(', ', $declared).').',
+                ];
+            }
+        }
+
+        return $violations;
+    }
 
     public const PROJECTION_VERSION = 'moto-script-timeline-v1';
 
@@ -34,6 +72,9 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
 
     /** @var array<string, mixed> what the release of the project adds to the check policy of a new run; a run keeps the policy it was made with in its context */
     private array $releasePolicy = [];
+
+    /** @var ?array<string, int> the film limits of the release (MotoPipelineRelease::filmLimits): sent to the model as variables.film and pinned with the check policy of the run; null for a release that sets none */
+    private ?array $film = null;
 
     /** @var list<string> */
     private const MOTORCYCLE_COORDINATES = ['coordinate_system', 'profile_curve'];
@@ -54,6 +95,7 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
         $this->eventful = MotoPipelineRelease::cinematic($project);
         $this->checkpointed = $this->eventful && MotoPipelineRelease::checkpointed($project);
         $this->releasePolicy = MotoPipelineRelease::policy($project, 'script');
+        $this->film = $this->eventful ? MotoPipelineRelease::filmLimits($project) : null;
     }
 
     public function format(): string
@@ -128,9 +170,11 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
 
         return [
             'payload' => [
-                'variables' => ($this->eventful
-                    ? ['timing_policy' => 'per_shot', 'shot_duration_ms' => self::SHOT_DURATION_MS, 'target_film_duration_ms' => null]
-                    : ['video_length' => $brief['video_length']]) + [
+                'variables' => (match (true) {
+                    $this->film !== null => ['timing_policy' => 'per_shot', 'film' => $this->film],
+                    $this->eventful => ['timing_policy' => 'per_shot', 'shot_duration_ms' => self::SHOT_DURATION_MS, 'target_film_duration_ms' => null],
+                    default => ['video_length' => $brief['video_length']],
+                }) + [
                         'aspect_ratio' => $brief['aspect_ratio'],
                         'platform' => $brief['platform'],
                         'tone_notes' => $brief['tone_notes'],
@@ -151,7 +195,7 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
                 'base_card' => $baseCard,
                 'design' => $facts,
                 'source_names' => self::sourceNames($identity),
-                'policy' => array_replace((array) $config['check'], $this->releasePolicy),
+                'policy' => array_replace((array) $config['check'], $this->releasePolicy, $this->film === null ? [] : ['film' => $this->film]),
             ] + ($this->eventful ? [MotoScriptValidation::KEY => MotoScriptValidation::current()] : []),
         ];
     }

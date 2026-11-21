@@ -40,7 +40,16 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
         $this->releasePolicy = MotoPipelineRelease::policy($project, 'shots');
         $law = MotoPipelineRelease::policy($project, 'scenes')['work_tracking_version'] ?? null;
         $this->law = is_string($law) ? $law : null;
+        $film = $this->eventful ? MotoPipelineRelease::filmLimits($project) : null;
+        $this->shotLimits = $film === null ? null : ['events' => $film['shot_events_max'], 'people' => $film['shot_people_max']];
+        $this->bodyMs = $film === null ? null : $film['body_duration_ms'];
     }
+
+    /** @var ?int the milliseconds the main part of the film runs after the edit under the film limits of the release, pinned with each run so its check can tell when the source shots of the main part cannot reach it; null for a release that sets none */
+    private ?int $bodyMs = null;
+
+    /** @var ?array{events: int, people: int} the most different events one shot plays and the most different people it shows under the film limits of the release (MotoPipelineRelease::filmLimits), sent as film.shot_limits and pinned with each run; null for a release that sets none */
+    private ?array $shotLimits = null;
 
     /** @var ?string the law the release of the bound project follows the work of its scene plans under; null for a release that names none */
     private ?string $law = null;
@@ -94,6 +103,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     {
         return match (true) {
             ! $this->eventful => MotoContract::SHOTS_INPUT,
+            $this->checkpointed && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V11,
             $this->checkpointed => MotoContract::SHOTS_INPUT_V10,
             ($this->releasePolicy['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE => MotoContract::SHOTS_INPUT_V9,
             $this->law !== null => MotoContract::SHOTS_INPUT_V8,
@@ -163,6 +173,13 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
         if (($pinned['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE) {
             $built['payload']['film']['coverage_policy'] = MotoShotsCheck::COVERAGE;
             $built['context']['input']['film']['coverage_policy'] = MotoShotsCheck::COVERAGE;
+        }
+
+        if ($this->shotLimits !== null) {
+            $built['payload']['film']['shot_limits'] = $this->shotLimits;
+            $built['context']['input']['film']['shot_limits'] = $this->shotLimits;
+            $pinned['shot_limits'] = $this->shotLimits;
+            $pinned['body_duration_ms'] = $this->bodyMs;
         }
 
         $problems = self::precheck($built['context'] + $pinned);
@@ -533,10 +550,24 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
 
             if ($context['shot_editing_policy'] === MotoShotsCheck::COVERAGE) {
                 $events = array_sum(array_map(static fn (array $beat): int => count((array) ($beat['events'] ?? [])), (array) $context['beats']));
-                $room = is_int($max) ? $max * self::STEPS_PER_SHOT : 0;
+                $limits = is_array($context['shot_limits'] ?? null) ? $context['shot_limits'] : null;
+                $perShot = $limits === null ? self::STEPS_PER_SHOT : min(self::STEPS_PER_SHOT, (int) $limits['events']);
+                $room = is_int($max) ? $max * $perShot : 0;
 
                 if ($events > $room) {
-                    $problems[] = "Kịch bản có {$events} sự kiện nhưng {$max} shot chỉ chứa được {$room} bước hành động (".self::STEPS_PER_SHOT.' bước mỗi shot) — không thể diễn đủ mọi sự kiện; đổi ngân sách hoặc kịch bản.';
+                    $problems[] = $limits === null
+                        ? "Kịch bản có {$events} sự kiện nhưng {$max} shot chỉ chứa được {$room} bước hành động (".self::STEPS_PER_SHOT.' bước mỗi shot) — không thể diễn đủ mọi sự kiện; đổi ngân sách hoặc kịch bản.'
+                        : "Kịch bản có {$events} sự kiện nhưng {$max} shot chỉ diễn được {$room} sự kiện ({$perShot} sự kiện mỗi shot) — không thể diễn đủ mọi sự kiện; sửa kịch bản.";
+                }
+
+                foreach ($limits === null ? [] : (array) $context['beats'] as $beat) {
+                    foreach ((array) ($beat['events'] ?? []) as $event) {
+                        $named = count(array_unique(array_map('strval', (array) ($event['character_ids'] ?? []))));
+
+                        if ($named > (int) $limits['people']) {
+                            $problems[] = "{$event['id']} của {$beat['id']} nêu {$named} nhân vật nhưng một shot chỉ hiện tối đa {$limits['people']} người — không shot nào diễn được sự kiện này; sửa kịch bản.";
+                        }
+                    }
                 }
 
                 $problems = [...$problems, ...MotoShotsCheck::unlinkedWorkIssues((array) $context['scenes'])];

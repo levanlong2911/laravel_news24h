@@ -151,14 +151,25 @@
                     @endforeach
                 @endif
 
-                @if(is_array($doc) && in_array($shown['document']['format'] ?? null, [\App\Video\Moto\MotoContract::SCRIPT_FORMAT, \App\Video\Moto\MotoContract::SCRIPT_FORMAT_V2], true))
+                @if(is_array($doc) && in_array($shown['document']['format'] ?? null, [\App\Video\Moto\MotoContract::SCRIPT_FORMAT, \App\Video\Moto\MotoContract::SCRIPT_FORMAT_V2, \App\Video\Moto\MotoContract::SCRIPT_FORMAT_V3], true))
                     @php
                         $story = $doc['story'];
-                        $eventful = ($shown['document']['format'] ?? null) === \App\Video\Moto\MotoContract::SCRIPT_FORMAT_V2;
+                        $eventful = in_array($shown['document']['format'] ?? null, [\App\Video\Moto\MotoContract::SCRIPT_FORMAT_V2, \App\Video\Moto\MotoContract::SCRIPT_FORMAT_V3], true);
                     @endphp
                     <div class="va-brief">
+                        @foreach(['theme' => 'Chủ đề', 'message' => 'Thông điệp', 'audience' => 'Khán giả', 'emotional_goal' => 'Cảm xúc'] as $key => $label)
+                            @if(isset($story[$key]))
+                                <div class="line"><span class="k">{{ $label }}</span><span class="v">{{ $story[$key] }}</span></div>
+                            @endif
+                        @endforeach
                         <div class="line"><span class="k">Logline</span><span class="v">{{ $story['logline'] }}</span></div>
                         <div class="line"><span class="k">Trục phim</span><span class="v">{{ $story['spine'] }}</span></div>
+                        @if(is_array($story['client'] ?? null))
+                            <div class="line"><span class="k">Khách {{ $story['client']['character'] }} · {{ $story['client']['want_beat'] }} → {{ $story['client']['change_beat'] }}</span><span class="v">Muốn: {{ $story['client']['want'] }} — Vì: {{ $story['client']['reason'] }} — Thay đổi: {{ $story['client']['change'] }}</span></div>
+                        @endif
+                        @if(is_array($story['motorcycle'] ?? null))
+                            <div class="line"><span class="k">Chiếc xe · rõ hình ở {{ $story['motorcycle']['shape_beat'] }}</span><span class="v">{{ $story['motorcycle']['from'] }} → {{ $story['motorcycle']['to'] }}</span></div>
+                        @endif
                         <div class="line"><span class="k">Hero</span><span class="v">{{ $story['hero_beat'] }}</span></div>
                         @foreach($story['obstacles'] as $obstacle)
                             <div class="line"><span class="k">{{ $obstacle['id'] }} · {{ $obstacle['problem_beat'] }} → {{ $obstacle['solution_beat'] }}</span><span class="v">{{ $obstacle['problem'] }} → {{ $obstacle['solution'] }}</span></div>
@@ -186,7 +197,7 @@
                             <tbody>
                                 @foreach($doc['beats'] as $beat)
                                     <tr>
-                                        <td><b>{{ $beat['id'] }}</b><br><span class="va-tag mute">{{ $beat['time_jump'] }}</span><br>hồi: {{ $beat['act'] }}@if(! $eventful)<br>s: {{ $beat['duration_s'] }}@endif<br>BS: {{ $beat['state'] ?? '—' }}<br>hé lộ: {{ $beat['reveal'] }}</td>
+                                        <td><b>{{ $beat['id'] }}</b><br><span class="va-tag mute">{{ $beat['time_jump'] }}</span><br>hồi: {{ $beat['act'] }}@if(! $eventful)<br>s: {{ $beat['duration_s'] }}@endif<br>BS: {{ $beat['state'] ?? '—' }}@if(array_key_exists('checkpoint_start', $beat))<br>mốc: {{ $beat['checkpoint_start'] ?? '—' }} → {{ $beat['checkpoint_end'] ?? '—' }}@endif<br>hé lộ: {{ $beat['reveal'] }}</td>
                                         <td>{{ $beat['visual'] }}<br><em>{{ $beat['purpose'] }}</em><br><span class="va-tag mute">{{ implode(', ', $beat['on_screen']) ?: '—' }}</span>
                                             @foreach($beat['events'] ?? [] as $event)
                                                 <br><b>{{ $event['id'] }}</b>{{ $event['character_ids'] === [] ? '' : ' ('.implode(', ', $event['character_ids']).')' }}: {{ $event['action'] }} → {{ $event['result'] }}

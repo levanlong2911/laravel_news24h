@@ -6,7 +6,10 @@ namespace App\Video\Moto;
 
 final class MotoScriptCheck
 {
-    public const VERSION = 'moto-script-check-v3';
+    public const VERSION = 'moto-script-check-v4';
+
+    /** @var string the code of a violation MotoScript::schemaViolations() reports beside the structure: a beat whose act the pinned schema does not declare. It is a requirement of this check (actIssues.1), never a schema failure */
+    public const UNDECLARED_ACT = 'ACT';
 
     public const PASS = 'PASS';
 
@@ -60,8 +63,8 @@ final class MotoScriptCheck
     /**
      * @param  ?array<string, mixed>  $response
      * @param  array<string, mixed>  $context
-     * @param  list<array{code: string, path: string, message: string}>  $schema
-     * @param  array<string, mixed>  $policy
+     * @param  list<array{code: string, path: string, message: string}>  $schema  the violations of the structure, and under UNDECLARED_ACT each beat whose act the pinned schema does not declare: those hold the script back as a requirement and the rules still run
+     * @param  array<string, mixed>  $policy  the policy the run pinned; its film limits (MotoPipelineRelease::filmLimits), main_states_required and client_role are applied only when it holds them, so a run that pinned neither is checked as before
      * @param  string  $format  the answer format the run pinned
      * @return array{version: string, format: string, verdict: string, status: ?string, error: ?string, schema: list<string>, issues: list<string>, warnings: list<string>, judge: string}
      */
@@ -78,7 +81,8 @@ final class MotoScriptCheck
         }
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
-        $schemaLines = array_map(static fn (array $v): string => trim($v['path'].' '.$v['message']), $schema);
+        $undeclared = array_values(array_filter($schema, static fn (array $v): bool => ($v['code'] ?? null) === self::UNDECLARED_ACT));
+        $schemaLines = array_map(static fn (array $v): string => trim($v['path'].' '.$v['message']), array_values(array_filter($schema, static fn (array $v): bool => ($v['code'] ?? null) !== self::UNDECLARED_ACT)));
 
         if ($schemaLines !== []) {
             return self::result(self::FAIL, $status, null, $schemaLines);
@@ -88,7 +92,7 @@ final class MotoScriptCheck
             return self::result(self::FAIL, $status, 'Model trả status fail: '.implode('; ', (array) ($response['flags'] ?? [])));
         }
 
-        $issues = [];
+        $issues = array_map(static fn (array $v): Finding => Finding::requirement('MotoScriptCheck.actIssues.1', (string) $v['message']), $undeclared);
         $warnings = [];
 
         if (($response['project_id'] ?? null) !== ($context['project_id'] ?? null)) {
@@ -142,13 +146,19 @@ final class MotoScriptCheck
             ...self::designIssues($beats, $design, $projects),
             ...($eventful ? self::eventCardIssues((array) $data['text_cards'], $beats, $byId, $design) : self::cardIssues((array) $data['text_cards'], $beats, $byId, $design, $context, $policy, $total)),
         ];
-        $issues = [...$issues, ...self::referenceIssues($data, $byId), ...($eventful ? self::eventIssues($data, $beats, $byId, $design, (bool) ($policy['stationary_requires_support'] ?? false), $projects, $validation !== null && $validation['support'] === MotoScriptValidation::SUPPORT_BY_DESIGN) : [])];
+        $issues = [...$issues, ...self::referenceIssues($data, $byId, $beats, $design, is_string($policy['client_role'] ?? null) ? $policy['client_role'] : null), ...($eventful ? self::eventIssues($data, $beats, $byId, $design, (bool) ($policy['stationary_requires_support'] ?? false), $projects, $validation !== null && $validation['support'] === MotoScriptValidation::SUPPORT_BY_DESIGN) : [])];
+
+        if ($eventful && is_array($policy['film'] ?? null)) {
+            $issues = [...$issues, ...self::filmIssues($beats, $policy['film'])];
+        }
+
+        $mainStates = (bool) ($policy['main_states_required'] ?? false);
 
         if ((bool) ($policy['cover_build_states'] ?? false)) {
-            $issues = [...$issues, ...self::coverageIssues($beats, $design)];
+            $issues = [...$issues, ...self::coverageIssues($beats, $design, $mainStates)];
             $warnings = $advisory;
         } else {
-            $issues = [...$issues, ...$advisory];
+            $issues = [...$issues, ...$advisory, ...($mainStates ? array_values(array_filter(self::coverageIssues($beats, $design, true), static fn (Finding $finding): bool => $finding->kind === MotoCheckRules::USE)) : [])];
         }
 
         return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
@@ -385,9 +395,10 @@ final class MotoScriptCheck
     /**
      * @param  list<array<string, mixed>>  $beats
      * @param  array<string, mixed>  $design  the design facts of facts()
+     * @param  bool  $mainStates  the policy the run pinned as main_states_required: the film is built from every build state, so a state without a beat in the main progress holds the script back; a run pinned without it is told so as a note, as before
      * @return list<string> the build states without a beat in the main progress and the ids their beats leave out or may not name: exactly the refs of a design state; every id a physical state must name, and others only as that state allows
      */
-    private static function coverageIssues(array $beats, array $design): array
+    private static function coverageIssues(array $beats, array $design, bool $mainStates = false): array
     {
         $issues = [];
 
@@ -396,7 +407,9 @@ final class MotoScriptCheck
             $main = array_values(array_filter($beats, static fn (array $beat): bool => $beat['state'] === $id && $beat['time_jump'] === 'none' && ! in_array($beat['act'], ['hook', 'ending'], true)));
 
             if ($main === []) {
-                $issues[] = Finding::note('MotoScriptCheck.coverageIssues.1', "Phim chưa có beat ở mạch chính cho {$id}.");
+                $issues[] = $mainStates
+                    ? Finding::requirement('MotoScriptCheck.coverageIssues.3', "Phim chưa có beat ở mạch chính cho {$id} — hook, phần kết và beat nhảy thời gian không thay cho build state này.")
+                    : Finding::note('MotoScriptCheck.coverageIssues.1', "Phim chưa có beat ở mạch chính cho {$id}.");
 
                 continue;
             }
@@ -420,6 +433,34 @@ final class MotoScriptCheck
     }
 
     /**
+     * @param  list<array<string, mixed>>  $beats
+     * @param  array<string, int>  $film  the film limits the run pinned (MotoPipelineRelease::filmLimits)
+     * @return list<string> what the film cannot hold: more events in the whole script, the ending included, than the film allows, and an event that names more people than one shot shows. How long an event lasts and whether the action fits the shots are for the shot plan
+     */
+    private static function filmIssues(array $beats, array $film): array
+    {
+        $issues = [];
+        $events = array_merge([], ...array_map(static fn (array $beat): array => array_values((array) $beat['events']), $beats));
+        $max = (int) ($film['events_max'] ?? 0);
+
+        if ($max > 0 && count($events) > $max) {
+            $issues[] = Finding::requirement('MotoScriptCheck.filmIssues.1', 'Kịch bản có '.count($events)." sự kiện, vượt giới hạn {$max} sự kiện của phim (tính cả phần kết).");
+        }
+
+        $people = (int) ($film['shot_people_max'] ?? 0);
+
+        foreach ($people > 0 ? $events : [] as $event) {
+            $named = count(array_unique(array_map('strval', (array) $event['character_ids'])));
+
+            if ($named > $people) {
+                $issues[] = Finding::requirement('MotoScriptCheck.filmIssues.2', "{$event['id']} nêu {$named} nhân vật; một shot chỉ hiện tối đa {$people} người — không shot nào diễn được sự kiện này.");
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
      * @param  array<string, mixed>  $data
      * @param  array<string, int>  $byId
      * @return list<string> a hero beat that is no beat of the script. Which act it belongs to, how much it reveals and what the beats before it show are content the model writes and the reviewer judges
@@ -434,11 +475,49 @@ final class MotoScriptCheck
     /**
      * @param  array<string, mixed>  $data
      * @param  array<string, int>  $byId
-     * @return list<string> a loop, an obstacle or a music hit that names a beat the script does not have; the order of the beats they name is content
+     * @param  list<array<string, mixed>>  $beats
+     * @param  array<string, mixed>  $design  the design facts of facts()
+     * @param  ?string  $clientRole  the role the run pinned as client_role: the role of the design the client plays; null for a run that pinned none, and then who the client is, is not checked
+     * @return list<string> a loop, an obstacle, a music hit, the line of the client or the line of the motorcycle that names a beat the script does not have; a client who is no character of the script, who does not play the pinned client role or who is not on screen in the beats of the line; and a beat of the motorcycle's form that is not on a physical stage. A script before MotoScript 3.1 has neither line and is read as before. The order of the beats they name, and what those beats show, is content
      */
-    private static function referenceIssues(array $data, array $byId): array
+    private static function referenceIssues(array $data, array $byId, array $beats = [], array $design = [], ?string $clientRole = null): array
     {
         $issues = [];
+        $client = $data['story']['client'] ?? null;
+        $motorcycle = $data['story']['motorcycle'] ?? null;
+
+        if (is_array($client)) {
+            $roles = array_column((array) $data['characters'], 'role_ids', 'id');
+            $character = (string) $client['character'];
+
+            if (! isset($roles[$character])) {
+                $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.4', "story.client.character {$character} không có trong characters.");
+            } elseif ($clientRole !== null && ! in_array($clientRole, (array) $roles[$character], true)) {
+                $playing = array_keys(array_filter($roles, static fn (mixed $held): bool => in_array($clientRole, (array) $held, true)));
+                $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.7', "story.client.character {$character} không đóng vai khách hàng {$clientRole} của thiết kế".($playing === [] ? '.' : ' — vai đó do '.implode(', ', $playing).' đảm nhiệm.'));
+            }
+
+            foreach (['want_beat', 'change_beat'] as $key) {
+                $index = $byId[$client[$key]] ?? null;
+
+                if ($index === null) {
+                    $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.5', "story.client.{$key} {$client[$key]} không có trong beats.");
+                } elseif (isset($roles[$character], $beats[$index]) && ! in_array($character, (array) $beats[$index]['on_screen'], true)) {
+                    $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.8', "story.client.{$key} {$client[$key]}: {$character} không có trong on_screen của beat này.");
+                }
+            }
+        }
+
+        if (is_array($motorcycle)) {
+            $index = $byId[$motorcycle['shape_beat']] ?? null;
+            $state = $index === null ? null : ($beats[$index]['state'] ?? null);
+
+            if ($index === null) {
+                $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.6', "story.motorcycle.shape_beat {$motorcycle['shape_beat']} không có trong beats.");
+            } elseif (isset($beats[$index]) && ! (is_string($state) && MotoDesignStates::ofFacts($design)->physicalStage($state))) {
+                $issues[] = Finding::requirement('MotoScriptCheck.referenceIssues.9', "story.motorcycle.shape_beat {$motorcycle['shape_beat']} ở ".(is_string($state) ? $state : 'beat không có build state').', không phải giai đoạn trên xe thật.');
+            }
+        }
 
         foreach ((array) $data['story']['loops'] as $loop) {
             if (! isset($byId[$loop['plant']], $byId[$loop['payoff']])) {

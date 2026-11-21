@@ -68,6 +68,37 @@ final class MotoPipelineRelease
     }
 
     /**
+     * @return ?array{body_duration_ms: int, shot_duration_ms: int, shots_max: int, events_max: int, shot_events_max: int, shot_people_max: int} the limits the release of the project sets for its film — the length of its main part after the edit, the source shots it is filmed in, the events of its script, and the events and people one shot shows — each read from the one place the release declares it; null for a release that sets none, so a run made under it is prepared and checked as before
+     *
+     * @throws RuntimeException when the release declares film limits without one of them as a positive whole number
+     */
+    public static function filmLimits(VideoProject $project): ?array
+    {
+        $film = self::policy($project, 'film');
+
+        if ($film === []) {
+            return null;
+        }
+
+        $limits = [
+            'body_duration_ms' => $film['body_duration_ms'] ?? null,
+            'shot_duration_ms' => MotoContract::SHOT_MS,
+            'shots_max' => self::policy($project, 'shots')['shot_budget']['max'] ?? null,
+            'events_max' => $film['script_events_max'] ?? null,
+            'shot_events_max' => $film['shot_events_max'] ?? null,
+            'shot_people_max' => $film['shot_people_max'] ?? null,
+        ];
+
+        foreach ($limits as $name => $value) {
+            if (! is_int($value) || $value < 1) {
+                throw new RuntimeException('Bản phát hành '.self::of($project)." khai giới hạn phim nhưng {$name} không phải số nguyên dương — không gọi model.");
+            }
+        }
+
+        return $limits;
+    }
+
+    /**
      * @param  bool|\Closure(): bool  $hasRuns  whether the project already ran Phase 2 under no pinned release; a closure is asked only when the project pinned none
      * @return string the release the project keeps: the one it pinned, the legacy release when it already ran, otherwise the configured release of new projects. Reads only, nothing is stored
      *

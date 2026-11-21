@@ -2135,10 +2135,10 @@ return [
                             'design_format' => \App\Video\Moto\MotoContract::DESIGN_FORMAT_V3,
                             'phases' => [
                                 'phase-3' => ['input_format' => 'moto-design-input-v2', 'revisions' => [['id' => '8fb60aad-bb7a-4940-91dd-6e98fc9222fd', 'sha256' => '959cdb845ef73593b657f7dd866641a0cc81fa9db72be6f9be28c277fc90daea'], ['id' => 'a34305c2-c8c0-4af8-8494-6a16e7345651', 'sha256' => 'b73e45cf1f08a9f3c6f4760dae7042d2897aedc6a56f02ab8d04f095cb0bdc09']]],
-                                'phase-4' => ['input_format' => 'moto-script-input-v5', 'revisions' => [['id' => '52a23676-24cf-415a-b333-a4f922d4f9ec', 'sha256' => 'b99747735097a75a26dfd808dfa7797eb4ee95d1d4435d2410766cbcaf6bb5a3']]],
+                                'phase-4' => ['input_format' => 'moto-script-input-v6', 'revisions' => [['id' => 'bc9cd138-32a6-4df1-be68-2db1324c5cbc', 'sha256' => '171e67ddb4f3d52b24494454e0b4278e5f7fd779ee45d16ec2edbba133392206']]],
                                 'phase-5' => ['input_format' => 'moto-locations-input-v3', 'revisions' => [['id' => '1dc551f8-1cce-48a1-9309-9d49defa1359', 'sha256' => 'a47e84f6ef44e3699c973957f70a05014cc2095655ee13b34b7fe77ba0e49f9f']]],
                                 'phase-6' => ['input_format' => 'moto-scenes-input-v5', 'revisions' => [['id' => '6e0cf7fe-a4fc-4bfd-a54d-cbf96727bf82', 'sha256' => '970e52c5597b36e45cb5e935569855eda011ba7f6c37527451c6509604eac0a7']]],
-                                'phase-7' => ['input_format' => 'moto-shots-input-v10', 'revisions' => [['id' => 'eda5dc96-fa97-4526-8125-aba2db31a5b7', 'sha256' => 'f77619d134d0817f9258d4508a4ff86f77db74766f5d11c7fca5796b7bce7c81']]],
+                                'phase-7' => ['input_format' => 'moto-shots-input-v11', 'revisions' => [['id' => '7282dc54-913b-4993-9983-1e59d8b68705', 'sha256' => '5ec64d54f8ca46a535a6b8456886fb3d76b1a8d4cb1974f0578aba1ab11484e5']]],
                                 'phase-10' => ['input_format' => 'moto-clip-prompt-input-v9', 'revisions' => [['id' => 'a07e92ea-c82a-4e36-a644-32ee6e20a29b', 'sha256' => '859a611ad86fdbc053bb7c810330e84064cb694bc4121898137279cc668d0177']]],
                             ],
                             'actions' => [
@@ -2165,7 +2165,7 @@ return [
                                         'draft' => ['script'],
                                     ],
                                     'outputs' => [
-                                        'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v3): the story, five characters each playing one fixed role of the design in its order, the beats as ordered events with the operating state before and after each, every beat on a physical stage with the checkpoint it opens on and the one it ends on, the shot directives the brief fixed, the text cards and the music brief; no screen time; release moto-cinematic-3s-v7'],
+                                        'script' => ['namespace' => 'moto', 'schema' => 'MotoScript', 'version' => '3.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 4 Output (format moto-script-v3): the story with its theme, message, audience, emotional goal, the line of the client and the line of the motorcycle, five characters each playing one fixed role of the design in its order, the beats as ordered events with the operating state before and after each, every beat on a physical stage with the checkpoint it opens on and the one it ends on, the shot directives the brief fixed, the text cards and the music brief; written within the film limits of the release, no screen time; release moto-cinematic-3s-v7'],
                                     ],
                                 ],
                                 'spec.scenes' => [
@@ -2196,9 +2196,10 @@ return [
                                 ],
                             ],
                             'policy' => [
-                                'script' => ['stationary_requires_support' => true],
+                                'film' => ['body_duration_ms' => 45000, 'script_events_max' => 45, 'shot_events_max' => 4, 'shot_people_max' => 2],
+                                'script' => ['stationary_requires_support' => true, 'main_states_required' => true, 'client_role' => 'ROLE05'],
                                 'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2],
-                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 20, 'target' => 20]],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 15, 'target' => 15]],
                                 'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V9],
                             ],
                         ],

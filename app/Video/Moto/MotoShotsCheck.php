@@ -6,7 +6,7 @@ namespace App\Video\Moto;
 
 final class MotoShotsCheck
 {
-    public const VERSION = 'moto-shots-check-v7';
+    public const VERSION = 'moto-shots-check-v8';
 
     /** @var string the timing a run pinned from MotoShots@1.2.0 on: code sets the screen time of whole and closing parts and of the shot */
     public const TIMING = 'moto-shots-timing-v1';
@@ -232,6 +232,10 @@ final class MotoShotsCheck
             $issues = [...$issues, ...self::designRefIssues($shots, $beats, $scenes, $context, (array) ($placed['shots'] ?? []), $editing)];
         }
 
+        if (is_int($context['body_duration_ms'] ?? null)) {
+            $issues = [...$issues, ...self::bodyIssues($shots, array_column((array) ($context['input']['beats'] ?? []), 'act', 'id'), $context['body_duration_ms'])];
+        }
+
         $issues = [...$issues, ...self::conflictIssues($conflicts, $order, $beats, (array) $context['input'])];
         $blocking = array_filter($conflicts, static fn (array $conflict): bool => (bool) $conflict['blocking']) !== [];
 
@@ -244,6 +248,24 @@ final class MotoShotsCheck
         }
 
         return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the shots with the take code set for each
+     * @param  array<string, ?string>  $acts  the act of each beat of the source, by beat id
+     * @param  int  $bodyMs  the milliseconds the main part of the film runs after the edit, as the run pinned them
+     * @return list<string> told to the reviewer before any clip is paid for: the source shots of the main part — every shot that plays a beat other than the ending — hold less material than the main part must run, so no edit can reach it; nothing is added, slowed or repeated to make up for it
+     */
+    private static function bodyIssues(array $shots, array $acts, int $bodyMs): array
+    {
+        $body = array_values(array_filter($shots, static fn (array $shot): bool => array_filter(array_column((array) $shot['coverage'], 'beat'), static fn (string $beat): bool => ($acts[$beat] ?? null) !== 'ending') !== []));
+        $material = array_sum(array_map(static fn (array $shot): int => (int) ($shot['render_duration_ms'] ?? MotoContract::SHOT_MS), $body));
+
+        if ($material >= $bodyMs) {
+            return [];
+        }
+
+        return [Finding::note('MotoShotsCheck.bodyIssues.1', "Phần chính của phim phải dài {$bodyMs} ms sau khi dựng, nhưng ".count($body)." shot nguồn của phần chính chỉ có {$material} ms nguyên liệu (shot dành riêng cho phần kết không tính) — với độ dài clip nguồn hiện tại phim chưa đạt thời lượng phần chính; không bù bằng thêm shot, kéo chậm hay lặp hình.")];
     }
 
     /**
@@ -928,7 +950,7 @@ final class MotoShotsCheck
      * @param  list<array<string, mixed>>  $shots  the shots as written
      * @param  array<string, array<string, mixed>>  $beats  the beats with their events
      * @param  array<string, mixed>  $context
-     * @return list<string> by shot: action steps or camera segments whose ids do not run in sequence or whose spans do not cover 0–3000 ms once, a step that plays an event the shot does not cover or names an actor not among its people, a covered event no step plays, an operating state that names what the design does not have, puts a part in two positions, leaves out a position the shot shows or differs from the event the shot opens or completes, and a card that is unknown, of a beat or event the shot does not cover, too short, outside the shot or over another; then every script card not placed exactly once and every directive anchor no step keeps
+     * @return list<string> by shot: action steps or camera segments whose ids do not run in sequence or whose spans do not cover 0–3000 ms once, a step that plays an event the shot does not cover or names an actor not among its people, a covered event no step plays, under the shot limits a run pinned (shot_limits) a shot that plays more different events or shows more different people — those it lists, those its steps name and those its events name — than they allow, an operating state that names what the design does not have, puts a part in two positions, leaves out a position the shot shows or differs from the event the shot opens or completes, and a card that is unknown, of a beat or event the shot does not cover, too short, outside the shot or over another; then every script card not placed exactly once and every directive anchor no step keeps
      */
     private static function timelineIssues(array $shots, array $beats, array $context): array
     {
@@ -993,6 +1015,25 @@ final class MotoShotsCheck
 
             foreach (array_diff($covered, array_keys($stepped)) as $event) {
                 $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.5', "{$id}: {$event} có trong coverage nhưng không nhịp nào của action_timeline diễn.");
+            }
+
+            if (is_array($context['shot_limits'] ?? null)) {
+                $played = array_values(array_unique(array_map('strval', [...$covered, ...array_keys($stepped)])));
+                $shown = array_values(array_unique(array_map('strval', [
+                    ...$people,
+                    ...array_merge([], ...array_map(static fn (array $step): array => array_values((array) $step['actor_ids']), $timeline)),
+                    ...array_merge([], ...array_map(static fn (string $event): array => array_values((array) ($events[$event]['character_ids'] ?? [])), $played)),
+                ])));
+                $most = (int) $context['shot_limits']['events'];
+                $crowd = (int) $context['shot_limits']['people'];
+
+                if (count($played) > $most) {
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.21', "{$id} diễn ".count($played).' sự kiện ('.implode(', ', $played)."), vượt giới hạn {$most} sự kiện của một shot.");
+                }
+
+                if (count($shown) > $crowd) {
+                    $issues[] = Finding::requirement('MotoShotsCheck.timelineIssues.22', "{$id} có ".count($shown).' người ('.implode(', ', $shown)."), vượt giới hạn {$crowd} người của một shot — tính cả người xuất hiện lần lượt.");
+                }
             }
 
             foreach ($path as $index => $segment) {
