@@ -74,9 +74,12 @@ return (static function (): array {
         'phases' => [
             $phase('bec663ef-c77c-4c7d-ac26-466da297c2a2', 'phase-6', 15, 'Phase 6 — Scenes staged in seven steps, with pace and emotion', 6, 'phase-6-rev15.md', '964ad837-596e-400c-8ea5-553b6db77c31',
                 'Phase 6 moto revision 15 (release moto-cinematic-3s-v9; format moto-scenes-v3, schema MotoScenes@3.1.0, đầu vào moto-scenes-input-v8; nền là revision 14): viết lại thành bảy bước — đọc nguồn, chia scene, mục tiêu-nhịp-cảm xúc, dàn dựng, theo dõi trạng thái và work, nối cảnh, tự rà rồi xuất JSON. Bổ sung pace và emotion (start, end) cho mỗi scene, đọc từ mục đích beat và theme, spine, emotional_goal của kịch bản. Blocking vẫn là một đoạn văn, viết theo thứ tự mở cảnh → hướng và hướng nhìn → di chuyển → tương tác → vật đỡ → kết cảnh; không đặt người vào đầu cảnh khi họ vào sau, không đưa xe thật vào cảnh chỉ có bản vẽ hay mô hình, không dời vật cố định. Đầu vào thêm kích thước và hệ toạ độ của địa điểm, footprint từng vùng, bề rộng lối vào, footprint và hướng đặt của vật thể; giá trị null là chưa biết, không tự điền. Phần Work giữ nguyên văn revision 14. Các phần còn lại rút bằng cách bỏ câu trùng với mô tả trong schema; quy tắc chia scene, checkpoint, continuity và chuyển cảnh không đổi.'),
+            $phase('66afaccc-7253-4ff0-ab0c-d26c30a09c2f', 'phase-7', 21, 'Phase 7 — How each scene is filmed, with its pace and emotion', 7, 'phase-7-rev21.md', '35a000dd-521c-45b2-99d7-95bcd5bcaacf',
+                'Phase 7 moto revision 21 (release moto-cinematic-3s-v9; chính sách full-coverage-budget-v1, format moto-shots-v3 và schema MotoShots@3.0.0 giữ nguyên, đầu vào moto-shots-input-v14; nền là revision 20): mỗi scene nhận thêm pace và emotion (start, end) từ bản chia scene; dùng chúng để quyết định cách quay — tốc độ máy quay và hành động, lượng nội dung một shot giữ, điều hình ảnh nhấn mạnh; không đổi sự kiện, blocking, ngân sách shot, ba giây của shot hay số người một shot được có; không thể hiện được trong các giới hạn đó thì ghi vào conflicts, dẫn pace hoặc emotion của scene làm bằng chứng. Thêm một dòng tự rà tương ứng. Mọi phần khác như revision 20.'),
         ],
         'links' => [
             $link('38375724-f3b2-4986-a684-a70d0026c2c3', 'bec663ef-c77c-4c7d-ac26-466da297c2a2', 'd555d28b-ac43-4703-9f1b-0ac58b636fbc', 'scenes'),
+            $link('08583000-fd0f-4108-90b0-0f4e6d54d111', '66afaccc-7253-4ff0-ab0c-d26c30a09c2f', '213e1afe-f1a3-4cb2-81e0-94f7d2e916e3', 'shots'),
         ],
     ];
 })();

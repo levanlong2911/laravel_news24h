@@ -45,7 +45,12 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
         $this->bodyMs = $film === null ? null : $film['body_duration_ms'];
         $this->dossier = $this->eventful && MotoPipelineRelease::dossier($project);
         $this->setDesign = $this->dossier && MotoPipelineRelease::setDesign($project);
+        $staging = MotoPipelineRelease::policy($project, 'scenes')['staging_version'] ?? null;
+        $this->staging = is_string($staging) ? $staging : null;
     }
+
+    /** @var ?string the staging contract the release of the bound project names for its scenes (MotoScenes::STAGING): the shot step is then handed the pace of each scene and the emotion it opens and ends on; null for a release that names none */
+    private ?string $staging = null;
 
     /** @var bool whether the release plans its places as a set design dossier (moto-locations-v4), whose architecture, objects, plate cameras, lighting plans, set states and continuity the shot step is handed */
     private bool $setDesign = false;
@@ -111,6 +116,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     {
         return match (true) {
             ! $this->eventful => MotoContract::SHOTS_INPUT,
+            $this->staging !== null && $this->setDesign && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V14,
             $this->setDesign && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V13,
             $this->dossier && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V12,
             $this->checkpointed && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V11,
@@ -161,6 +167,12 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
             throw new RuntimeException('Bản chia scene đã duyệt theo luật work '.($planLaw ?? 'cũ (không ghi tên)').', bản phát hành của dự án lập shot theo '.($this->law ?? 'luật cũ').' — cần bản chia scene của đúng bản phát hành này.');
         }
 
+        $planStaging = is_string($scenes['plan']['staging_version'] ?? null) ? $scenes['plan']['staging_version'] : null;
+
+        if ($planStaging !== $this->staging) {
+            throw new RuntimeException('Bản chia scene đã duyệt '.($planStaging === null ? 'không khai nhịp và cảm xúc của scene' : "theo hợp đồng dàn dựng {$planStaging}").', bản phát hành của dự án lập shot từ bản chia scene '.($this->staging === null ? 'không có hai trường đó' : "theo hợp đồng dàn dựng {$this->staging}").' — cần bản chia scene của đúng bản phát hành này: chia lại scene (Phase 6); bản cũ vẫn xem được trong lịch sử.');
+        }
+
         $design = MotoLocations::pinnedDesign($projectId, (array) ($source['design'] ?? []));
         $budget = isset($this->releasePolicy['shot_editing_policy']) ? (array) ($this->releasePolicy['shot_budget'] ?? []) : null;
         $placesFormat = $text['evaluation']['document']['format'] ?? null;
@@ -192,6 +204,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
             $planLaw,
             $this->dossier,
             $this->setDesign,
+            $planStaging !== null,
         );
         $pinned = array_intersect_key($this->releasePolicy, array_flip(['shot_grouping_policy', 'shot_editing_policy', 'shot_budget']));
 
@@ -341,12 +354,13 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
      * @param  ?string  $law  the law the scene plan pinned for its work: the work is followed under it, and it is sent as work_tracking_version and pinned in the check context; null for a scene plan that names none, followed as before
      * @param  bool  $dossier  the locations are a location dossier (moto-locations-v3), as its pinned format says: each place is sent with its setting, coordinate system, zones and access routes, with the connections between places and the conditions of each plate; the check context then also pins those conditions by plate (plate_conditions), the ambient sound with them, apart from what a still image reads, for the video prompt step alone
      * @param  bool  $setDesign  the locations are a set design dossier (moto-locations-v4), given as MotoSetDesign::normalize() reads it: environment() sends its design, plate cameras, lighting plans, set states and continuity, and the conditions pinned for the video prompt step also hold the light and the set state of each plate (MotoSetDesign::conditions)
+     * @param  bool  $staged  the scene plan was made under the staging contract (MotoScenes::STAGING): each scene is sent with the pace and the emotion the plan keeps for it; a plan made without it sends neither
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} what a shot list needs: the scenes with their timing, continuity, transitions and work, each work item with the presentation it gives every part it moves or keeps in place before and after it; the beats with their actions, reveal, situation, environment, the ids of the limits that apply to them and cards; the places and plates; the parts with their shapes, sizes and materials; every operational limit with the configurations it governs, the same list the check reads; the build states; the model sheet views; the render capabilities
      */
-    public static function build(array $scenePlan, array $sceneInput, array $script, array $locations, array $design, array $available, array $capabilities, bool $eventful = false, ?int $filmFps = null, ?array $budget = null, ?string $law = null, bool $dossier = false, bool $setDesign = false): array
+    public static function build(array $scenePlan, array $sceneInput, array $script, array $locations, array $design, array $available, array $capabilities, bool $eventful = false, ?int $filmFps = null, ?array $budget = null, ?string $law = null, bool $dossier = false, bool $setDesign = false, bool $staged = false): array
     {
         $times = array_column((array) ($sceneInput['beat_times'] ?? []), null, 'beat');
-        $sceneKeys = ['id', 'beats', 'start_ms', 'end_ms', 'state', 'places', 'backgrounds', 'characters', 'purpose', 'set_brief', 'continuity_from', 'continuity_start', 'continuity_end', 'transition_in', 'work', ...($eventful ? ['blocking', 'event_ids'] : [])];
+        $sceneKeys = ['id', 'beats', 'start_ms', 'end_ms', 'state', 'places', 'backgrounds', 'characters', 'purpose', 'set_brief', ...($staged ? ['pace', 'emotion'] : []), 'continuity_from', 'continuity_start', 'continuity_end', 'transition_in', 'work', ...($eventful ? ['blocking', 'event_ids'] : [])];
         $assigned = array_column((array) ($sceneInput['locations']['beats'] ?? []), null, 'beat');
         $plates = array_column((array) ($locations['backgrounds'] ?? []), null, 'id');
         $sceneOf = [];

@@ -134,6 +134,9 @@ final class MotoContract
     /** @var string the input of such a shot plan made from a set design dossier of moto-locations-v4: the twelfth input whose places carry their architecture and objects with where they stand, and whose plates carry their camera, lighting plan, the state of the set and the continuity they keep; its answer stays a MotoShots 3.0 document */
     public const SHOTS_INPUT_V13 = 'moto-shots-input-v13';
 
+    /** @var string the input of such a shot plan made from a scene plan that states pace and emotion: the thirteenth input whose scenes also carry their pace and the emotion they open and end on; its answer stays a MotoShots 3.0 document */
+    public const SHOTS_INPUT_V14 = 'moto-shots-input-v14';
+
     /** @var string the answer of such a shot plan: every shot of moto-shots-v2 also pins the checkpoint its first frame shows and the one its last frame shows */
     public const SHOTS_FORMAT_V3 = 'moto-shots-v3';
 
