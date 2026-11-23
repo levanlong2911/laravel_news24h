@@ -2344,6 +2344,37 @@ return [
                                 'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V11],
                             ],
                         ],
+
+                        \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V9 => [
+                            'extends' => \App\Video\Moto\MotoPipelineRelease::CINEMATIC_V8,
+                            'design_format' => \App\Video\Moto\MotoContract::DESIGN_FORMAT_V3,
+                            'phases' => [
+                                'phase-6' => ['input_format' => 'moto-scenes-input-v8', 'revisions' => [['id' => '64b44bf3-55d3-4e5e-b981-bb871d7c4133', 'sha256' => '9923d9208cb0cd35df2e5af2f3467b58884de1a18aab49721ca4dad44e90b421']]],
+                            ],
+                            'actions' => [
+                                'spec.scenes' => [
+                                    'phase' => 'phase-6',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['scenes'],
+                                    ],
+                                    'outputs' => [
+                                        'scenes' => ['namespace' => 'moto', 'schema' => 'MotoScenes', 'version' => '3.1.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 6 Output (format moto-scenes-v3): the approved beats grouped into scenes, each with its purpose, its pace, the emotion it opens and ends on, its blocking with every event marked once by its id in script order, continuity, incoming transition and the work on parts with its connection changes, evidenced by event id; each beat keeps its own checkpoints; the detached parts are derived by code; release moto-cinematic-3s-v9'],
+                                    ],
+                                ],
+                            ],
+                            'policy' => [
+                                'film' => ['body_duration_ms' => 45000, 'script_events_max' => 45, 'shot_events_max' => 4, 'shot_people_max' => 2],
+                                'script' => ['stationary_requires_support' => true, 'main_states_required' => true, 'client_role' => 'ROLE05'],
+                                'locations' => ['format' => \App\Video\Moto\MotoContract::LOCATIONS_FORMAT_V4],
+                                'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2, 'staging_version' => \App\Video\Moto\MotoScenes::STAGING_V2],
+                                'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 15, 'target' => 15]],
+                                'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V11],
+                            ],
+                        ],
                     ],
                     'actions' => [
                         'spec.inspiration' => [

@@ -43,6 +43,10 @@ class VideoScenesRevise extends Command
                 foreach ([...$report['check']['schema'], ...$report['check']['issues']] as $issue) {
                     $this->line('  issue: '.$issue);
                 }
+
+                foreach ($report['check']['requirements'] ?? [] as $requirement) {
+                    $this->line('  requirement: '.$requirement);
+                }
             }
 
             $this->line('Selected scene plan: '.($report['selection_stage_id'] ?? '—'));
@@ -127,6 +131,9 @@ class VideoScenesRevise extends Command
             $this->line('Check: '.$report['check']['verdict'].' · status '.($report['check']['status'] ?? '—').' · '.$report['check']['version']);
             foreach ([...$report['check']['schema'], ...$report['check']['issues']] as $issue) {
                 $this->line('  issue: '.$issue);
+            }
+            foreach ($report['check']['requirements'] ?? [] as $requirement) {
+                $this->line('  requirement: '.$requirement);
             }
             foreach ($report['check']['warnings'] ?? [] as $warning) {
                 $this->line('  warning: '.$warning);

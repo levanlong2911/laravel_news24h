@@ -42,7 +42,24 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
         $this->law = is_string($law) ? $law : null;
         $this->dossier = $this->eventful && MotoPipelineRelease::dossier($project);
         $this->setDesign = $this->dossier && MotoPipelineRelease::setDesign($project);
+        $staging = MotoPipelineRelease::policy($project, 'scenes')['staging_version'] ?? null;
+        $this->staging = is_string($staging) ? $staging : null;
     }
+
+    /** @var string the staging contract of a release whose scenes state their pace and the emotion they open and end on (MotoScenes 3.1.0): the step is handed the theme, spine and emotional goal of the story and the measured space of each place, the answer must state both for every scene, and the plan code derives keeps them for the shot step. A run pins it in its context; a run that pins none is read as it was made */
+    public const STAGING = 'moto-scene-staging-v1';
+
+    /** @var string the second staging contract: the first, and every event of a scene is marked once in its blocking by its id in brackets, in script order (MotoScenesCheck), and a scene that closes on ending beats with no checkpoint of their own closes on the checkpoint of the physical stage it stays in (MotoScenePlanner). A run keeps the contract it pinned, so a run of the first is checked and planned as it was made */
+    public const STAGING_V2 = 'moto-scene-staging-v2';
+
+    /** @var list<string> the staging contracts code reads; a release or a run that names another is refused, never read as one of these */
+    public const STAGINGS = [self::STAGING, self::STAGING_V2];
+
+    /** @var list<string> the paces a scene of the staging contract may state */
+    public const PACES = ['slow', 'steady', 'brisk'];
+
+    /** @var ?string the staging contract the release of the bound project names for its scenes, null for a release that names none */
+    private ?string $staging = null;
 
     /** @var bool whether the release plans its places as a set design dossier (moto-locations-v4), whose objects, set states and continuity the scene step is handed */
     private bool $setDesign = false;
@@ -71,17 +88,28 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
 
     public function checkVersion(): string
     {
-        return $this->law !== null ? MotoScenesCheck::VERSION_TRACKED : MotoScenesCheck::VERSION;
+        return match (true) {
+            $this->staging === self::STAGING_V2 => MotoScenesCheck::VERSION_MARKED,
+            $this->staging !== null => MotoScenesCheck::VERSION_STAGED,
+            $this->law !== null => MotoScenesCheck::VERSION_TRACKED,
+            default => MotoScenesCheck::VERSION,
+        };
     }
 
     public function plannerVersion(): string
     {
-        return $this->law !== null ? MotoScenePlanner::VERSION_TRACKED : MotoScenePlanner::VERSION;
+        return match (true) {
+            $this->staging === self::STAGING_V2 => MotoScenePlanner::VERSION_MARKED,
+            $this->staging !== null => MotoScenePlanner::VERSION_STAGED,
+            $this->law !== null => MotoScenePlanner::VERSION_TRACKED,
+            default => MotoScenePlanner::VERSION,
+        };
     }
 
     public function inputsVersion(): string
     {
         return match (true) {
+            $this->staging !== null => MotoContract::SCENES_INPUT_V8,
             $this->setDesign && $this->law !== null => MotoContract::SCENES_INPUT_V7,
             $this->dossier && $this->law !== null => MotoContract::SCENES_INPUT_V6,
             $this->checkpointed && $this->law !== null => MotoContract::SCENES_INPUT_V5,
@@ -150,7 +178,11 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
             throw new RuntimeException("Bản phát hành {$this->release} khai luật work {$this->law} nhưng không kể chuyện bằng sự kiện — không chia scene.");
         }
 
-        $built = self::build((array) $script['document']['data'], self::locationData($document, (array) ($text['evaluation']['derived'] ?? [])), $design, (array) $pinned['variables'], $this->eventful, $this->law, $this->dossier, $this->setDesign);
+        if ($this->staging !== null && (! in_array($this->staging, self::STAGINGS, true) || ! $this->setDesign || $this->law === null)) {
+            throw new RuntimeException("Bản phát hành {$this->release} khai hợp đồng dàn dựng {$this->staging} nhưng code chỉ biết ".implode(', ', self::STAGINGS).', lập từ bộ thiết kế bối cảnh và có luật work — không chia scene.');
+        }
+
+        $built = self::build((array) $script['document']['data'], self::locationData($document, (array) ($text['evaluation']['derived'] ?? [])), $design, (array) $pinned['variables'], $this->eventful, $this->law, $this->dossier, $this->setDesign, $this->staging !== null, $this->staging ?? self::STAGING);
 
         return [
             'payload' => $built['payload'],
@@ -245,10 +277,19 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
      * @param  ?string  $law  the law the work of the plan is followed under, sent as work_tracking_version and pinned in the check context; null for a plan that names none
      * @param  bool  $dossier  the locations are a location dossier (moto-locations-v3), as its pinned format says: each place is sent with its setting, function, zones and access routes, with the connections between places and the conditions of each plate
      * @param  bool  $setDesign  the locations are a set design dossier (moto-locations-v4) as MotoSetDesign::normalize() reads it: each place is sent with its landmarks and the objects of its set — id, name, kind, role, whether fixed, zone, position and whether present in the base state — and each plate with its atmosphere and the state of its set, by name with what differs from the base state; the continuity is sent as the dossier states it, with what plates of one place keep and what may differ
+     * @param  bool  $staged  the scenes are written under a staging contract, which needs a set design dossier: the story is sent with its theme, spine and emotional goal beside its hero beat and loops, and each place with its size, its coordinate system, the footprint of each zone, the clear width of each access route and the footprint and facing of each object of its set — every value as the approved source holds it, null where the source states null, and a key the source does not have is not added
+     * @param  string  $staging  which staging contract (one of STAGINGS), pinned in the check context as staging_version; both send the same input
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} the beats with their times; the places, plates and uses of every beat with the background text's continuity and conflicts; the parts present and in progress, the exceptions, configurations and lights of the build states the beats use; every part with the part it is mounted on and its first build state on the motorcycle; no full design, image prompt or model-sheet prompt
+     *
+     * @throws RuntimeException when a staged input names a staging contract code does not read
      */
-    public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false, ?string $law = null, bool $dossier = false, bool $setDesign = false): array
+    public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false, ?string $law = null, bool $dossier = false, bool $setDesign = false, bool $staged = false, string $staging = self::STAGING): array
     {
+        $staged = $staged && $setDesign;
+
+        if ($staged && ! in_array($staging, self::STAGINGS, true)) {
+            throw new RuntimeException("Hợp đồng dàn dựng {$staging} không có trong ".implode(', ', self::STAGINGS).' — không dựng đầu vào chia scene.');
+        }
         $beatKeys = $eventful ? [...array_values(array_diff(self::BEAT_KEYS, ['duration_s'])), 'events'] : self::BEAT_KEYS;
         $layout = MotoDesignStates::of($design);
 
@@ -362,18 +403,19 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
         $payload = [
             'variables' => array_intersect_key($variables, array_flip(['aspect_ratio', 'video_length', 'platform'])),
             'script' => [
-                'story' => ['hero_beat' => $script['story']['hero_beat'] ?? null, 'loops' => array_values((array) ($script['story']['loops'] ?? []))],
+                'story' => ($staged ? ['theme' => $script['story']['theme'] ?? null, 'spine' => $script['story']['spine'] ?? null, 'emotional_goal' => $script['story']['emotional_goal'] ?? null] : [])
+                    + ['hero_beat' => $script['story']['hero_beat'] ?? null, 'loops' => array_values((array) ($script['story']['loops'] ?? []))],
                 'characters' => (array) ($script['characters'] ?? []),
                 'beats' => $beats,
             ],
             'beat_times' => $times,
             'locations' => [
                 'places' => array_values(array_map(static fn (array $place): array => ['id' => $place['id'], 'name' => $place['name'], 'kind' => $place['kind']] + match (true) {
-                    $setDesign => array_intersect_key($place, array_flip(['setting', 'function', 'camera_access'])) + [
+                    $setDesign => array_intersect_key($place, array_flip(['setting', 'function', 'camera_access', ...($staged ? ['dimensions', 'coordinate_system'] : [])])) + [
                         'landmarks' => MotoSetDesign::landmarks($place),
-                        'zones' => array_values(array_map(static fn (array $zone): array => array_intersect_key($zone, array_flip(['id', 'name', 'kind', 'purpose', 'position'])), (array) $place['zones'])),
-                        'access_routes' => array_values(array_map(static fn (array $route): array => array_intersect_key($route, array_flip(['id', 'name', 'kind', 'leads_to', 'zone', 'used_by'])), (array) $place['access_routes'])),
-                        'objects' => array_values(array_map(static fn (array $object): array => array_intersect_key($object, array_flip(['id', 'name', 'kind', 'role', 'fixed', 'zone', 'position', 'present'])), (array) $place['set_design']['objects'])),
+                        'zones' => array_values(array_map(static fn (array $zone): array => array_intersect_key($zone, array_flip(['id', 'name', 'kind', 'purpose', 'position', ...($staged ? ['footprint'] : [])])), (array) $place['zones'])),
+                        'access_routes' => array_values(array_map(static fn (array $route): array => array_intersect_key($route, array_flip(['id', 'name', 'kind', 'leads_to', 'zone', 'used_by', ...($staged ? ['clear_width_m'] : [])])), (array) $place['access_routes'])),
+                        'objects' => array_values(array_map(static fn (array $object): array => array_intersect_key($object, array_flip(['id', 'name', 'kind', 'role', 'fixed', 'zone', 'position', 'present', ...($staged ? ['footprint', 'facing'] : [])])), (array) $place['set_design']['objects'])),
                     ],
                     $dossier => array_intersect_key($place, array_flip(['setting', 'function', 'camera_access', 'fixed_landmarks'])) + [
                         'zones' => array_values(array_map(static fn (array $zone): array => array_intersect_key($zone, array_flip(['id', 'name', 'kind', 'purpose', 'position'])), (array) $place['zones'])),
@@ -414,7 +456,7 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
 
         return [
             'payload' => $payload,
-            'context' => ($eventful ? ['timing' => self::ORDINAL] : []) + ($law === null ? [] : ['work_tracking_version' => $law]) + [
+            'context' => ($eventful ? ['timing' => self::ORDINAL] : []) + ($law === null ? [] : ['work_tracking_version' => $law]) + ($staged ? ['staging_version' => $staging] : []) + [
                 'input' => $payload,
                 'beats' => $beatFacts,
                 'states' => $known,

@@ -198,6 +198,11 @@
                         <span class="ph">{{ $row['state'] ?? 'chưa xác lập state' }}</span>
                         <div class="d">Nơi: {{ $row['places'] === [] ? 'chưa xác lập' : implode(', ', $row['places']) }}{{ $row['backgrounds'] === [] ? '' : ' · nền '.implode(', ', $row['backgrounds']) }} · nhân vật: {{ $row['characters'] === [] ? '—' : implode(', ', $row['characters']) }}</div>
                         @if($row['set_brief'] !== null)<div class="d">Bố trí: {{ $row['set_brief'] }}</div>@endif
+                        @if(array_key_exists('pace', $row))
+                            <div class="d">Nhịp: {{ ['slow' => 'chậm', 'steady' => 'đều', 'brisk' => 'nhanh'][$row['pace']] ?? $row['pace'] }} · Cảm xúc mở cảnh: {{ $row['emotion']['start'] ?? '—' }} · Cảm xúc kết cảnh: {{ $row['emotion']['end'] ?? '—' }}</div>
+                        @else
+                            <div class="d" style="color:var(--vp-faint)">Nhịp và cảm xúc: chưa khai theo hợp đồng cũ.</div>
+                        @endif
                         @if(($row['blocking'] ?? null) !== null)<div class="d">Dàn cảnh: {{ $row['blocking'] }}</div>@endif
                         <div class="d">Vào cảnh: {{ $row['transition_in'] === null ? '—' : $row['transition_in']['kind'].' — '.$row['transition_in']['description'] }}
                             @if($row['transition_in'] !== null && $row['transition_in']['evidence'] !== [])<span style="color:var(--vp-faint)">({{ implode(' / ', array_map($evidence, $row['transition_in']['evidence'])) }})</span>@endif

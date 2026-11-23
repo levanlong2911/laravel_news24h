@@ -32,7 +32,7 @@ final class MotoScenesCheck
     {
         $format = in_array($context['format'] ?? null, [MotoContract::SCENES_FORMAT_V2, MotoContract::SCENES_FORMAT_V3], true) ? $context['format'] : MotoContract::SCENES_FORMAT;
 
-        return ['format' => $format] + (self::law($context) === null ? [] : ['version' => self::VERSION_TRACKED]) + self::scored($response, $context, $schema, $format);
+        return ['format' => $format] + self::label($context) + (($unread = self::unreadStaging($context)) === null ? self::scored($response, $context, $schema, $format) : self::result(self::UNSCORED, null, $unread));
     }
 
     /**
@@ -93,7 +93,7 @@ final class MotoScenesCheck
             ...$issues,
             ...self::orderIssues($scenes, $beats),
             ...self::continuationIssues($scenes, $beats, (array) ($context['states'] ?? []), self::checkpointed($context)),
-            ...self::conflictIssues($conflicts, $scenes, $beats, $input),
+            ...self::conflictIssues($conflicts, $scenes, $beats, $input), ...self::stagingIssues($scenes, $context),
         ];
         $held = [];
 
@@ -540,5 +540,124 @@ final class MotoScenesCheck
     private static function checkpointed(array $context): bool
     {
         return ($context[MotoDesignStates::LAYOUT_KEY] ?? null) === MotoDesignStates::CHECKPOINTS;
+    }
+
+    /** @var string the check of a scene plan whose context pins the staging contract (MotoScenes::STAGING): the check of a tracked plan, and the pace of every scene is one of MotoScenes::PACES — a fixed list read as a list, never a judgement of the pace chosen — and the emotion of every scene holds a word at its opening and at its end, whatever that word is. A plan whose context pins no staging contract is checked as it was made */
+    public const VERSION_STAGED = 'moto-scenes-check-v10';
+
+    /** @var string the check of a scene plan whose context pins the second staging contract (MotoScenes::STAGING_V2): the staged check, and every event of a scene is marked once in its blocking, by its id in brackets, in script order — the marks are read as ids and compared with the pinned events, never the words beside them */
+    public const VERSION_MARKED = 'moto-scenes-check-v11';
+
+    /** @var string an event mark in a blocking: an event id alone in brackets, written as the source writes it; any other form is no mark */
+    private const EVENT_MARK = '/\((EV[0-9]{2,3})\)/';
+
+    /**
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return array{version?: string} the version the check of the run is told by: the marked check for a run that pinned the second staging contract, the staged check for one that pinned the first, the tracked check for one that pinned a work law and no staging contract, none for a run made before either, which keeps the version of the first check, and none for a run that pinned a staging contract code does not read (unreadStaging), which is never scored
+     */
+    private static function label(array $context): array
+    {
+        return match (true) {
+            self::marked($context) => ['version' => self::VERSION_MARKED],
+            self::staged($context) => ['version' => self::VERSION_STAGED],
+            self::law($context) !== null && ($context['staging_version'] ?? null) === null => ['version' => self::VERSION_TRACKED],
+            default => [],
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return bool whether the run pinned a staging contract code reads (MotoScenes::STAGINGS) with a work law, as MotoScenePlanner reads it: its scenes state their pace and the emotion they open and end on
+     */
+    private static function staged(array $context): bool
+    {
+        return self::law($context) !== null && in_array($context['staging_version'] ?? null, MotoScenes::STAGINGS, true);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return bool whether the run pinned the second staging contract with a work law: its scenes also mark every event in their blocking
+     */
+    private static function marked(array $context): bool
+    {
+        return self::law($context) !== null && ($context['staging_version'] ?? null) === MotoScenes::STAGING_V2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $scene  one scene of the answer
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return list<string> one finding when the event marks of the blocking are not the events of the scene's beats, each once, in script order: the events are read from the pinned beats in their order, the marks from the blocking alone, both as written. Whether the words beside a mark stage that event is never asked
+     */
+    private static function markIssues(array $scene, array $context): array
+    {
+        $ids = array_map('strval', (array) ($scene['beats'] ?? []));
+        $expected = [];
+
+        foreach ((array) ($context['beats'] ?? []) as $beat) {
+            if (in_array($beat['id'] ?? null, $ids, true)) {
+                $expected = [...$expected, ...array_map('strval', (array) ($beat['events'] ?? []))];
+            }
+        }
+
+        $found = preg_match_all(self::EVENT_MARK, is_string($scene['blocking'] ?? null) ? $scene['blocking'] : '', $marks) > 0 ? $marks[1] : [];
+
+        if ($found === $expected) {
+            return [];
+        }
+
+        $counts = array_count_values($found);
+        $faults = array_filter([
+            'thiếu' => array_values(array_diff($expected, $found)),
+            'trùng' => array_keys(array_filter($counts, static fn (int $count): bool => $count > 1)),
+            'ngoài scene' => array_values(array_unique(array_diff($found, $expected))),
+        ]);
+        $why = $faults === [] ? 'sai thứ tự' : implode('; ', array_map(static fn (string $kind, array $events): string => $kind.' '.implode(', ', $events), array_keys($faults), $faults));
+
+        return [Finding::requirement('MotoScenesCheck.stagingIssues.3', "{$scene['id']}.blocking đánh dấu ".($found === [] ? 'không sự kiện nào' : implode(', ', $found)).'; cần '.implode(', ', $expected)." — {$why}. Mỗi sự kiện của scene một dấu (EVxx) cạnh phần dàn cảnh của nó, đúng thứ tự kịch bản; dấu đúng thứ tự không chứng minh câu bên cạnh tả đúng sự kiện.")];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $scenes
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return list<string> for a run that pinned a staging contract, every scene whose pace is not one of the paces of that contract and every emotion, at the opening or the end, that holds no word — the structure check has already held the answer to the schema, which reads neither an enumeration nor whether a text is blank — and, for a run of the second contract, every scene whose blocking does not mark its events (markIssues). Whether a pace, an emotion or a blocking suits the scene is never asked; nothing for any other run
+     */
+    private static function stagingIssues(array $scenes, array $context): array
+    {
+        $issues = [];
+
+        foreach (self::staged($context) ? $scenes : [] as $scene) {
+            if (! in_array($scene['pace'] ?? null, MotoScenes::PACES, true)) {
+                $issues[] = Finding::requirement('MotoScenesCheck.stagingIssues.1', "{$scene['id']}.pace là ".json_encode($scene['pace'] ?? null, JSON_UNESCAPED_UNICODE).'; chỉ nhận '.implode(', ', MotoScenes::PACES).'.');
+            }
+
+            foreach (['start', 'end'] as $moment) {
+                $emotion = is_array($scene['emotion'] ?? null) ? ($scene['emotion'][$moment] ?? null) : null;
+
+                if (! is_string($emotion) || trim($emotion) === '') {
+                    $issues[] = Finding::requirement('MotoScenesCheck.stagingIssues.2', "{$scene['id']}.emotion.{$moment} để trống — hợp đồng dàn dựng cần cảm xúc lúc mở và lúc kết của mỗi scene.");
+                }
+            }
+
+            if (self::marked($context)) {
+                $issues = [...$issues, ...self::markIssues($scene, $context)];
+            }
+        }
+
+        return $issues;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return ?string why the staging contract the run pinned is read by no rule of this code — a contract not in MotoScenes::STAGINGS, or one pinned without a work law, which MotoScenes never builds — null for a run that pinned none, read as it was made, and for one that pinned a contract code reads. Such a run is never checked nor planned by the rules of another contract: the check leaves it unscored with this reason and MotoScenePlanner::plan throws it
+     */
+    public static function unreadStaging(array $context): ?string
+    {
+        $pinned = $context['staging_version'] ?? null;
+
+        if ($pinned === null || self::staged($context)) {
+            return null;
+        }
+
+        return 'Lượt chia scene này ghim hợp đồng dàn dựng '.(is_string($pinned) ? $pinned : json_encode($pinned, JSON_UNESCAPED_UNICODE)).(self::law($context) === null ? ' mà không ghim luật work' : '').'; code chỉ đọc '.implode(', ', MotoScenes::STAGINGS).' kèm luật work — không chấm và không lập kế hoạch scene theo hợp đồng khác. Chia lại scene theo bản phát hành hiện hành.';
     }
 }

@@ -99,6 +99,9 @@ final class MotoContract
     /** @var string the input of such a scene plan made from a set design dossier of moto-locations-v4: the sixth input whose places carry the objects of their set, whose plates carry the state of the set as it stands for them and the conditions of their use, and whose continuity says what plates of one place keep; the answer stays moto-scenes-v3 */
     public const SCENES_INPUT_V7 = 'moto-scenes-input-v7';
 
+    /** @var string the input of a scene plan that states the pace of each scene and the emotion it opens and ends on (MotoScenes 3.1.0): the seventh input whose story also carries its theme, spine and emotional goal, and whose places also carry their size, their coordinate system, the footprint of each zone, the clear width of each access route and the footprint and facing of each object of the set; the answer stays moto-scenes-v3 */
+    public const SCENES_INPUT_V8 = 'moto-scenes-input-v8';
+
     public const SHOTS_INPUT = 'moto-shots-input-v4';
 
     public const SHOTS_FORMAT = 'moto-shots-v1';

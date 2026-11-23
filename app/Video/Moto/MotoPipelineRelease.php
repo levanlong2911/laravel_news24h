@@ -31,11 +31,14 @@ final class MotoPipelineRelease
     /** @var string the release that extends the seven-stage release with the set design dossier (moto-locations-v4): Phase 5 designs the set of each place once and each plate as a use of it, and the scene, shot and video prompt steps read that design; its DNA, design and script revisions are those of the release it extends */
     public const CINEMATIC_V8 = 'moto-cinematic-3s-v8';
 
+    /** @var string the release that extends the set design release with staged scenes (MotoScenes 3.1.0): every scene states its pace and the emotion it opens and ends on, read from the theme, spine and emotional goal of the script and staged in the measured space of its place, and the shot step is handed both; every other revision is that of the release it extends */
+    public const CINEMATIC_V9 = 'moto-cinematic-3s-v9';
+
     /** @var string the key of the project metadata that keeps every change of release made to the project after it was pinned, oldest first */
     public const HISTORY_KEY = 'moto_pipeline_release_history';
 
     /** @var list<string> the releases of three-second takes made from references: every one runs the same eventful pipeline, each with its own catalogue of revisions and its own check policy */
-    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4, self::CINEMATIC_V5, self::CINEMATIC_V7, self::CINEMATIC_V8];
+    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4, self::CINEMATIC_V5, self::CINEMATIC_V7, self::CINEMATIC_V8, self::CINEMATIC_V9];
 
     /** @return string the release the project pinned, the legacy release when it pinned none */
     public static function of(VideoProject $project): string
