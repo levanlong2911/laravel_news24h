@@ -2456,3 +2456,48 @@ a.vp-btn[disabled] {
     }
 }
 
+
+.vl-plan {
+    display: block;
+    margin-top: 6px;
+    overflow: visible;
+}
+
+.vl-room {
+    fill: none;
+    stroke: var(--vp-dim);
+    stroke-width: 1;
+}
+
+.vl-zone {
+    fill: rgba(127, 127, 127, 0.18);
+    stroke: var(--vp-dim);
+    stroke-width: 0.75;
+}
+
+.vl-zone-subject {
+    fill: rgba(46, 160, 67, 0.28);
+    stroke: #2ea043;
+}
+
+.vl-zone-blocked {
+    fill: rgba(218, 54, 51, 0.28);
+    stroke: #da3633;
+}
+
+.vl-zone-route {
+    fill: rgba(56, 139, 253, 0.2);
+    stroke: #388bfd;
+}
+
+.vl-object {
+    fill: rgba(148, 163, 184, .28);
+    stroke: rgba(148, 163, 184, .85);
+    stroke-dasharray: 3 2;
+    stroke-width: 1;
+}
+
+.vl-zone-id {
+    font-size: 9px;
+    fill: currentColor;
+}

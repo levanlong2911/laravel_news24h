@@ -64,6 +64,18 @@ final class MotoContract
     /** @var string the input of locations made from a script of moto-script-v3: each beat with the checkpoints it runs through and the temporary equipment they hold, each build state a checkpoint with its stage and label; the answer stays moto-locations-v2 */
     public const LOCATIONS_INPUT_V3 = 'moto-locations-input-v3';
 
+    /** @var string the input of a location dossier (MotoLocations 3.x): the third input with the look code gives every plate, the theme and emotional goal of the story, the characters by role, each beat's act, time jump and sound effects, each event's vehicle motion, the size of the motorcycle and the flags the script left open */
+    public const LOCATIONS_INPUT_V4 = 'moto-locations-input-v4';
+
+    /** @var string the answer of such a dossier: places with their function, zones, access routes and coordinate system, the connections between places, and plates that carry the conditions of their use */
+    public const LOCATIONS_FORMAT_V3 = 'moto-locations-v3';
+
+    /** @var string the input of a set design dossier (MotoLocations 4.x): the fourth input with temporary_equipment, every temporary item the checkpoints of the design allow, which an object that holds the subject names as its support_kind */
+    public const LOCATIONS_INPUT_V5 = 'moto-locations-input-v5';
+
+    /** @var string the answer of such a dossier: each place states the one design of its set — architecture, materials and objects with their base state — and each plate states only its use: a camera, a lighting plan, the state of the set as changes from the base state, and a continuity that says what plates of one place keep and what may differ */
+    public const LOCATIONS_FORMAT_V4 = 'moto-locations-v4';
+
     public const SCENES_INPUT = 'moto-scenes-input-v2';
 
     public const SCENES_FORMAT = 'moto-scenes-v1';
@@ -80,6 +92,12 @@ final class MotoContract
 
     /** @var string the input of such a scene plan made from a script of moto-script-v3: each beat with the checkpoints it runs through, and design_states by checkpoint with its stage and label; the answer stays moto-scenes-v3 */
     public const SCENES_INPUT_V5 = 'moto-scenes-input-v5';
+
+    /** @var string the input of such a scene plan made from a location dossier of moto-locations-v3: the fifth input whose places carry their setting, function, zones and access routes, with the connections between places and the conditions of each plate; the answer stays moto-scenes-v3 */
+    public const SCENES_INPUT_V6 = 'moto-scenes-input-v6';
+
+    /** @var string the input of such a scene plan made from a set design dossier of moto-locations-v4: the sixth input whose places carry the objects of their set, whose plates carry the state of the set as it stands for them and the conditions of their use, and whose continuity says what plates of one place keep; the answer stays moto-scenes-v3 */
+    public const SCENES_INPUT_V7 = 'moto-scenes-input-v7';
 
     public const SHOTS_INPUT = 'moto-shots-input-v4';
 
@@ -106,6 +124,12 @@ final class MotoContract
 
     /** @var string the input of a shot plan made within the film limits of its release (MotoPipelineRelease::filmLimits): the tenth input with film.shot_limits, the most events one shot plays and the most people it shows; its answer stays a MotoShots 3.0 document */
     public const SHOTS_INPUT_V11 = 'moto-shots-input-v11';
+
+    /** @var string the input of such a shot plan made from a location dossier of moto-locations-v3: the eleventh input whose places carry their setting, coordinate system, zones and access routes, with the connections between places and the conditions of each plate; its answer stays a MotoShots 3.0 document */
+    public const SHOTS_INPUT_V12 = 'moto-shots-input-v12';
+
+    /** @var string the input of such a shot plan made from a set design dossier of moto-locations-v4: the twelfth input whose places carry their architecture and objects with where they stand, and whose plates carry their camera, lighting plan, the state of the set and the continuity they keep; its answer stays a MotoShots 3.0 document */
+    public const SHOTS_INPUT_V13 = 'moto-shots-input-v13';
 
     /** @var string the answer of such a shot plan: every shot of moto-shots-v2 also pins the checkpoint its first frame shows and the one its last frame shows */
     public const SHOTS_FORMAT_V3 = 'moto-shots-v3';
@@ -149,6 +173,12 @@ final class MotoContract
 
     /** @var string the input of a video prompt of a release whose design tells seven stages with checkpoints: the eighth input with design_context.build_state_end, the checkpoint the shot's end frame shows, beside build_state, the one its first frame shows */
     public const CLIP_PROMPT_INPUT_V9 = 'moto-clip-prompt-input-v9';
+
+    /** @var string the input of a video prompt of a release that plans its places as a location dossier: the ninth input with environment, the conditions the dossier gives the plate the shot stands on — time of day, weather, atmosphere and the ambient sound of the place — as the shot run pinned them */
+    public const CLIP_PROMPT_INPUT_V10 = 'moto-clip-prompt-input-v10';
+
+    /** @var string the input of a video prompt of a release that plans its places as a set design dossier: the tenth input whose environment also carries the light of the plate in the picture — its sources, where the frame is bright and dark — and the state of the set for that plate, as the shot run pinned them */
+    public const CLIP_PROMPT_INPUT_V11 = 'moto-clip-prompt-input-v11';
 
     public const CLIP_PROMPT_FORMAT = 'moto-clip-prompt-v1';
 

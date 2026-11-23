@@ -1,0 +1,317 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoLocations",
+  "title": "Moto Phase 5 — location dossier and background plates (moto-locations-v3)",
+  "description": "One answer of Phase 5 for a custom motorcycle film: the places the approved script uses, each with its function in the story, its fixed layout, zones and access routes; how the places connect; and the background plates, each with the conditions of its use, rendered once and reused by the shots. The motorcycle, its parts, mockups, drawings and people are added at the shot step.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "phase", "project_id", "prompt_version", "status", "data", "flags"],
+  "properties": {
+    "format": { "const": "moto-locations-v3" },
+    "phase": { "const": "5" },
+    "project_id": { "$ref": "#/$defs/text" },
+    "prompt_version": { "$ref": "#/$defs/text" },
+    "status": { "enum": ["ok", "partial", "fail"] },
+    "data": { "type": "object" },
+    "flags": { "type": "array", "items": { "$ref": "#/$defs/text" } }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "fail" } } }, "then": { "properties": { "data": { "maxProperties": 0 }, "flags": { "minItems": 1 } } }, "else": { "properties": { "data": { "$ref": "#/$defs/data" } } } },
+    { "if": { "properties": { "status": { "const": "partial" } } }, "then": { "properties": { "flags": { "minItems": 1 } } } }
+  ],
+  "$defs": {
+    "text": { "type": "string", "pattern": "\\S" },
+    "texts": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+    "optional_text": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/text" }] },
+    "hex": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+    "beat_id": { "type": "string", "pattern": "^B[1-9][0-9]*$" },
+    "location_id": { "type": "string", "pattern": "^LOC[0-9]{2}$" },
+    "background_id": { "type": "string", "pattern": "^BG[0-9]{2}$" },
+    "zone_id": { "description": "A zone of one place, numbered Z01… inside that place.", "type": "string", "pattern": "^Z[0-9]{2}$" },
+    "route_id": { "description": "An access route of one place, numbered R01… inside that place.", "type": "string", "pattern": "^R[0-9]{2}$" },
+    "connection_id": { "type": "string", "pattern": "^CN[0-9]{2}$" },
+    "assumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subject", "value", "reason"],
+      "properties": { "subject": { "$ref": "#/$defs/text" }, "value": { "$ref": "#/$defs/text" }, "reason": { "$ref": "#/$defs/text" } }
+    },
+    "dimension": {
+      "description": "A measurement in metres with where it comes from: source when the input states it, production_assumption when you chose it, unknown when nothing settles it. An approved assumption never becomes a surveyed measurement.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "basis"],
+      "properties": { "value": { "type": ["number", "null"] }, "basis": { "enum": ["source", "production_assumption", "unknown"] } },
+      "if": { "properties": { "basis": { "const": "unknown" } } },
+      "then": { "properties": { "value": { "type": "null" } } },
+      "else": { "properties": { "value": { "type": "number", "exclusiveMinimum": 0 } } }
+    },
+    "quote": {
+      "description": "Words copied character for character from one field of one beat of the input.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat", "field", "quote"],
+      "properties": { "beat": { "$ref": "#/$defs/beat_id" }, "field": { "enum": ["location", "time_light", "visual", "purpose", "link"] }, "quote": { "$ref": "#/$defs/text" } }
+    },
+    "footprint": {
+      "description": "The rectangle a zone covers on the floor in the place's coordinate system, its sides along the axes: x_m and y_m are its corner nearest the origin, size_x_m and size_y_m its extent along each axis.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x_m", "y_m", "size_x_m", "size_y_m", "basis"],
+      "properties": {
+        "x_m": { "type": "number", "minimum": 0 },
+        "y_m": { "type": "number", "minimum": 0 },
+        "size_x_m": { "type": "number", "exclusiveMinimum": 0 },
+        "size_y_m": { "type": "number", "exclusiveMinimum": 0 },
+        "basis": { "enum": ["source", "production_assumption"] }
+      }
+    },
+    "zone": {
+      "description": "One area of a place with one use: where the subject stands, where people work, where parts wait, where the vehicle or people pass, where a camera can stand, or what cannot be used.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "purpose", "position", "footprint", "subject_axis"],
+      "properties": {
+        "id": { "$ref": "#/$defs/zone_id" },
+        "name": { "$ref": "#/$defs/text" },
+        "kind": { "enum": ["subject", "work", "staging", "route", "camera", "blocked"] },
+        "purpose": { "$ref": "#/$defs/text" },
+        "position": { "description": "Where the zone lies, told by the fixed landmarks and the zones beside it.", "$ref": "#/$defs/text" },
+        "footprint": { "description": "null when the place has no coordinate system or nothing settles the numbers: the position then stands alone and the fit is not verified.", "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/footprint" }] },
+        "subject_axis": { "description": "For a subject zone: the axis the length of the subject lies along; null when it is not settled or the zone holds no subject.", "enum": ["x", "y", null] }
+      }
+    },
+    "access_route": {
+      "description": "A door, opening, road or path by which people, parts or the vehicle reach a zone of the place.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "leads_to", "zone", "clear_width_m", "used_by"],
+      "properties": {
+        "id": { "$ref": "#/$defs/route_id" },
+        "name": { "$ref": "#/$defs/text" },
+        "kind": { "enum": ["door", "opening", "road", "path"] },
+        "leads_to": { "description": "What lies on the other side: outside, another room, the road.", "$ref": "#/$defs/text" },
+        "zone": { "description": "The zone of this place the route opens into; null when it opens into none of the zones listed.", "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/zone_id" }] },
+        "clear_width_m": { "$ref": "#/$defs/dimension" },
+        "used_by": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["people", "vehicle", "parts"] } }
+      }
+    },
+    "location": {
+      "description": "What a place is and keeps in every use: its architecture, surfaces, fixed equipment, landmarks, zones and routes. What changes from one use to another belongs to the plates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "kind", "function", "source_beats", "setting", "provenance", "space", "dimensions", "surfaces", "fixed_equipment", "palette", "spatial_layers", "fixed_landmarks", "coordinate_system", "zones", "access_routes", "camera_access", "assumptions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/location_id" },
+        "name": { "$ref": "#/$defs/text" },
+        "kind": { "enum": ["studio", "workshop", "paint_booth", "assembly_bay", "yard", "road", "other"] },
+        "function": { "description": "What this place does for the story, in one sentence.", "$ref": "#/$defs/text" },
+        "source_beats": { "description": "Every beat that uses the place, in script order.", "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/beat_id" } },
+        "setting": { "enum": ["interior", "exterior", "mixed"] },
+        "provenance": {
+          "description": "fictional_set for an invented place, however real it looks; real_place only for an existing place the input supplies a source for, named in source.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "source"],
+          "properties": { "kind": { "enum": ["fictional_set", "real_place"] }, "source": { "$ref": "#/$defs/optional_text" } },
+          "if": { "properties": { "kind": { "const": "real_place" } } },
+          "then": { "properties": { "source": { "$ref": "#/$defs/text" } } },
+          "else": { "properties": { "source": { "type": "null" } } }
+        },
+        "space": { "$ref": "#/$defs/text" },
+        "dimensions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["length_m", "width_m", "height_m"],
+          "properties": {
+            "length_m": { "$ref": "#/$defs/dimension" },
+            "width_m": { "$ref": "#/$defs/dimension" },
+            "height_m": { "$ref": "#/$defs/dimension" }
+          }
+        },
+        "surfaces": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/text" } },
+        "fixed_equipment": { "$ref": "#/$defs/texts" },
+        "palette": { "type": "array", "minItems": 1, "maxItems": 5, "items": { "$ref": "#/$defs/hex" } },
+        "spatial_layers": {
+          "description": "What stands in front of, around and behind the subject zone, so a moving camera has depth to travel through.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["foreground", "midground", "background"],
+          "properties": {
+            "foreground": { "$ref": "#/$defs/text" },
+            "midground": { "$ref": "#/$defs/text" },
+            "background": { "$ref": "#/$defs/text" }
+          }
+        },
+        "fixed_landmarks": { "description": "What never moves and tells one direction of the place from another: a door, a column, a wall, the horizon, fixed equipment.", "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/text" } },
+        "coordinate_system": {
+          "description": "The local floor plan the footprints are measured in, in metres: origin is the floor corner or point it starts from, x_axis and y_axis what each axis runs along. x covers the length of the place and y its width. null when the place has no numbered plan, as an open road has none.",
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["origin", "x_axis", "y_axis"],
+              "properties": { "origin": { "$ref": "#/$defs/text" }, "x_axis": { "$ref": "#/$defs/text" }, "y_axis": { "$ref": "#/$defs/text" } }
+            }
+          ]
+        },
+        "zones": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/zone" } },
+        "access_routes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/access_route" } },
+        "camera_access": { "description": "The clear space a camera can travel through around the subject zone, and what blocks it.", "$ref": "#/$defs/text" },
+        "assumptions": { "type": "array", "items": { "$ref": "#/$defs/assumption" } }
+      }
+    },
+    "connection": {
+      "description": "How two places stand to each other. basis script quotes the beat that says so; basis assumption is your choice and has no evidence.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "from", "to", "relation", "route", "used_by", "basis", "evidence", "note"],
+      "properties": {
+        "id": { "$ref": "#/$defs/connection_id" },
+        "from": { "$ref": "#/$defs/location_id" },
+        "to": { "$ref": "#/$defs/location_id" },
+        "relation": { "enum": ["same_site", "adjacent", "separate", "unknown"] },
+        "route": { "description": "The way from one to the other, when the story needs it; null when the film only cuts.", "$ref": "#/$defs/optional_text" },
+        "used_by": { "enum": ["people", "vehicle", "both", "cut_only"] },
+        "basis": { "enum": ["script", "assumption"] },
+        "evidence": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/quote" }] },
+        "note": { "$ref": "#/$defs/optional_text" }
+      },
+      "if": { "properties": { "basis": { "const": "script" } } },
+      "then": { "properties": { "evidence": { "$ref": "#/$defs/quote" } } },
+      "else": { "properties": { "evidence": { "type": "null" } } }
+    },
+    "use": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat", "part"],
+      "properties": { "beat": { "$ref": "#/$defs/beat_id" }, "part": { "$ref": "#/$defs/text" } }
+    },
+    "detail": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "evidence", "assumption"],
+      "properties": {
+        "text": { "$ref": "#/$defs/text" },
+        "evidence": { "oneOf": [{ "$ref": "#/$defs/quote" }, { "type": "null" }] },
+        "assumption": { "type": "boolean" }
+      },
+      "if": { "properties": { "evidence": { "type": "null" } } },
+      "then": { "properties": { "assumption": { "const": true } } },
+      "else": { "properties": { "assumption": { "const": false } } }
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beats", "kind", "change", "keep"],
+      "properties": {
+        "beats": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/beat_id" } },
+        "kind": { "enum": ["light", "props", "layout", "action"] },
+        "change": { "$ref": "#/$defs/text" },
+        "keep": { "$ref": "#/$defs/text" }
+      }
+    },
+    "background": {
+      "description": "One plate: an empty still frame of a place under the conditions of its use. A place seen under conditions that change the picture — another time of day, weather, ground or layout — has a plate for each.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "location", "uses", "sharing", "composition", "subject_zone", "landmarks", "time_of_day", "light", "weather", "atmosphere", "ambient_sound", "support", "ground", "details", "must_show", "avoid", "shot_changes", "assumptions"],
+      "properties": {
+        "id": { "$ref": "#/$defs/background_id" },
+        "name": { "$ref": "#/$defs/text" },
+        "location": { "$ref": "#/$defs/location_id" },
+        "uses": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/use" } },
+        "sharing": { "$ref": "#/$defs/text" },
+        "composition": { "$ref": "#/$defs/text" },
+        "subject_zone": { "description": "The subject zone of the place the frame leaves empty for the subjects; null for a frame that holds no subject.", "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/zone_id" }] },
+        "landmarks": { "description": "The fixed landmarks of the place this frame shows, each copied exactly from the place's fixed_landmarks.", "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/text" } },
+        "time_of_day": { "$ref": "#/$defs/optional_text" },
+        "light": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["description", "direction", "quality", "evidence", "reason"],
+          "properties": {
+            "description": { "$ref": "#/$defs/text" },
+            "direction": { "description": "Where the main light comes from in this frame; null when the sources and the place do not settle it.", "$ref": "#/$defs/optional_text" },
+            "quality": { "enum": ["soft", "hard", "mixed", null] },
+            "evidence": { "oneOf": [{ "$ref": "#/$defs/quote" }, { "type": "null" }] },
+            "reason": { "oneOf": [{ "$ref": "#/$defs/text" }, { "type": "null" }] }
+          },
+          "if": { "properties": { "evidence": { "type": "null" } } },
+          "then": { "properties": { "reason": { "$ref": "#/$defs/text" } } },
+          "else": { "properties": { "reason": { "type": "null" } } }
+        },
+        "weather": { "description": "The weather the frame shows, for an exterior or an interior that looks out or is touched by it; null when it does not bear on the picture.", "$ref": "#/$defs/optional_text" },
+        "atmosphere": { "description": "What is seen in the air or on surfaces — dust in a beam, haze, mist, reflections — only when the use calls for it; otherwise null.", "$ref": "#/$defs/optional_text" },
+        "ambient_sound": { "description": "The steady sound of the place under these conditions, handed to the video step; never part of the still image. null when nothing is heard.", "$ref": "#/$defs/optional_text" },
+        "support": { "type": "array", "uniqueItems": true, "items": { "enum": ["lift_table", "frame_jig", "engine_stand", "wheel_dolly", "paddock_stand"] } },
+        "ground": { "enum": ["dry", "wet", null] },
+        "details": { "type": "array", "items": { "$ref": "#/$defs/detail" } },
+        "must_show": { "type": "array", "maxItems": 4, "items": { "$ref": "#/$defs/text" } },
+        "avoid": { "description": "Things that must not appear, each named as a thing: a noun phrase, never a sentence that begins with no or do not.", "$ref": "#/$defs/texts" },
+        "shot_changes": { "type": "array", "items": { "$ref": "#/$defs/change" } },
+        "assumptions": { "type": "array", "items": { "$ref": "#/$defs/assumption" } }
+      }
+    },
+    "unplated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beat", "part", "location", "reason", "handoff"],
+      "properties": {
+        "beat": { "$ref": "#/$defs/beat_id" },
+        "part": { "$ref": "#/$defs/text" },
+        "location": { "oneOf": [{ "$ref": "#/$defs/location_id" }, { "type": "null" }] },
+        "reason": { "$ref": "#/$defs/text" },
+        "handoff": { "$ref": "#/$defs/text" }
+      }
+    },
+    "conflict_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^(beats\\.B[1-9][0-9]*\\.(act|time_jump|location|time_light|visual|purpose|link|sfx|situation\\.(mode|dry_road|procedures)|events\\.EV[0-9]{2,3}\\.(action|result|character_ids|vehicle_motion)|subjects\\.(motorcycle|model|P[0-9]{2,3})\\.(length_m|width_m|height_m)|operations\\.F[1-3]|conditions\\.M[0-9]+|limits\\.L[0-9]{2,3}\\.(requires|conditions|procedures|basis))|build_states\\.BS0[1-7](-CP[0-9]{2})?\\.(setting_brief|label|surface|in_progress|temporary)|motorcycle\\.size\\.(length_m|width_m|height_m)|source_flags\\.[0-9]+)$" },
+        "quote": { "$ref": "#/$defs/text" },
+        "value": {}
+      },
+      "oneOf": [{ "required": ["quote"], "not": { "required": ["value"] } }, { "required": ["value"], "not": { "required": ["quote"] } }]
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "beats", "backgrounds", "evidence", "blocking", "note"],
+      "properties": {
+        "kind": { "enum": ["missing_information", "source_conflict"] },
+        "beats": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/beat_id" } },
+        "backgrounds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/background_id" } },
+        "evidence": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/conflict_evidence" } },
+        "blocking": { "type": "boolean" },
+        "note": { "$ref": "#/$defs/text" }
+      }
+    },
+    "continuity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backgrounds", "beats", "requirement"],
+      "properties": {
+        "backgrounds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/background_id" } },
+        "beats": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "$ref": "#/$defs/beat_id" } },
+        "requirement": { "$ref": "#/$defs/text" }
+      }
+    },
+    "data": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["locations", "connections", "backgrounds", "unplated", "conflicts", "continuity"],
+      "properties": {
+        "locations": { "type": "array", "items": { "$ref": "#/$defs/location" } },
+        "connections": { "type": "array", "items": { "$ref": "#/$defs/connection" } },
+        "backgrounds": { "type": "array", "items": { "$ref": "#/$defs/background" } },
+        "unplated": { "type": "array", "items": { "$ref": "#/$defs/unplated" } },
+        "conflicts": { "type": "array", "items": { "$ref": "#/$defs/conflict" } },
+        "continuity": { "type": "array", "items": { "$ref": "#/$defs/continuity" } }
+      }
+    }
+  }
+}

@@ -25,9 +25,28 @@ final class ScriptEvaluation
         $document = is_array($document) && ! array_is_list($document) ? $document : null;
         $contract = self::contract($manifest);
         $schema = [];
+        $providerDocument = $document;
+        $preparation = null;
 
         if ($document !== null) {
-            $schema = $adapter->schemaViolations($decoded, PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest), (string) $context['project_id']);
+            $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest);
+
+            if ($adapter instanceof NormalizesAnswer) {
+                $prepared = $adapter->normalizeAnswer($decoded, $bundle);
+                $decoded = $prepared['answer'];
+                $document = json_decode(json_encode($decoded, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
+
+                if ($prepared['version'] !== null) {
+                    $preparation = [
+                        'version' => $prepared['version'],
+                        'changes' => $prepared['changes'],
+                        'provider_sha256' => hash('sha256', $raw),
+                        'content_hash' => ScriptContentHash::of($contract, $document, $source),
+                    ];
+                }
+            }
+
+            $schema = $adapter->schemaViolations($decoded, $bundle, (string) $context['project_id']);
         }
 
         $check = self::checkOf($document, $context, $schema, $adapter);
@@ -41,8 +60,9 @@ final class ScriptEvaluation
             'check' => $check,
             'derived' => $derived,
             'contract' => $contract,
-            'content_hash' => $document === null ? null : ScriptContentHash::of($contract, $document, $source),
-        ];
+            // Integrity is always checked against the untouched provider answer, including old runs.
+            'content_hash' => $providerDocument === null ? null : ScriptContentHash::of($contract, $providerDocument, $source),
+        ] + ($preparation === null ? [] : ['answer_preparation' => $preparation]);
     }
 
     /**

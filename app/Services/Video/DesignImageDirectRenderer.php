@@ -12,6 +12,7 @@ use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\RenderPriceSnapshot;
 use App\Video\Media\SpecRouting;
 use App\Video\ModelSheet\ModelSheetMaster;
+use App\Video\Moto\MotoLocationImagePlan;
 use App\Video\Queue\ProviderRateLimit;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
 use Illuminate\Support\Facades\Log;
@@ -108,7 +109,8 @@ class DesignImageDirectRenderer
                     : $this->sendManifest($spec, $this->manifestBytes($image, $spec), $budget),
                 'parts_detail_master' => $this->partsDetailMaster($image, $spec, $budget),
                 MotoCharacterReferenceService::MASTER => $this->client->generate($spec, $budget),
-                'environment_plate', LocationReferencePrompt::OPERATION => $this->byProvider($spec, $budget),
+                'environment_plate' => $this->byProvider($spec, $budget),
+                LocationReferencePrompt::OPERATION => $this->locationReference($image, $spec, $budget),
                 ModelSheetService::MASTER_OPERATION => $this->modelSheetMaster($spec, $budget),
                 'generate' => $this->client->generate($spec, $budget),
                 default => throw new RuntimeException(
@@ -227,6 +229,8 @@ class DesignImageDirectRenderer
             'environment_key' => $spec['environment_key'] ?? null,
             'reference_manifest_hash' => (string) ($spec['reference_manifest_hash'] ?? ''),
             'sources' => is_array($spec['sources'] ?? null) ? $spec['sources'] : [],
+            'prompt_sha256' => (string) ($spec['prompt_sha256'] ?? ''),
+            'reference' => is_array($spec['reference'] ?? null) ? $spec['reference'] : null,
             // Chi master model sheet doc: co anh mau luoi va hash luc mo bo.
             'layout_guide' => ($spec['layout_guide'] ?? false) === true,
             'guide_sha256' => (string) ($spec['guide_sha256'] ?? ''),
@@ -267,6 +271,60 @@ class DesignImageDirectRenderer
         return $spec['provider'] === 'gemini'
             ? $this->gemini->generate($spec, $budget)
             : $this->client->generate($spec, $budget);
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec  the normalised spec of a Phase 5 plate
+     * @return array{ok: bool, error: ?string, renders: list<array<string, mixed>>} a plate of a set rendered plate by plate is generated from its prompt, as before. Under the shared reference (MotoLocationImagePlan) the stored trace decides: a standard is generated from its own prompt and sends no file; a variant sends the bytes of its one source — read from the artifact of this project that still belongs to its candidate, with its SHA-256 compared before anything is sent — together with the fixed instruction followed by the approved prompt. A variant whose source cannot be read is never sent as a text render. Every render then records what was really sent: the role, the plates and each source with the hash and size of the bytes
+     */
+    private function locationReference(VideoDesignImage $image, array $spec, int $budget): array
+    {
+        $trace = $spec['reference'];
+
+        if ($trace === null) {
+            return $this->byProvider($spec, $budget);
+        }
+
+        if (($problem = MotoLocationImagePlan::specProblem($spec)) !== null) {
+            throw new RuntimeException($problem);
+        }
+
+        $sent = [];
+
+        if ($trace['role'] === MotoLocationImagePlan::VARIANT) {
+            $images = $this->manifestBytes($image, $spec);
+            $source = $spec['sources'][0];
+            $sent = [[
+                'position' => 0,
+                'candidate_id' => (string) $source['candidate_id'],
+                'artifact_id' => (string) $source['artifact_id'],
+                'sha256' => hash('sha256', $images[0]['bytes']),
+                'bytes' => strlen($images[0]['bytes']),
+                'filename' => $images[0]['filename'],
+            ]];
+            $spec = [
+                'prompt' => MotoLocationImagePlan::requestPrompt((string) $trace['instruction'], (string) $spec['prompt']),
+                'source_artifact_id' => (string) $source['artifact_id'],
+                'source_artifact_sha256' => $sent[0]['sha256'],
+            ] + $spec;
+            $result = $spec['provider'] === 'gemini'
+                ? $this->gemini->generate($spec, $budget, $images)
+                : $this->sendManifest($spec, $images, $budget);
+        } else {
+            $result = $this->byProvider($spec, $budget);
+        }
+
+        $record = [
+            'reference' => array_diff_key($trace, ['instruction' => true]) + ['prompt_sha256' => $spec['prompt_sha256']],
+            'sources' => $sent,
+        ];
+        $result['renders'] = array_map(static function (array $item) use ($record): array {
+            $item['render']['request_json'] = $record + (is_array($item['render']['request_json'] ?? null) ? $item['render']['request_json'] : []);
+
+            return $item;
+        }, $result['renders']);
+
+        return $result;
     }
 
     /**

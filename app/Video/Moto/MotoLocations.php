@@ -11,11 +11,12 @@ use App\Models\VideoProject;
 use App\Services\Video\PlanningStageStore;
 use App\Services\Video\ScriptSourceService;
 use App\Video\Script\StructureChecked;
+use App\Video\Script\NormalizesAnswer;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Locations\LocationWorkflow;
 use RuntimeException;
 
-final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureChecked
+final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureChecked, NormalizesAnswer
 {
     use ChecksJsonStructure;
 
@@ -24,6 +25,9 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
 
     /** @var list<string> the fields of a beat that is told as events and has no screen time of its own */
     private const EVENTFUL_BEAT_KEYS = ['id', 'state', 'location', 'time_light', 'visual', 'purpose', 'reveal', 'link', 'on_screen'];
+
+    /** @var list<string> the fields of a beat a location dossier reads: those of an eventful beat with its act, whether it jumps in time and its sound effects */
+    private const DOSSIER_BEAT_KEYS = ['id', 'act', 'state', 'time_jump', 'location', 'time_light', 'visual', 'purpose', 'reveal', 'link', 'sfx', 'on_screen'];
 
     /** @var list<string> the story fields every build state of a themed design carries */
     private const STORY_KEYS = ['text', 'setting_brief', 'participant_roles', 'outcome'];
@@ -40,15 +44,38 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
     /** @var bool whether the release designs seven stages with checkpoints, so each beat carries the checkpoints it runs through */
     private bool $checkpointed = false;
 
+    /** @var bool whether the release plans its places as a location dossier (moto-locations-v3): the fourth input, and an answer with zones, routes, connections and the conditions of each plate */
+    private bool $dossier = false;
+
     public function bind(VideoProject $project): void
     {
         $this->eventful = MotoPipelineRelease::cinematic($project);
         $this->checkpointed = $this->eventful && MotoPipelineRelease::checkpointed($project);
+        $this->dossier = $this->eventful && MotoPipelineRelease::dossier($project);
+        $this->setDesign = $this->dossier && MotoPipelineRelease::setDesign($project);
     }
+
+    /** @var bool whether the release plans its places as a set design dossier (moto-locations-v4): the fifth input, and an answer in which each place states the one design of its set and each plate only its use */
+    private bool $setDesign = false;
 
     public function format(): string
     {
-        return $this->eventful ? MotoContract::LOCATIONS_FORMAT_V2 : MotoContract::LOCATIONS_FORMAT;
+        return match (true) {
+            $this->setDesign => MotoContract::LOCATIONS_FORMAT_V4,
+            $this->dossier => MotoContract::LOCATIONS_FORMAT_V3,
+            $this->eventful => MotoContract::LOCATIONS_FORMAT_V2,
+            default => MotoContract::LOCATIONS_FORMAT,
+        };
+    }
+
+    /** A release that took a dossier still reads the sets its projects pinned before: under moto-locations-v2 and, for a set design release, under moto-locations-v3. */
+    public function formats(): array
+    {
+        return match (true) {
+            $this->setDesign => [MotoContract::LOCATIONS_FORMAT_V4, MotoContract::LOCATIONS_FORMAT_V3, MotoContract::LOCATIONS_FORMAT_V2],
+            $this->dossier => [MotoContract::LOCATIONS_FORMAT_V3, MotoContract::LOCATIONS_FORMAT_V2],
+            default => [$this->format()],
+        };
     }
 
     public function checkVersion(): string
@@ -56,14 +83,53 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
         return MotoLocationsCheck::VERSION;
     }
 
+    /**
+     * @param  string  $format  the answer format of the set a person wants to render from
+     * @return ?string why the plates of that set are never rendered one by one from their words alone, null while they render as before. A set design dossier (moto-locations-v4) states what every frame of one place keeps: rendering its plates each on their own would make two frames of one place two different places. The hold is lifted plate by plate and only by the image plan of the shared reference (MotoLocationImagePlan, LocationSourceService::referenceOf): the standard plate of a place renders from its own prompt, every other plate of the place from the image chosen for that standard. Where no plan can be read for such a set the hold stands, and nothing falls back to the way an earlier format renders
+     */
+    public static function renderHold(string $format): ?string
+    {
+        return $format === MotoContract::LOCATIONS_FORMAT_V4
+            ? 'Bộ này theo hợp đồng '.MotoContract::LOCATIONS_FORMAT_V4.': các ảnh nền của cùng một địa điểm dựng từ một ảnh chuẩn chung ('.MotoLocationImagePlan::MECHANISM.'), không dựng riêng từng ảnh từ prompt như hợp đồng cũ — mỗi ảnh nền chỉ render khi kế hoạch ảnh của địa điểm cho phép.'
+            : null;
+    }
+
+    /**
+     * @return array{version: string, instruction: array<string, string>, changes: array<string, string>, unstated: list<string>} the fixed words a plate rendered from the standard image of its place is sent with before its approved prompt, written as an edit of that image: the sentences of the instruction, the words for each thing a continuity entry may let change, and what may change between two plates no entry names together (MotoLocationImagePlan::instruction joins them for one pair of plates). The words are part of the render request and of its hash, never of the approved prompt
+     *
+     * @throws RuntimeException when the configuration names another mechanism, lacks a sentence or lacks the words for a thing that may change; nothing is rendered from a source then
+     */
+    public static function sharedReference(): array
+    {
+        $config = (array) config('video.moto.locations.shared_reference');
+        $sentences = array_map(static fn (mixed $sentence): string => is_string($sentence) ? trim($sentence) : '', (array) ($config['instruction'] ?? []));
+        $changes = array_filter((array) ($config['changes'] ?? []), static fn (mixed $words): bool => is_string($words) && trim($words) !== '');
+        $unstated = array_values((array) ($config['unstated'] ?? []));
+        $complete = array_diff(MotoLocationImagePlan::SENTENCES, array_keys(array_filter($sentences, static fn (string $sentence): bool => $sentence !== ''))) === []
+            && array_diff(MotoLocationImagePlan::MAY_CHANGE, array_keys($changes)) === []
+            && array_diff($unstated, MotoLocationImagePlan::MAY_CHANGE) === [];
+
+        if (($config['version'] ?? null) !== MotoLocationImagePlan::MECHANISM || ! $complete) {
+            throw new RuntimeException('Cấu hình video.moto.locations.shared_reference không khai đúng cơ chế '.MotoLocationImagePlan::MECHANISM.' hoặc thiếu chỉ dẫn cố định — không render ảnh nền dựng từ ảnh chuẩn.');
+        }
+
+        return ['version' => MotoLocationImagePlan::MECHANISM, 'instruction' => $sentences, 'changes' => $changes, 'unstated' => $unstated];
+    }
+
     public function plannerVersion(): string
     {
-        return MotoLocationPlanner::VERSION;
+        return match (true) {
+            $this->setDesign => MotoLocationPlanner::SET_DESIGN_VERSION,
+            $this->dossier => MotoLocationPlanner::DOSSIER_VERSION,
+            default => MotoLocationPlanner::VERSION,
+        };
     }
 
     public function inputsVersion(): string
     {
         return match (true) {
+            $this->setDesign => MotoContract::LOCATIONS_INPUT_V5,
+            $this->dossier => MotoContract::LOCATIONS_INPUT_V4,
             $this->checkpointed => MotoContract::LOCATIONS_INPUT_V3,
             $this->eventful => MotoContract::LOCATIONS_INPUT_V2,
             default => MotoContract::LOCATIONS_INPUT,
@@ -114,7 +180,9 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
 
         $design = self::pinnedDesign($projectId, $source);
         $names = array_values(array_map('strval', (array) ($scriptContext['source_names'] ?? [])));
-        $built = self::build((array) $script['document']['data'], $design, (array) $pinned['variables'], $names, $this->eventful);
+        $built = $this->dossier
+            ? self::build((array) $script['document']['data'], $design, (array) $pinned['variables'], $names, true, array_values(array_filter((array) ($script['document']['flags'] ?? []), 'is_string')), MotoLocationPlanner::style((array) config('video.moto.locations.reference'), $this->plannerVersion()), $this->setDesign)
+            : self::build((array) $script['document']['data'], $design, (array) $pinned['variables'], $names, $this->eventful);
 
         return [
             'payload' => $built['payload'],
@@ -159,6 +227,11 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
         return MotoLocationPlanner::plan($document, $context);
     }
 
+    public function normalizeAnswer(object $answer, \App\Video\Superyacht\Spec\ResolvedPhase $bundle): array
+    {
+        return MotoLocationsAnswer::prepare($answer, $bundle->outputSchemas());
+    }
+
     public function systemText(array $parts, array $schemas): string
     {
         $heading = (string) config('video.moto.locations.schema_heading');
@@ -166,6 +239,7 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
         return implode("\n\n", [
             ...$parts,
             ...array_map(static fn (array $schema): string => "## {$heading} — {$schema['label']}\n\n```json\n".MotoContract::compactSchema((string) $schema['content'])."\n```", $schemas),
+            ...(MotoLocationsAnswer::applies($schemas) ? [MotoLocationsAnswer::INSTRUCTION] : []),
         ]);
     }
 
@@ -175,10 +249,14 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
      * @param  array<string, mixed>  $variables  the variables the script was written with
      * @param  list<string>  $names  the source names the script pinned
      * @param  bool  $eventful  whether the script tells its beats as events without screen time, from a design that tells every build state
-     * @return array{payload: array<string, mixed>, context: array<string, mixed>} what a place needs from the script and the design: the beats with the subjects they show and their sizes, the operations they perform and the environment the design sets for them; the setting of each design stage; the surface, work in progress, temporary equipment and exceptions of each build state; no part record, coordinate, limit or model-sheet prompt
+     * @param  ?list<string>  $flags  for a location dossier (moto-locations-input-v4), what the script reported as unsettled; null for every earlier input, which is built exactly as before
+     * @param  array<string, string>  $style  for a location dossier, the look code gives every plate, by plate style
+     * @param  bool  $setDesign  a set design dossier (moto-locations-input-v5): the dossier input with temporary_equipment, every temporary item the checkpoints of the design allow in their order, also pinned in the context, and with no subject for a part the design leaves out of the motorcycle at a beat that only represents it (subjects())
+     * @return array{payload: array<string, mixed>, context: array<string, mixed>} what a place needs from the script and the design: the beats with the subjects they show and their sizes, the operations they perform and the environment the design sets for them; the setting of each design stage; the surface, work in progress, temporary equipment and exceptions of each build state; no part record, coordinate, limit or model-sheet prompt. A dossier also carries the theme and emotional goal of the story, the characters by role, each beat's act, time jump and sound effects, each event's vehicle motion and the flags of the script
      */
-    public static function build(array $script, array $design, array $variables, array $names, bool $eventful = false): array
+    public static function build(array $script, array $design, array $variables, array $names, bool $eventful = false, ?array $flags = null, array $style = [], bool $setDesign = false): array
     {
+        $dossier = $flags !== null;
         $parts = array_column((array) ($design['parts'] ?? []), null, 'id');
         $states = array_column((array) ($design['build_states'] ?? []), null, 'id');
         $roles = array_column((array) ($design['participant_roles'] ?? []), 'name', 'id');
@@ -187,13 +265,18 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
         $physical = $layout->physical();
         $finished = self::box(array_intersect_key($parts, $present[$layout->checkpointed() ? $physical[count($physical) - 1] : sprintf('BS%02d', self::LAST_STATE)] ?? []), 'part_boxes');
         $beats = [];
-        $keys = $eventful ? self::EVENTFUL_BEAT_KEYS : self::BEAT_KEYS;
+        $keys = match (true) {
+            $dossier => self::DOSSIER_BEAT_KEYS,
+            $eventful => self::EVENTFUL_BEAT_KEYS,
+            default => self::BEAT_KEYS,
+        };
 
         foreach ((array) ($script['beats'] ?? []) as $beat) {
             $situation = is_array($beat['situation'] ?? null)
                 ? ['mode' => $beat['situation']['mode'], 'dry_road' => $beat['situation']['dry_road'], 'procedures' => array_values((array) ($beat['situation']['procedures'] ?? []))]
                 : null;
-            $events = $eventful ? ['events' => array_map(static fn (array $event): array => array_intersect_key($event, array_flip(['id', 'action', 'result', 'character_ids'])), (array) ($beat['events'] ?? []))] : [];
+            $events = $eventful ? ['events' => array_map(static fn (array $event): array => array_intersect_key($event, array_flip(['id', 'action', 'result', 'character_ids']))
+                + ($dossier ? ['vehicle_motion' => [$event['operating_start']['vehicle_motion'] ?? null, $event['operating_end']['vehicle_motion'] ?? null]] : []), (array) ($beat['events'] ?? []))] : [];
             // A beat of a v3 design carries the checkpoints it runs through and only the temporary equipment those checkpoints hold.
             $span = $layout->checkpointed() ? [
                 'checkpoint_start' => $beat['checkpoint_start'] ?? null,
@@ -202,7 +285,7 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
             ] : [];
             $beats[] = array_combine($keys, array_map(static fn (string $key): mixed => $beat[$key] ?? null, $keys)) + $span + $events + [
                 'situation' => $situation,
-                'subjects' => self::subjects($beat, $parts, $states, $present, $finished, $design['motorcycle']['name'] ?? null, $layout),
+                'subjects' => self::subjects($beat, $parts, $states, $present, $finished, $design['motorcycle']['name'] ?? null, $layout, $setDesign),
                 'operations' => self::operations($beat, $design),
                 'conditions' => self::conditions($beat, $design),
                 'limits' => self::limits($beat, $design),
@@ -241,10 +324,36 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
             $facts[$id] = ['kind' => $state['kind']] + $checkpoint + ['temporary' => array_values((array) ($state['temporary'] ?? [])), 'surface' => $state['surface'] ?? null, 'in_progress' => array_column($work, 'description')];
         }
 
+        $story = ['hero_beat' => $script['story']['hero_beat'] ?? null, 'loops' => array_values((array) ($script['story']['loops'] ?? []))];
+
+        if ($dossier) {
+            $temporary = $setDesign ? ['temporary_equipment' => array_values(array_unique(array_merge([], ...array_map(static fn (array $fact): array => array_values(array_map('strval', (array) ($fact['temporary'] ?? []))), array_values($facts)))))] : [];
+
+            return [
+                'payload' => [
+                    'variables' => array_intersect_key($variables, array_flip(['aspect_ratio', 'platform'])) + ['visual_style' => $style],
+                    'story' => ['theme' => $script['story']['theme'] ?? null, 'emotional_goal' => $script['story']['emotional_goal'] ?? null] + $story,
+                    'characters' => array_values(array_map(static fn (array $character): array => ['id' => (string) $character['id'], 'role' => implode(', ', array_map(static fn (string $role): string => $roles[$role] ?? $role, (array) $character['role_ids']))], (array) ($script['characters'] ?? []))),
+                    'beats' => $beats,
+                    'build_states' => $shown,
+                ] + $temporary + [
+                    'motorcycle' => ['size' => $finished],
+                    'source_flags' => array_values($flags),
+                    'avoid_names' => $names,
+                ],
+                'context' => [
+                    'beats' => $beats,
+                    'build_states' => $facts,
+                    'motorcycle' => ['size' => $finished],
+                    'source_flags' => array_values($flags),
+                ] + $temporary + ($layout->checkpointed() ? [MotoDesignStates::LAYOUT_KEY => MotoDesignStates::CHECKPOINTS] : []),
+            ];
+        }
+
         return [
             'payload' => [
                 'variables' => array_intersect_key($variables, array_flip(['aspect_ratio', 'video_length', 'platform'])),
-                'story' => ['hero_beat' => $script['story']['hero_beat'] ?? null, 'loops' => array_values((array) ($script['story']['loops'] ?? []))],
+                'story' => $story,
                 'beats' => $beats,
                 'build_states' => $shown,
                 'motorcycle' => ['size' => $finished],
@@ -263,9 +372,10 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
      * @param  array<string, array<string, mixed>>  $states
      * @param  array<string, array<string, true>>  $present
      * @param  array<string, mixed>  $finished  the size of the finished motorcycle
-     * @return list<array{ref: string, name: ?string, size: array<string, mixed>}> the motorcycle as built at a physical build state, a physical model of a design stage, and every part the beat names, each with its size
+     * @param  bool  $setDesign  a set design input (moto-locations-input-v5); every earlier input lists its subjects exactly as before
+     * @return list<array{ref: string, name: ?string, size: array<string, mixed>}> the motorcycle as built at a physical build state, a physical model of a design stage, and every part the beat names, each with its size. In a set design input a part the design leaves out of the motorcycle (present false) is no subject of a beat whose situation mode is representation: there it is only drawn, so nothing of it stands in the place. The same part named by any other beat stays listed with its unknown size, so that the use of a part the design left out is still seen; a part of the design that a representation beat names, the physical model and every subject whose size is unknown are listed as before
      */
-    private static function subjects(array $beat, array $parts, array $states, array $present, array $finished, mixed $name, MotoDesignStates $layout): array
+    private static function subjects(array $beat, array $parts, array $states, array $present, array $finished, mixed $name, MotoDesignStates $layout, bool $setDesign = false): array
     {
         $state = is_string($beat['state'] ?? null) ? $beat['state'] : null;
         $index = $state !== null && preg_match('/^BS(\d{2})$/', $state, $match) === 1 ? (int) $match[1] : null;
@@ -286,8 +396,10 @@ final class MotoLocations implements LocationWorkflow, ReleaseBound, StructureCh
             ] : self::unknown()];
         }
 
+        $drawn = $setDesign && ($beat['situation']['mode'] ?? null) === 'representation';
+
         foreach ((array) ($beat['design_refs'] ?? []) as $ref) {
-            if (isset($parts[$ref])) {
+            if (isset($parts[$ref]) && ! ($drawn && ($parts[$ref]['present'] ?? null) === false)) {
                 $subjects[] = ['ref' => $ref, 'name' => $parts[$ref]['name'] ?? null, 'size' => self::box([$parts[$ref]], 'part_box')];
             }
         }

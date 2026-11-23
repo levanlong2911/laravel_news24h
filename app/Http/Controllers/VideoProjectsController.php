@@ -759,11 +759,48 @@ class VideoProjectsController extends Controller
             'request_id' => ['required', 'regex:/^(P|BG)[0-9]{2}$/'],
             'artifact_id' => ['required', 'uuid'],
         ], ['*' => 'Thiếu dữ liệu chọn ảnh — tải lại trang.']);
-        [$done, $reason] = app(LocationSourceService::class)->choose($id, (string) $data['request_id'], (string) $data['artifact_id']);
+        $actor = auth()->id();
+        [$done, $reason] = app(LocationSourceService::class)->choose($id, (string) $data['request_id'], (string) $data['artifact_id'], $actor === null ? null : (string) $actor);
 
         return $done
             ? redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['request_id'])->with('success', 'Đã duyệt ảnh cho '.$data['request_id'].'.')
             : back()->with('error', $reason);
+    }
+
+    /**
+     * @return \Illuminate\Http\RedirectResponse the standard plate of a place chosen or changed. The request names the place, the plate and what the page showed — the set, its content hash, its prompt set and the selection version; the set on screen is put in use first when it is not, and nothing is written when any of them no longer holds. The role of a plate is never read from the request
+     */
+    public function chooseLocationStandard(Request $request, string $id)
+    {
+        $this->ownedProject($id);
+
+        $data = $request->validate([
+            'location' => ['required', 'regex:/^LOC[0-9]{2}$/'],
+            'plate' => ['required', 'regex:/^BG[0-9]{2}$/'],
+            'stage_id' => ['required', 'uuid'],
+            'content_hash' => ['required', 'string', 'max:80'],
+            'prompts_hash' => ['required', 'string', 'max:80'],
+            'selection_version' => ['required', 'integer', 'min:0'],
+            'operation_id' => ['required', 'uuid'],
+        ], ['*' => 'Thiếu dữ liệu chọn ảnh chuẩn — tải lại trang.']);
+        $actor = auth()->id();
+        [$done, $reason, $released] = app(LocationSourceService::class)->chooseStandard(
+            $id,
+            (string) $data['location'],
+            (string) $data['plate'],
+            (int) $data['selection_version'],
+            $actor === null ? null : (string) $actor,
+            ['stage_id' => (string) $data['stage_id'], 'content_hash' => (string) $data['content_hash'], 'prompts_hash' => (string) $data['prompts_hash']],
+            (string) $data['operation_id'],
+        );
+
+        if (! $done) {
+            return back()->with('error', $reason);
+        }
+
+        return redirect()->to(route('video-projects.locations', $id).'#ref_'.$data['plate'])->with('success', $reason === 'unchanged'
+            ? "{$data['plate']} đã là ảnh chuẩn của {$data['location']} — không đổi gì."
+            : "Đã chọn {$data['plate']} làm ảnh chuẩn của {$data['location']}.".($released === [] ? '' : ' Lựa chọn ảnh của '.implode(', ', $released).' đã được gỡ khỏi bộ đang dùng; ảnh, lượt render và chi phí vẫn giữ.'));
     }
 
     public function renderDesignImage(string $id, string $imageId)
@@ -842,6 +879,7 @@ class VideoProjectsController extends Controller
             'approved' => __('messages.reference_approved'),
             'image_type_mismatch' => __('messages.reference_wrong_image_type'),
             'scene_keyframe_needs_scene_flow' => __('messages.scene_keyframe_needs_scene_flow'),
+            'location_reference_needs_locations_flow' => 'Ô này là ảnh nền Phase 5 dựng theo ảnh chuẩn chung của địa điểm — render lại từ màn Locations & Sets, nơi kế hoạch ảnh và ảnh nguồn được kiểm trước khi gửi.',
             'no_environment_profile' => __('messages.environment_no_profile'),
             'unknown_environment_key' => __('messages.environment_unknown_key'),
             'environment_requirement_unreadable' => __('messages.environment_requirement_unreadable'),

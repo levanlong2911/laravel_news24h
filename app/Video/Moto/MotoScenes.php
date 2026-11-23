@@ -40,7 +40,15 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
         $this->release = MotoPipelineRelease::of($project);
         $law = MotoPipelineRelease::policy($project, 'scenes')['work_tracking_version'] ?? null;
         $this->law = is_string($law) ? $law : null;
+        $this->dossier = $this->eventful && MotoPipelineRelease::dossier($project);
+        $this->setDesign = $this->dossier && MotoPipelineRelease::setDesign($project);
     }
+
+    /** @var bool whether the release plans its places as a set design dossier (moto-locations-v4), whose objects, set states and continuity the scene step is handed */
+    private bool $setDesign = false;
+
+    /** @var bool whether the release plans its places as a location dossier (moto-locations-v3), whose zones, access routes, connections and plate conditions the scene step is handed */
+    private bool $dossier = false;
 
     public const LOCATIONS_TOKEN = 'moto-scenes-locations-token-v1';
 
@@ -74,6 +82,8 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
     public function inputsVersion(): string
     {
         return match (true) {
+            $this->setDesign && $this->law !== null => MotoContract::SCENES_INPUT_V7,
+            $this->dossier && $this->law !== null => MotoContract::SCENES_INPUT_V6,
             $this->checkpointed && $this->law !== null => MotoContract::SCENES_INPUT_V5,
             $this->law !== null => MotoContract::SCENES_INPUT_V4,
             $this->eventful => MotoContract::SCENES_INPUT_V3,
@@ -105,7 +115,12 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
             $this->eventful => MotoContract::SCRIPT_FORMAT_V2,
             default => MotoContract::SCRIPT_FORMAT,
         };
-        $locationsFormat = $this->eventful ? MotoContract::LOCATIONS_FORMAT_V2 : MotoContract::LOCATIONS_FORMAT;
+        $locationsFormat = match (true) {
+            $this->setDesign => MotoContract::LOCATIONS_FORMAT_V4,
+            $this->dossier => MotoContract::LOCATIONS_FORMAT_V3,
+            $this->eventful => MotoContract::LOCATIONS_FORMAT_V2,
+            default => MotoContract::LOCATIONS_FORMAT,
+        };
 
         if (($script['document']['format'] ?? null) !== $scriptFormat) {
             throw new RuntimeException('Kịch bản đang chọn không theo định dạng '.$scriptFormat.' — không chia scene moto từ nó.');
@@ -113,6 +128,10 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
 
         $text = $this->locations->approvedText($projectId);
         $document = (array) $text['evaluation']['document'];
+
+        if ($this->dossier && ($document['format'] ?? null) !== $locationsFormat && in_array($document['format'] ?? null, [MotoContract::LOCATIONS_FORMAT_V2, MotoContract::LOCATIONS_FORMAT_V3], true)) {
+            throw new RuntimeException('Bộ bối cảnh đang dùng theo hợp đồng '.$document['format'].': các bản scene và shot đã lập từ nó vẫn dùng được, còn bản scene mới của bản phát hành này chia từ bộ hồ sơ địa điểm '.$locationsFormat.' — lập và duyệt bộ địa điểm mới rồi chia scene.');
+        }
 
         if (($document['format'] ?? null) !== $locationsFormat) {
             throw new RuntimeException('Bộ bối cảnh đang dùng không theo định dạng '.$locationsFormat.' — không chia scene moto từ nó.');
@@ -131,7 +150,7 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
             throw new RuntimeException("Bản phát hành {$this->release} khai luật work {$this->law} nhưng không kể chuyện bằng sự kiện — không chia scene.");
         }
 
-        $built = self::build((array) $script['document']['data'], (array) $document['data'], $design, (array) $pinned['variables'], $this->eventful, $this->law);
+        $built = self::build((array) $script['document']['data'], self::locationData($document, (array) ($text['evaluation']['derived'] ?? [])), $design, (array) $pinned['variables'], $this->eventful, $this->law, $this->dossier, $this->setDesign);
 
         return [
             'payload' => $built['payload'],
@@ -147,6 +166,25 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
                 'planner_version' => $this->plannerVersion(),
             ]),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $document  the approved Phase 5 answer
+     * @param  array<string, mixed>  $derived  the plan code derived from it
+     * @return array<string, mixed> the data the later steps read: the answer's own, and for a dossier (moto-locations-v3 or moto-locations-v4) its conflicts joined by the ones code found in its numbers (MotoLocationsCheck::usability), so a plate held back for its fit holds its beats back like any blocking conflict of the answer. A set design dossier is given as MotoSetDesign::normalize() reads it: every plate with the light, the support and the state of its set that code makes from its structured fields
+     */
+    public static function locationData(array $document, array $derived): array
+    {
+        $data = (array) ($document['data'] ?? []);
+        $format = $document['format'] ?? null;
+
+        if ($format !== MotoContract::LOCATIONS_FORMAT_V3 && $format !== MotoContract::LOCATIONS_FORMAT_V4) {
+            return $data;
+        }
+
+        $data = $format === MotoContract::LOCATIONS_FORMAT_V4 ? MotoSetDesign::normalize($data) : $data;
+
+        return ['conflicts' => [...array_values((array) ($data['conflicts'] ?? [])), ...array_values((array) ($derived['held'] ?? []))]] + $data;
     }
 
     public function sourceProblem(string $projectId, array $source): ?string
@@ -205,9 +243,11 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
      * @param  array<string, mixed>  $variables  the variables the script was written with
      * @param  bool  $eventful  whether the script tells its beats as events without screen time: the beats then carry their events, no times are sent, and each beat counts as one step of an ordinal timing
      * @param  ?string  $law  the law the work of the plan is followed under, sent as work_tracking_version and pinned in the check context; null for a plan that names none
+     * @param  bool  $dossier  the locations are a location dossier (moto-locations-v3), as its pinned format says: each place is sent with its setting, function, zones and access routes, with the connections between places and the conditions of each plate
+     * @param  bool  $setDesign  the locations are a set design dossier (moto-locations-v4) as MotoSetDesign::normalize() reads it: each place is sent with its landmarks and the objects of its set — id, name, kind, role, whether fixed, zone, position and whether present in the base state — and each plate with its atmosphere and the state of its set, by name with what differs from the base state; the continuity is sent as the dossier states it, with what plates of one place keep and what may differ
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} the beats with their times; the places, plates and uses of every beat with the background text's continuity and conflicts; the parts present and in progress, the exceptions, configurations and lights of the build states the beats use; every part with the part it is mounted on and its first build state on the motorcycle; no full design, image prompt or model-sheet prompt
      */
-    public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false, ?string $law = null): array
+    public static function build(array $script, array $locations, array $design, array $variables, bool $eventful = false, ?string $law = null, bool $dossier = false, bool $setDesign = false): array
     {
         $beatKeys = $eventful ? [...array_values(array_diff(self::BEAT_KEYS, ['duration_s'])), 'events'] : self::BEAT_KEYS;
         $layout = MotoDesignStates::of($design);
@@ -328,7 +368,21 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
             ],
             'beat_times' => $times,
             'locations' => [
-                'places' => array_values(array_map(static fn (array $place): array => ['id' => $place['id'], 'name' => $place['name'], 'kind' => $place['kind']] + ($eventful ? array_intersect_key($place, array_flip(['subject_zone', 'entry_routes', 'camera_access', 'fixed_landmarks'])) : []), (array) ($locations['locations'] ?? []))),
+                'places' => array_values(array_map(static fn (array $place): array => ['id' => $place['id'], 'name' => $place['name'], 'kind' => $place['kind']] + match (true) {
+                    $setDesign => array_intersect_key($place, array_flip(['setting', 'function', 'camera_access'])) + [
+                        'landmarks' => MotoSetDesign::landmarks($place),
+                        'zones' => array_values(array_map(static fn (array $zone): array => array_intersect_key($zone, array_flip(['id', 'name', 'kind', 'purpose', 'position'])), (array) $place['zones'])),
+                        'access_routes' => array_values(array_map(static fn (array $route): array => array_intersect_key($route, array_flip(['id', 'name', 'kind', 'leads_to', 'zone', 'used_by'])), (array) $place['access_routes'])),
+                        'objects' => array_values(array_map(static fn (array $object): array => array_intersect_key($object, array_flip(['id', 'name', 'kind', 'role', 'fixed', 'zone', 'position', 'present'])), (array) $place['set_design']['objects'])),
+                    ],
+                    $dossier => array_intersect_key($place, array_flip(['setting', 'function', 'camera_access', 'fixed_landmarks'])) + [
+                        'zones' => array_values(array_map(static fn (array $zone): array => array_intersect_key($zone, array_flip(['id', 'name', 'kind', 'purpose', 'position'])), (array) $place['zones'])),
+                        'access_routes' => array_values(array_map(static fn (array $route): array => array_intersect_key($route, array_flip(['id', 'name', 'kind', 'leads_to', 'zone', 'used_by'])), (array) $place['access_routes'])),
+                    ],
+                    $eventful => array_intersect_key($place, array_flip(['subject_zone', 'entry_routes', 'camera_access', 'fixed_landmarks'])),
+                    default => [],
+                }, (array) ($locations['locations'] ?? []))),
+                ...($dossier ? ['connections' => array_values(array_map(static fn (array $connection): array => array_intersect_key($connection, array_flip(['id', 'from', 'to', 'relation', 'route', 'used_by'])), (array) $locations['connections']))] : []),
                 'backgrounds' => array_values(array_map(static fn (array $plate): array => [
                     'id' => $plate['id'],
                     'location' => $plate['location'],
@@ -336,7 +390,8 @@ final class MotoScenes implements ReleaseBound, SceneWorkflow, StructureChecked
                     'ground' => $plate['ground'],
                     'light' => $plate['light']['description'],
                     'shot_changes' => array_values((array) $plate['shot_changes']),
-                ], $plates)),
+                ] + ($dossier ? array_intersect_key($plate, array_flip(['subject_zone', 'time_of_day', 'weather'])) : [])
+                    + ($setDesign ? ['atmosphere' => $plate['atmosphere'], 'set_state' => ['name' => $plate['set']['name'], 'changes' => MotoSetDesign::changeLines($plate['set'])]] : []), $plates)),
                 'beats' => $assigned,
                 'continuity' => array_values((array) ($locations['continuity'] ?? [])),
                 'conflicts' => array_values((array) ($locations['conflicts'] ?? [])),

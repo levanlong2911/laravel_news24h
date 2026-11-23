@@ -8,7 +8,10 @@ use App\Enums\DesignImageStatus;
 use App\Models\VideoDesignImage;
 use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\MediaModelRegistry;
+use App\Video\Moto\MotoLocationImagePlan;
+use App\Video\Moto\MotoLocations;
 use App\Video\Queue\VideoQueues;
+use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use RuntimeException;
@@ -105,7 +108,7 @@ final class LocationReferenceService implements QueuedImageService
         return $this->send($imageId);
     }
 
-    /** @return ?string why a queued cell may no longer be sent: its prompt is no longer the approved one of the set in use */
+    /** @return ?string why a queued cell may no longer be sent: its prompt is no longer the approved one of the set in use, or — in a set rendered under the shared reference — the plan no longer gives its plate the role it was made for, or the image in use for the standard plate is no longer the source the cell carries. The job then stops before the provider is called; the source of today is never put into an old cell */
     public function checkQueued(VideoDesignImage $image): ?string
     {
         [$sendable, $problem] = $this->sendable((string) $image->project_id, (string) $image->id);
@@ -119,7 +122,7 @@ final class LocationReferenceService implements QueuedImageService
         return $this->renderer->renderNow((string) $image->id);
     }
 
-    /** @return array{0: ?VideoDesignImage, 1: string} the cell when its prompt is still the approved one of the set in use, or why it may not be sent */
+    /** @return array{0: ?VideoDesignImage, 1: string} the cell when its prompt is still the approved one of the set in use and, under the shared reference, it still belongs to the image plan with the source it carries (LocationSourceService::referenceOf) and a model that serves its role; or why it may not be sent. Asked before every send: after a cell is made, on a retry and by the worker right before the provider call */
     private function sendable(string $projectId, string $imageId): array
     {
         $image = VideoDesignImage::query()->whereKey($imageId)->where('project_id', $projectId)->where('image_type', DesignImageStore::LOCATION_REFERENCE_TYPE)->first();
@@ -159,7 +162,64 @@ final class LocationReferenceService implements QueuedImageService
             return [null, "Ô này mang prompt cũ của {$requestId} — không gửi lại ô cũ. Bấm Render Plate ở {$requestId} để dựng với prompt hiện tại; ô cũ vẫn được giữ."];
         }
 
+        $reference = $this->sources->referenceOf($text, $requestId, $spec);
+
+        if ($reference['problem'] !== null) {
+            return [null, $reference['problem']];
+        }
+
+        if ($reference['mechanism'] !== null) {
+            try {
+                $problem = $this->requestProblem($spec, (string) $reference['role'], $requestId, $reference['role'] === MotoLocationImagePlan::VARIANT ? $this->instruction($text, $reference, $requestId) : null);
+            } catch (RuntimeException|InvalidArgumentException $e) {
+                $problem = $e->getMessage();
+            }
+
+            if ($problem !== null) {
+                return [null, $problem];
+            }
+        }
+
         return [$image, 'ok'];
+    }
+
+    /**
+     * @param  array<string, mixed>  $spec  the stored spec of a cell of a set rendered under the shared reference
+     * @param  string  $role  the role the image plan gives its plate now
+     * @param  ?string  $instruction  the words of the mechanism for the plate as they are joined now (instruction()); null for a standard
+     * @return ?string why the cell may not be sent as it is stored, checked again before every provider call: its trace and its sources no longer say one thing, its model is gone from the registry or no longer declares what the role needs, or the words of the mechanism for its plate changed since the cell was made. The model, the provider and the settings of the cell are never replaced by others
+     */
+    private function requestProblem(array $spec, string $role, string $requestId, ?string $instruction): ?string
+    {
+        if (($problem = MotoLocationImagePlan::specProblem($spec)) !== null) {
+            return $problem;
+        }
+
+        $entry = $this->registry->find(LocationReferencePrompt::TASK, (string) ($spec['provider'] ?? '').':'.(string) ($spec['model'] ?? ''));
+
+        if ($entry === null) {
+            return "Model của ô này không còn trong danh sách của Phase 5 — không gửi lại ô cũ. Bấm Render Plate ở {$requestId} để chọn model; ô cũ vẫn được giữ.";
+        }
+
+        if (($problem = MotoLocationImagePlan::modelProblem($entry, $role)) !== null) {
+            return $problem;
+        }
+
+        return $role === MotoLocationImagePlan::VARIANT && ! hash_equals(CanonicalJson::hashString((string) $instruction), (string) ($spec['reference']['instruction_sha256'] ?? ''))
+            ? "Chỉ dẫn cố định của cơ chế ảnh chuẩn đã đổi sau khi tạo ô này — không gửi lại ô cũ. Bấm Render Plate ở {$requestId} để dựng với chỉ dẫn hiện tại; ô cũ vẫn được giữ."
+            : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $text  approvedText() of the set in use
+     * @param  array<string, mixed>  $reference  LocationSourceService::referenceOf() of a variant plate
+     * @return string the words sent before the approved prompt of the plate: the fixed sentences of the mechanism with what the dossier lets change between the standard plate of the place and this plate (MotoLocationImagePlan::instruction)
+     *
+     * @throws RuntimeException when the configuration of the mechanism is not complete
+     */
+    private function instruction(array $text, array $reference, string $requestId): string
+    {
+        return MotoLocationImagePlan::instruction(MotoLocations::sharedReference(), (array) ($text['evaluation']['document']['data'] ?? []), (string) $reference['standard_plate'], $requestId);
     }
 
     /** @return array{0: ?VideoDesignImage, 1: string} */
@@ -176,7 +236,9 @@ final class LocationReferenceService implements QueuedImageService
 
     /**
      * @param  array<string, mixed>  $settings
-     * @return array<string, mixed>
+     * @return array<string, mixed> the snapshot a render is stored and sent with. A set rendered plate by plate gets the spec it always got. A set rendered under the shared reference (moto-locations-v4) is held plate by plate by its image plan: the role of the plate is read from the plan, never from the request; a standard is generated from its own approved prompt with no source; a variant carries, as its one source, the image in use for the standard plate of its place, and needs a model the registry declares for edit_sources. The spec then keeps the trace of the request under reference, beside the stage, content hash, approved prompt hash, model, settings and operation id it already keeps
+     *
+     * @throws RuntimeException when the plate may not be rendered now: every plate of its place is held, its standard has no chosen image or that image cannot be used, or the model does not serve the role — no other model, provider or way of rendering is taken instead
      */
     private function spec(string $projectId, string $requestId, array $settings, string $operationId): array
     {
@@ -192,10 +254,17 @@ final class LocationReferenceService implements QueuedImageService
         }
 
         $approved = $text['prompts']['images'][$requestId] ?? throw new RuntimeException("Chưa có prompt đang dùng cho {$requestId} — tải lại trang rồi bấm Render Plate.");
+        $reference = $this->sources->referenceOf($text, $requestId);
+
+        if ($reference['problem'] !== null) {
+            throw new RuntimeException($reference['problem']);
+        }
+
+        $role = $reference['role'] ?? MotoLocationImagePlan::STANDARD;
         $entry = $this->registry->find(LocationReferencePrompt::TASK, (string) ($settings['provider_model'] ?? '')) ?? throw new RuntimeException('Model ảnh không có trong danh sách của Phase 5.');
 
-        if (! in_array('generate', (array) ($entry['capabilities'] ?? []), true)) {
-            throw new RuntimeException("Model {$entry['label']} không khai năng lực generate cho Phase 5.");
+        if (($problem = MotoLocationImagePlan::modelProblem($entry, $role)) !== null) {
+            throw new RuntimeException($problem);
         }
 
         $variations = filter_var($settings['variations'] ?? null, FILTER_VALIDATE_INT);
@@ -249,8 +318,10 @@ final class LocationReferenceService implements QueuedImageService
             'variations' => $variations,
             'size' => null,
             'quality' => null,
-            'sources' => [],
+            'sources' => $reference['source'] === null ? [] : [$reference['source']],
             'attempt' => $operationId,
-        ], $render);
+        ], $render) + ($reference['mechanism'] === null ? [] : [
+            'reference' => MotoLocationImagePlan::trace($reference, $role === MotoLocationImagePlan::VARIANT ? $this->instruction($text, $reference, $requestId) : null, (string) $approved['sha256']),
+        ]);
     }
 }

@@ -844,7 +844,7 @@ class VideoProbeOmni extends Command
     /** @return ?string the background whose image a person chose in Phase 5 is this very artifact, as the keyframes read it; null when it is none */
     private function chosenBackground(string $projectId, VideoArtifact $artifact, VideoDesignImage $image): ?string
     {
-        foreach ((array) app(LocationSourceService::class)->selection($projectId)['images'] as $background => $chosen) {
+        foreach (app(LocationSourceService::class)->handedImages($projectId) as $background => $chosen) {
             if ((string) ($chosen['artifact_id'] ?? '') === (string) $artifact->id && (string) ($chosen['image_id'] ?? '') === (string) $image->id
                 && (string) ($chosen['sha256'] ?? '') === (string) $artifact->sha256) {
                 return (string) $background;

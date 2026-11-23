@@ -757,11 +757,11 @@ final class MotoKeyframeSourceService
         return ['masters' => $masters, 'part_masters' => $partMasters, 'problem' => null];
     }
 
-    /** @return array<string, array{image_id: string, artifact_id: string, sha256: string, code: string, name: string, location: string, light: string}> the background images chosen at Phase 5, by background, with the name, place and light of the set in use; a choice needs no approved status on its image */
+    /** @return array<string, array{image_id: string, artifact_id: string, sha256: string, code: string, name: string, location: string, light: string}> the background images chosen at Phase 5 that the location step hands on (LocationSourceService::handedImages), by background, with the name, place and light of the set in use; a choice needs no approved status on its image. A set whose plates render on their own is read as before; in a set rendered under the shared reference an image that no longer belongs to the image plan — a variant whose standard image changed or cannot be used — is left out */
     private function plates(string $projectId): array
     {
         $selection = $this->locations->selection($projectId);
-        $chosen = (array) ($selection['images'] ?? []);
+        $chosen = $this->locations->handedImages($projectId, $selection);
         $set = is_string($selection['text']['stage_id'] ?? null) ? VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->find($selection['text']['stage_id']) : null;
         $records = array_column((array) ($set?->output_json['derived']['images'] ?? []), null, 'id');
         $codes = VideoDesignImage::query()->where('project_id', $projectId)->whereIn('id', array_filter(array_column($chosen, 'image_id')))->pluck('image_code', 'id');

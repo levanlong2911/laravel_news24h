@@ -40,7 +40,25 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
     private const EVENT_FIELDS = ['id', 'action', 'result', 'character_ids', 'design_refs', 'operating_start', 'operating_end'];
 
     /** @var list<string> the input formats whose payload carries the composition and event progress of the shot, its scene and the events it plays */
-    private const SOURCED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V7, MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9];
+    private const SOURCED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V7, MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+
+    /** @var list<string> the input formats that read the scene of the shot from the pinned context and hold the coverage to the approved script: the eighth input and every one built on it */
+    public const LINKED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+
+    /** @var list<string> the input formats of a design with checkpoints, which tell the clip the checkpoint its end frame shows */
+    private const CHECKPOINT_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+
+    /** @var list<string> the input formats that hand on the conditions of the plate in the picture: the tenth input and every one built on it */
+    private const ENVIRONMENT_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+
+    /** @var list<string> what the eleventh input adds to the conditions of the plate in the picture, as the shot run pinned them from a set design dossier: its light — the sources, the bright and dark areas, how the subject stands against the frame — and the state of its set */
+    public const SET_FIELDS = ['light', 'set_state'];
+
+    /** @var array<string, string> the source id the tenth input adds: the conditions of the plate the shot stands on */
+    private const ENVIRONMENT_SOURCES = ['S25' => 'environment'];
+
+    /** @var list<string> the conditions of a plate the tenth input hands on beside the label of its attached image, as the location dossier states them; the ambient sound is for the sound line of the video prompt alone */
+    public const CONDITION_FIELDS = ['time_of_day', 'weather', 'atmosphere', 'ambient_sound'];
 
     /** @var ?string the input format the adapter writes and reads: that of the bound project for a new run, that of a stored run while it is verified; none before either */
     private ?string $inputFormat = null;
@@ -209,7 +227,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
 
     /**
      * @param  array<string, mixed>  $shot  the stored shot of the approved plan
-     * @param  array<string, mixed>  $pinned  the check context pinned with the shot run: its configurations and limits
+     * @param  array<string, mixed>  $pinned  the check context pinned with the shot run: its configurations and limits, and for a plan made from a location dossier the conditions of each plate (plate_conditions), which the tenth input hands on as environment. The conditions are those of the plate in the picture, so the image and its conditions never name two plates: the plate whose image is attached (environment.image names that image), whatever plate the shot plan named; with no image of the place attached to a clip made from references, the plate the shot plan names; for a clip made from a keyframe, whose plate this step is not told, none. Every value is null when that plate pinned no conditions. The eleventh input hands on the same conditions with the light of that plate and the state of its set (SET_FIELDS), as a shot run made from a set design dossier pinned them
      * @param  array<string, mixed>  $design  the data of the design the script was written from
      * @param  array<string, mixed>  $script  the data of the approved script
      * @param  array{mode: string, keyframe: ?array<string, mixed>, images: list<array<string, mixed>>}  $opening  how the clip is made: from the approved keyframe of the shot as the clip flow pins it, which is Image 1, or from the reference images it sends, Image 1 onwards in their order
@@ -220,8 +238,10 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
      */
     public static function inputs(array $shot, array $pinned, array $design, array $script, array $opening, array $sound, string $fingerprint, int $maxPromptChars, ?string $format = null): array
     {
-        $eighth = in_array($format, [MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9], true);
+        $eighth = in_array($format, self::LINKED_FORMATS, true);
         $seventh = in_array($format, self::SOURCED_FORMATS, true);
+        $tenth = in_array($format, self::ENVIRONMENT_FORMATS, true);
+        $conditionFields = [...self::CONDITION_FIELDS, ...($format === MotoContract::CLIP_PROMPT_INPUT_V11 ? self::SET_FIELDS : [])];
         $keyframe = $opening['keyframe'] ?? null;
         $configurations = array_column((array) ($pinned['configurations'] ?? []), null, 'id');
         $partIds = MotoKeyframePrompt::partIds($shot, $configurations);
@@ -248,7 +268,16 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
             'identity_rules' => array_values(array_filter((array) ($design['identity_rules'] ?? []), static fn (array $rule): bool => $whole || in_array('MOTORCYCLE', (array) ($rule['scope'] ?? []), true) || array_intersect([...(array) ($rule['scope'] ?? []), ...(array) ($rule['refs'] ?? [])], $named) !== [])),
             'features' => array_values(array_map(static fn (array $feature): array => array_intersect_key($feature, array_flip(['id', 'name', 'parts', 'visible_expression', 'effect', 'modes', 'use_sequence'])), array_filter((array) ($design['features'] ?? []), static fn (array $feature): bool => $whole || array_intersect((array) ($feature['parts'] ?? []), $named) !== []))),
         ] : [];
-        $sourceMap = self::SOURCES + ($timeline ? self::TIMELINE_SOURCES : []) + ($seventh ? self::COVERAGE_SOURCES : []);
+        $sourceMap = self::SOURCES + ($timeline ? self::TIMELINE_SOURCES : []) + ($seventh ? self::COVERAGE_SOURCES : []) + ($tenth ? self::ENVIRONMENT_SOURCES : []);
+        $sent = collect((array) ($opening['images'] ?? []))->first(static fn (mixed $image): bool => is_array($image) && ($image['kind'] ?? null) === 'environment');
+        $attached = is_array($sent) && is_string($sent['target'] ?? null) && $sent['target'] !== '' ? $sent['target'] : null;
+        $planned = ($shot['environment']['mode'] ?? null) === 'background' && is_string($shot['environment']['background'] ?? null) ? $shot['environment']['background'] : null;
+        $standing = match (true) {
+            is_array($sent) => $attached,
+            $keyframe === null => $planned,
+            default => null,
+        };
+        $plate = $standing === null ? null : ($pinned['plate_conditions'][$standing] ?? null);
         $shotFields['parts'] = array_map(static fn (array $item): array => $item + ['name' => $designParts[$item['part']]['name'] ?? null], (array) ($shot['parts'] ?? []));
         $shotFields['configurations'] = ['start' => $records((array) ($shot['configurations']['start'] ?? [])), 'end' => $records((array) ($shot['configurations']['end'] ?? []))];
 
@@ -273,7 +302,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
             'design_context' => $themed + [
                 'motorcycle' => array_intersect_key((array) ($design['motorcycle'] ?? []), array_flip(self::MOTORCYCLE_FIELDS)),
                 'build_state' => collect((array) ($design['build_states'] ?? []))->firstWhere('id', $shot['state'] ?? null),
-            ] + ($format === MotoContract::CLIP_PROMPT_INPUT_V9
+            ] + (in_array($format, self::CHECKPOINT_FORMATS, true)
                 // A shot of a v3 design opens on one checkpoint and may end on a later one: the clip is told both.
                 ? ['build_state_end' => collect((array) ($design['build_states'] ?? []))->firstWhere('id', $shot['checkpoint_end'] ?? $shot['state'] ?? null)]
                 : []) + [
@@ -298,7 +327,9 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
         ] + ($seventh ? ['scene' => is_array($scene) ? array_intersect_key($scene, array_flip(self::SCENE_FIELDS)) + [
             'shot_position' => ($at = array_search($shot['id'], array_column($siblings, 'id'), true)) === false ? null : $at + 1,
             'shot_count' => $siblings === [] ? null : count($siblings),
-        ] : null, 'events' => self::events($shot, $beats, $eighth)] : []);
+        ] : null, 'events' => self::events($shot, $beats, $eighth)] : [])
+            + ($tenth ? ['environment' => ['image' => is_array($sent) ? 'Image '.((int) $sent['position'] + 1) : null]
+                + array_map(static fn (string $field): mixed => is_array($plate) ? ($plate[$field] ?? null) : null, array_combine($conditionFields, $conditionFields))] : []);
 
         foreach ($eighth ? $sourceMap : [] as $path) {
             if (! \Illuminate\Support\Arr::has($payload, $path)) {

@@ -43,7 +43,15 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
         $film = $this->eventful ? MotoPipelineRelease::filmLimits($project) : null;
         $this->shotLimits = $film === null ? null : ['events' => $film['shot_events_max'], 'people' => $film['shot_people_max']];
         $this->bodyMs = $film === null ? null : $film['body_duration_ms'];
+        $this->dossier = $this->eventful && MotoPipelineRelease::dossier($project);
+        $this->setDesign = $this->dossier && MotoPipelineRelease::setDesign($project);
     }
+
+    /** @var bool whether the release plans its places as a set design dossier (moto-locations-v4), whose architecture, objects, plate cameras, lighting plans, set states and continuity the shot step is handed */
+    private bool $setDesign = false;
+
+    /** @var bool whether the release plans its places as a location dossier (moto-locations-v3), whose zones, access routes, connections and plate conditions the shot step is handed */
+    private bool $dossier = false;
 
     /** @var ?int the milliseconds the main part of the film runs after the edit under the film limits of the release, pinned with each run so its check can tell when the source shots of the main part cannot reach it; null for a release that sets none */
     private ?int $bodyMs = null;
@@ -103,6 +111,8 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     {
         return match (true) {
             ! $this->eventful => MotoContract::SHOTS_INPUT,
+            $this->setDesign && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V13,
+            $this->dossier && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V12,
             $this->checkpointed && $this->shotLimits !== null => MotoContract::SHOTS_INPUT_V11,
             $this->checkpointed => MotoContract::SHOTS_INPUT_V10,
             ($this->releasePolicy['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE => MotoContract::SHOTS_INPUT_V9,
@@ -153,11 +163,24 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
 
         $design = MotoLocations::pinnedDesign($projectId, (array) ($source['design'] ?? []));
         $budget = isset($this->releasePolicy['shot_editing_policy']) ? (array) ($this->releasePolicy['shot_budget'] ?? []) : null;
+        $placesFormat = $text['evaluation']['document']['format'] ?? null;
+        $expected = match (true) {
+            $this->setDesign => MotoContract::LOCATIONS_FORMAT_V4,
+            $this->dossier => MotoContract::LOCATIONS_FORMAT_V3,
+            default => null,
+        };
+
+        if ($expected !== (in_array($placesFormat, [MotoContract::LOCATIONS_FORMAT_V3, MotoContract::LOCATIONS_FORMAT_V4], true) ? $placesFormat : null)) {
+            throw new RuntimeException($this->dossier
+                ? 'Bộ bối cảnh đang dùng theo hợp đồng '.json_encode($placesFormat).': các kế hoạch shot đã lập từ nó vẫn dùng được, còn kế hoạch shot mới của bản phát hành này lập từ bộ hồ sơ địa điểm '.$expected.' — lập và duyệt bộ địa điểm mới, chia lại scene rồi lập shot.'
+                : 'Bộ bối cảnh đang dùng không theo định dạng địa điểm của bản phát hành này — cần lập lại bộ địa điểm trước khi lập shot.');
+        }
+
         $built = self::build(
             (array) $scenes['plan'],
             $sceneInput,
             (array) $script['document']['data'],
-            (array) $text['evaluation']['document']['data'],
+            $this->setDesign ? MotoSetDesign::normalize((array) $text['evaluation']['document']['data']) : (array) $text['evaluation']['document']['data'],
             $design,
             array_keys($this->viewImages($projectId)),
             $this->eventful
@@ -167,6 +190,8 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
             $this->eventful ? $this->filmFps($projectId) : null,
             $budget,
             $planLaw,
+            $this->dossier,
+            $this->setDesign,
         );
         $pinned = array_intersect_key($this->releasePolicy, array_flip(['shot_grouping_policy', 'shot_editing_policy', 'shot_budget']));
 
@@ -275,14 +300,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     public function resources(string $projectId, array $plan): array
     {
         $views = $this->viewImages($projectId);
-        $plates = [];
-
-        foreach ((array) ($this->locations->selection($projectId)['images'] ?? []) as $background => $chosen) {
-            if (is_string($chosen['artifact_id'] ?? null) && VideoArtifact::query()->whereKey($chosen['artifact_id'])->where('project_id', $projectId)->exists()) {
-                $plates[(string) $background] = (string) $chosen['artifact_id'];
-            }
-        }
-
+        $plates = $this->chosenPlates($projectId);
         $resources = [];
         $bindings = $this->references->bindings($projectId, array_values((array) ($plan['shots'] ?? [])), array_values((array) ($plan['finished_states'] ?? [])));
 
@@ -294,6 +312,25 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
     }
 
     /**
+     * @return array<string, string> the artifact of every chosen background image a shot may take, by background: the images the location step hands on (LocationSourceService::handedImages) whose artifact still belongs to the project — found with one query over all the chosen artifact ids, whatever the number of plates. A set whose plates render on their own hands every choice as before; in a set rendered under the shared reference a plate whose image no longer belongs to the image plan — a variant whose standard image changed or cannot be used — is not among them, so a shot that needs it waits for its background
+     */
+    public function chosenPlates(string $projectId): array
+    {
+        $handed = array_filter($this->locations->handedImages($projectId), static fn (mixed $chosen): bool => is_array($chosen) && is_string($chosen['artifact_id'] ?? null));
+        $ids = array_values(array_unique(array_column($handed, 'artifact_id')));
+        $found = $ids === [] ? [] : array_flip(VideoArtifact::query()->whereIn('id', $ids)->where('project_id', $projectId)->pluck('id')->map(static fn (mixed $id): string => (string) $id)->all());
+        $plates = [];
+
+        foreach ($handed as $background => $chosen) {
+            if (isset($found[$chosen['artifact_id']])) {
+                $plates[(string) $background] = (string) $chosen['artifact_id'];
+            }
+        }
+
+        return $plates;
+    }
+
+    /**
      * @param  array<string, mixed>  $scenePlan  the derived plan of the approved scene plan
      * @param  array<string, mixed>  $sceneInput  the input the scene plan was written from
      * @param  array<string, mixed>  $script  the data of the approved script
@@ -302,9 +339,11 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
      * @param  list<string>  $available  the model sheet views with an approved image
      * @param  list<array{duration_ms: int, modes: list<string>, tools: array<string, list<string>>}>  $capabilities  the clip lengths and modes code can render
      * @param  ?string  $law  the law the scene plan pinned for its work: the work is followed under it, and it is sent as work_tracking_version and pinned in the check context; null for a scene plan that names none, followed as before
+     * @param  bool  $dossier  the locations are a location dossier (moto-locations-v3), as its pinned format says: each place is sent with its setting, coordinate system, zones and access routes, with the connections between places and the conditions of each plate; the check context then also pins those conditions by plate (plate_conditions), the ambient sound with them, apart from what a still image reads, for the video prompt step alone
+     * @param  bool  $setDesign  the locations are a set design dossier (moto-locations-v4), given as MotoSetDesign::normalize() reads it: environment() sends its design, plate cameras, lighting plans, set states and continuity, and the conditions pinned for the video prompt step also hold the light and the set state of each plate (MotoSetDesign::conditions)
      * @return array{payload: array<string, mixed>, context: array<string, mixed>} what a shot list needs: the scenes with their timing, continuity, transitions and work, each work item with the presentation it gives every part it moves or keeps in place before and after it; the beats with their actions, reveal, situation, environment, the ids of the limits that apply to them and cards; the places and plates; the parts with their shapes, sizes and materials; every operational limit with the configurations it governs, the same list the check reads; the build states; the model sheet views; the render capabilities
      */
-    public static function build(array $scenePlan, array $sceneInput, array $script, array $locations, array $design, array $available, array $capabilities, bool $eventful = false, ?int $filmFps = null, ?array $budget = null, ?string $law = null): array
+    public static function build(array $scenePlan, array $sceneInput, array $script, array $locations, array $design, array $available, array $capabilities, bool $eventful = false, ?int $filmFps = null, ?array $budget = null, ?string $law = null, bool $dossier = false, bool $setDesign = false): array
     {
         $times = array_column((array) ($sceneInput['beat_times'] ?? []), null, 'beat');
         $sceneKeys = ['id', 'beats', 'start_ms', 'end_ms', 'state', 'places', 'backgrounds', 'characters', 'purpose', 'set_brief', 'continuity_from', 'continuity_start', 'continuity_end', 'transition_in', 'work', ...($eventful ? ['blocking', 'event_ids'] : [])];
@@ -445,18 +484,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
         ] + ($eventful ? ['shot_directives' => array_values((array) ($script['shot_directives'] ?? []))] : []) + [
             'scenes' => $scenes,
             'beats' => $beats,
-            'places' => array_values(array_map(static fn (array $place): array => array_intersect_key($place, array_flip(['id', 'name', 'kind', 'space', 'dimensions', 'surfaces', 'fixed_equipment', ...($eventful ? ['spatial_layers', 'subject_zone', 'entry_routes', 'camera_access', 'fixed_landmarks'] : [])])), (array) ($locations['locations'] ?? []))),
-            'backgrounds' => array_values(array_map(static fn (array $plate): array => [
-                'id' => $plate['id'],
-                'location' => $plate['location'],
-                'composition' => $plate['composition'],
-                'light' => $plate['light']['description'],
-                'support' => array_values((array) $plate['support']),
-                'ground' => $plate['ground'],
-                'details' => array_values(array_column((array) $plate['details'], 'text')),
-                'must_show' => array_values((array) $plate['must_show']),
-                'shot_changes' => array_values((array) $plate['shot_changes']),
-            ], $plates)),
+            ...self::environment($locations, $eventful, $dossier, $setDesign),
             'motorcycle' => array_intersect_key((array) ($design['motorcycle'] ?? []), array_flip(['name', 'silhouette', 'palette', 'materials', ...($eventful ? ['markings'] : [])]))
                 + ($eventful ? ['identity_rules' => array_values((array) ($design['identity_rules'] ?? []))] : []),
             'parts' => $parts,
@@ -502,6 +530,7 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
                 'palette' => array_column((array) ($design['motorcycle']['palette'] ?? []), null, 'id'),
                 'places' => array_column((array) ($locations['locations'] ?? []), null, 'id'),
                 'backgrounds' => array_map(static fn (array $plate): array => ['location' => $plate['location'], 'light' => $plate['light']['description'], 'shot_changes' => array_values((array) $plate['shot_changes'])], $plates),
+                ...($dossier ? ['plate_conditions' => $setDesign ? MotoSetDesign::conditions($locations) : self::plateConditions($locations)] : []),
                 'characters' => $eventful ? array_column($characters, 'description', 'id') : $characters,
                 'motorcycle' => (string) ($design['motorcycle']['name'] ?? ''),
                 'loops' => array_values(array_column((array) ($script['story']['loops'] ?? []), 'motif')),
@@ -522,6 +551,66 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
                 'cover_design_refs' => (bool) config('video.moto.shots.check.cover_design_refs'),
             ] + $layout->summary(),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $locations  the data of the approved background text
+     * @param  bool  $eventful  the shots are takes with a moving camera, which read the space of each place
+     * @param  bool  $dossier  the locations are a location dossier (moto-locations-v3)
+     * @param  bool  $setDesign  the locations are a set design dossier (moto-locations-v4), read through MotoSetDesign::normalize() here whether the caller hands the stated answer or the normalised one: a place carries the one design of its set — architecture, objects with where they stand, what marks the place — and a plate its camera, its lighting plan, what its frame shows and the state of its set by name with what differs from the base state; the continuity of the dossier follows the plates, with what plates of one place keep and what may differ
+     * @return array<string, list<array<string, mixed>>> the environment a shot list is handed, in the order it is sent: the places, for a dossier the connections between them, and the plates. A dossier's place carries its setting, coordinate system, zones and access routes, and its plate the subject zone, the landmarks and the conditions of its use; the ambient sound of a plate is for the video step and is not sent here. Places and plates of an earlier answer are sent exactly as before
+     */
+    public static function environment(array $locations, bool $eventful, bool $dossier, bool $setDesign = false): array
+    {
+        $plates = array_column((array) ($locations['backgrounds'] ?? []), null, 'id');
+
+        if ($setDesign) {
+            $locations = MotoSetDesign::normalize($locations);
+            $plates = array_column((array) $locations['backgrounds'], null, 'id');
+
+            return [
+                'places' => array_values(array_map(static fn (array $place): array => array_intersect_key($place, array_flip(['id', 'name', 'kind', 'space', 'dimensions', 'setting', 'coordinate_system', 'zones', 'access_routes', 'camera_access', 'set_design'])), (array) $locations['locations'])),
+                'connections' => array_values(array_map(static fn (array $connection): array => array_intersect_key($connection, array_flip(['id', 'from', 'to', 'relation', 'route', 'used_by'])), (array) $locations['connections'])),
+                'backgrounds' => array_values(array_map(static fn (array $plate): array => array_intersect_key($plate, array_flip(['id', 'location', 'composition', 'subject_zone', 'camera', 'visible', 'time_of_day', 'weather', 'atmosphere', 'ground', 'shot_changes'])) + [
+                    'lighting_plan' => array_diff_key((array) $plate['lighting_plan'], ['evidence' => true, 'reason' => true]),
+                    'support' => array_values((array) $plate['support']),
+                    'set_state' => ['name' => $plate['set']['name'], 'changes' => MotoSetDesign::changeLines($plate['set'])],
+                ], $plates)),
+                'set_continuity' => array_values(array_map(static fn (array $entry): array => array_diff_key($entry, ['basis' => true, 'evidence' => true]), (array) $locations['continuity'])),
+            ];
+        }
+
+        return [
+            'places' => array_values(array_map(static fn (array $place): array => array_intersect_key($place, array_flip(['id', 'name', 'kind', 'space', 'dimensions', 'surfaces', 'fixed_equipment', ...match (true) {
+                $dossier => ['setting', 'spatial_layers', 'coordinate_system', 'zones', 'access_routes', 'camera_access', 'fixed_landmarks'],
+                $eventful => ['spatial_layers', 'subject_zone', 'entry_routes', 'camera_access', 'fixed_landmarks'],
+                default => [],
+            }])), (array) ($locations['locations'] ?? []))),
+            ...($dossier ? ['connections' => array_values(array_map(static fn (array $connection): array => array_intersect_key($connection, array_flip(['id', 'from', 'to', 'relation', 'route', 'used_by'])), (array) $locations['connections']))] : []),
+            'backgrounds' => array_values(array_map(static fn (array $plate): array => [
+                'id' => $plate['id'],
+                'location' => $plate['location'],
+                'composition' => $plate['composition'],
+                'light' => $plate['light']['description'],
+                'support' => array_values((array) $plate['support']),
+                'ground' => $plate['ground'],
+                'details' => array_values(array_column((array) $plate['details'], 'text')),
+                'must_show' => array_values((array) $plate['must_show']),
+                'shot_changes' => array_values((array) $plate['shot_changes']),
+            ] + ($dossier ? array_intersect_key($plate, array_flip(['subject_zone', 'landmarks', 'time_of_day', 'weather', 'atmosphere'])) + ['light_direction' => $plate['light']['direction'], 'light_quality' => $plate['light']['quality']] : []), $plates)),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $locations  the data of an approved location dossier
+     * @return array<string, array<string, ?string>> for each plate by id, the conditions of its use the video prompt step reads — its time of day, weather, atmosphere and ambient sound — as the dossier states them; pinned with a shot run apart from what a still image is written from, so the ambient sound reaches the video prompt and never an image prompt
+     */
+    public static function plateConditions(array $locations): array
+    {
+        return array_map(
+            static fn (array $plate): array => array_map(static fn (string $field): mixed => $plate[$field] ?? null, array_combine(MotoClipPrompt::CONDITION_FIELDS, MotoClipPrompt::CONDITION_FIELDS)),
+            array_column((array) ($locations['backgrounds'] ?? []), null, 'id'),
+        );
     }
 
     /**

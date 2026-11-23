@@ -11,6 +11,9 @@ interface LocationWorkflow extends CheckedWorkflow
 {
     public function format(): string;
 
+    /** @return list<string> every answer format the workflow reads for the bound project: the one its new runs are written in, then each earlier one a stored run may have pinned, which is still checked, planned and used under that contract */
+    public function formats(): array;
+
     public function checkVersion(): string;
 
     public function plannerVersion(): string;

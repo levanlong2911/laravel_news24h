@@ -28,11 +28,14 @@ final class MotoPipelineRelease
     /** @var string the release whose design tells seven stages, each physical one with the checkpoints it passes through (moto-design-v3); every later step reads the states through MotoDesignStates */
     public const CINEMATIC_V7 = 'moto-cinematic-3s-v7';
 
+    /** @var string the release that extends the seven-stage release with the set design dossier (moto-locations-v4): Phase 5 designs the set of each place once and each plate as a use of it, and the scene, shot and video prompt steps read that design; its DNA, design and script revisions are those of the release it extends */
+    public const CINEMATIC_V8 = 'moto-cinematic-3s-v8';
+
     /** @var string the key of the project metadata that keeps every change of release made to the project after it was pinned, oldest first */
     public const HISTORY_KEY = 'moto_pipeline_release_history';
 
     /** @var list<string> the releases of three-second takes made from references: every one runs the same eventful pipeline, each with its own catalogue of revisions and its own check policy */
-    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4, self::CINEMATIC_V5, self::CINEMATIC_V7];
+    public const CINEMATIC_RELEASES = [self::CINEMATIC, self::CINEMATIC_V2, self::CINEMATIC_V3, self::CINEMATIC_V4, self::CINEMATIC_V5, self::CINEMATIC_V7, self::CINEMATIC_V8];
 
     /** @return string the release the project pinned, the legacy release when it pinned none */
     public static function of(VideoProject $project): string
@@ -65,6 +68,22 @@ final class MotoPipelineRelease
     public static function policy(VideoProject $project, string $step): array
     {
         return (array) config('video.superyacht.contracts.workflows.'.MotoContract::WORKFLOW.'.releases.'.self::of($project).'.policy.'.$step, []);
+    }
+
+    /**
+     * @return bool whether the release of the project plans its places as a location dossier (moto-locations-v3), read from the pinned release alone like its policy; a run keeps the format it was made with in its own context
+     */
+    public static function dossier(VideoProject $project): bool
+    {
+        return in_array(self::policy($project, 'locations')['format'] ?? null, [MotoContract::LOCATIONS_FORMAT_V3, MotoContract::LOCATIONS_FORMAT_V4], true);
+    }
+
+    /**
+     * @return bool whether the release of the project plans its places as a set design dossier (moto-locations-v4), read from the pinned release alone like its policy; such a release is also a dossier release, and a run keeps the format it was made with in its own context
+     */
+    public static function setDesign(VideoProject $project): bool
+    {
+        return (self::policy($project, 'locations')['format'] ?? null) === MotoContract::LOCATIONS_FORMAT_V4;
     }
 
     /**
@@ -166,9 +185,10 @@ final class MotoPipelineRelease
         return $hasRuns ? self::LEGACY : (string) ($workflow['previous_default_release'] ?? self::LEGACY);
     }
 
-    /** @var array<string, array{stage: string, selection: ?string}> the steps a change of release may move: the phase whose revision the new release replaces, the planning stage of its runs and the project metadata key of its selection; the design has no selection of its own, its approval with the model sheet is what holds it */
+    /** @var array<string, array{stage: string, selection: ?string}> the steps a change of release may move: the phase whose revision the new release replaces, the planning stage of its runs and the project metadata key of its selection; the design has no selection of its own, its approval with the model sheet is what holds it. A set of locations is in use from the moment its text is approved, which the selection of backgrounds records: a project whose runs of locations were never put in use moves, its earlier runs stay as history and are read under the contract each pinned */
     private const MOVABLE = [
         'phase-3' => ['stage' => 'yacht_design', 'selection' => null],
+        'phase-5' => ['stage' => 'locations', 'selection' => 'backgrounds_selection'],
         'phase-6' => ['stage' => 'scenes', 'selection' => 'scenes_selection'],
         'phase-7' => ['stage' => 'shots', 'selection' => 'shots_selection'],
     ];
@@ -178,7 +198,6 @@ final class MotoPipelineRelease
         'phase-1' => ['inspiration'],
         'phase-2' => ['design_dna'],
         'phase-4' => ['script'],
-        'phase-5' => ['locations'],
         'phase-8' => ['reference_review'],
         'phase-9' => ['keyframe_prompt'],
         'phase-10' => ['clip_plan', 'clip_prompt'],
@@ -197,8 +216,8 @@ final class MotoPipelineRelease
      * @param  array<string, ?array<string, mixed>>  $rulesNext  the same for the release it moves to
      * @param  list<string>  $busy  the planning stages of the project with a run waiting or running
      * @param  bool  $designApproved  the design of the project was approved with its model sheet, read under the project lock
-     * @param  ?list<string>  $ran  the planning stages the project has any run of, read under the project lock; null when the caller did not read them, and then a phase other than design, scenes and shots never moves
-     * @return list<string> why the project cannot move: it pinned no release, the release is not declared or does not extend the one it has, it replaces a phase other than design, scenes and shots that the project already ran (or whose stages this code does not know), or a step it replaces is held — a design approved with its model sheet, a selection — or has a run in progress
+     * @param  ?list<string>  $ran  the planning stages the project has any run of, read under the project lock; null when the caller did not read them, and then a phase other than design, locations, scenes and shots never moves
+     * @return list<string> why the project cannot move: it pinned no release, the release is not declared or does not extend the one it has, it replaces a phase other than design, locations, scenes and shots that the project already ran (or whose stages this code does not know), or a step it replaces is held — a design approved with its model sheet, a selection (for locations, a set whose text was approved or whose plates are in use) — or has a run in progress
      */
     public static function moveProblems(VideoProject $project, string $to, array $rulesNow, array $rulesNext, array $busy, bool $designApproved = false, ?array $ran = null): array
     {
@@ -230,7 +249,7 @@ final class MotoPipelineRelease
                 $held = $ran === null || ! isset(self::UNSTARTED[$code]) ? null : array_values(array_intersect(self::UNSTARTED[$code], $ran));
 
                 if ($held === null) {
-                    $problems[] = "{$to} đổi revision của {$code} — nguồn đã có của dự án ở bước này sẽ không còn khớp; lệnh này chỉ chuyển Design, Scene và Shot.";
+                    $problems[] = "{$to} đổi revision của {$code} — nguồn đã có của dự án ở bước này sẽ không còn khớp; lệnh này chỉ chuyển Design, Locations, Scene và Shot.";
                 } elseif ($held !== []) {
                     $problems[] = "{$to} đổi revision của {$code} và dự án đã có lượt ".implode(', ', $held).' ở bước này — nguồn đã có sẽ không còn khớp; bước này chỉ chuyển khi dự án chưa chạy nó.';
                 }

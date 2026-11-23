@@ -15,6 +15,7 @@ use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
 use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\MediaModelRegistry;
+use App\Video\Moto\MotoLocationImagePlan;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -91,9 +92,10 @@ final class LocationWriterService implements QueuedStageService
         $run = null;
         $runError = null;
         $supported = true;
+        $workflow = null;
 
         try {
-            $this->sources->workflowFor($projectId);
+            $workflow = $this->sources->workflowFor($projectId)['workflow'];
         } catch (RuntimeException $e) {
             $supported = false;
             $runError = $e->getMessage();
@@ -127,12 +129,25 @@ final class LocationWriterService implements QueuedStageService
         $approvedShown = $shown !== null && $text !== null && (string) $text['stage']->id === (string) $shown->id;
         $preview = $plan !== null && $supported ? $this->preview($projectId, $plan) : ['rows' => [], 'hash' => null, 'error' => null];
         $sourceProblem = $plan !== null && $supported ? $this->sources->workflowFor($projectId)['adapter']->sourceProblem($projectId, $this->sources->source($shown)) : null;
+        $imagePlan = $text === null ? null : $this->sources->imagePlan($text);
+        $shownPlan = match (true) {
+            $plan === null || $preview['error'] !== null => null,
+            $approvedShown => $imagePlan,
+            default => $this->sources->imagePlan([
+                'stage' => $shown,
+                'evaluation' => $evaluation,
+                'selection' => ['images' => [], LocationSourceService::RELEASED_KEY => []] + $selection,
+                'prompts' => ['images' => array_column(array_map(static fn (array $row): array => ['id' => $row['request']['id'], 'sha256' => $row['sha256']], $preview['rows']), null, 'id')],
+                'stale' => [],
+            ]),
+        };
         $source = null;
         $sourceError = null;
+        $rows = $text === null ? [] : $this->sources->manifest($text, false);
 
         if ($text !== null) {
             try {
-                $source = $this->sources->approvedSource($projectId);
+                $source = $this->sources->approvedSet($text, $rows);
             } catch (RuntimeException $e) {
                 $sourceError = $e->getMessage();
             }
@@ -140,6 +155,7 @@ final class LocationWriterService implements QueuedStageService
 
         return [
             'supported' => $supported,
+            'workflow' => $workflow,
             'run_error' => $runError,
             'can_run' => $run !== null && $served === null,
             'can_rewrite' => $run !== null && $served !== null,
@@ -173,6 +189,7 @@ final class LocationWriterService implements QueuedStageService
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
                 'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version', 'technical_schema'])),
+                'answer_preparation' => $evaluation['answer_preparation'] ?? null,
                 'legacy' => $legacy,
                 'locations' => $readable ? array_values(array_filter((array) ($document['data']['locations'] ?? []), 'is_array')) : [],
                 'flags' => array_values(array_filter(is_array($document['flags'] ?? null) ? $document['flags'] : [], 'is_string')),
@@ -182,6 +199,8 @@ final class LocationWriterService implements QueuedStageService
                 'images_error' => $preview['error'],
                 'cells' => $preview['rows'] === [] ? [] : collect($this->images->locationCellsFor($projectId, (string) $shown->id))->groupBy('environment_key')->map(static fn ($cells): array => $cells->values()->all())->all(),
                 'source_problem' => $sourceProblem,
+                'image_places' => $plan === null ? null : LocationSourceService::imagePlaces($evaluation, (string) $shown->id, $selection),
+                'image_plan' => ($shownPlan['mechanism'] ?? null) === null ? null : $shownPlan,
                 'renderable' => $legacy === null && $check !== null && MotoCheckRules::usable($check) && in_array($check['status'], ['ok', 'partial'], true) && $preview['error'] === null && $preview['rows'] !== [] && $sourceProblem === null,
                 'text_approved' => $approvedShown,
                 'stale' => $approvedShown ? $text['stale'] : [],
@@ -190,7 +209,8 @@ final class LocationWriterService implements QueuedStageService
             ],
             'text_error' => $textError,
             'pinned' => $text === null ? null : ['id' => (string) $text['stage']->id, 'revision' => (int) $text['stage']->planning_revision],
-            'references' => $text === null ? [] : $this->references($projectId, $text),
+            'references' => $text === null ? [] : $this->references($projectId, $text, $imagePlan, $rows),
+            'image_plan' => $imagePlan,
             'media' => $this->media(),
             'set_ready' => $source !== null,
             'source_error' => $sourceError,
@@ -236,27 +256,30 @@ final class LocationWriterService implements QueuedStageService
 
     /**
      * @param  array<string, mixed>  $text
-     * @return list<array<string, mixed>>
+     * @param  array<string, mixed>  $imagePlan  LocationSourceService::imagePlan() of the same set
+     * @param  list<array<string, mixed>>  $manifest  LocationSourceService::manifest() of the same set, computed once for the page with files only looked for: the rows drawn here and the summary of the set come from that one result, and drawing the page opens no image file
+     * @return list<array<string, mixed>> every background of the set in use with its cells; in a set rendered under the shared reference a background may be rendered only while its image plan lets it
      */
-    private function references(string $projectId, array $text): array
+    private function references(string $projectId, array $text, array $imagePlan, array $manifest): array
     {
         $cells = collect($this->images->locationCellsFor($projectId, (string) $text['stage']->id))->groupBy('environment_key');
+        $planned = array_merge([], ...array_column($imagePlan['places'], 'rows'));
         $rows = [];
 
-        foreach ($this->sources->manifest($text) as $row) {
+        foreach ($manifest as $row) {
             $id = (string) $row['request']['id'];
             $stale = in_array($id, $text['stale'], true);
 
             $rows[] = $row + [
                 'cells' => $cells->get($id, collect())->values()->all(),
-                'can_render' => ! $stale && ! $row['request']['blocked'] && $row['prompt'] !== '',
+                'can_render' => ! $stale && ! $row['request']['blocked'] && $row['prompt'] !== '' && ($planned[$id]['can_render'] ?? true),
             ];
         }
 
         return $rows;
     }
 
-    /** @return array{models: list<array<string, mixed>>, default: ?array<string, mixed>, error: ?string, costs: array<string, float>, rendered: list<string>} */
+    /** @return array{models: list<array<string, mixed>>, default: ?array<string, mixed>, error: ?string, costs: array<string, float>, rendered: list<string>, roles: array<string, list<string>>} the models of the Phase 5 render task; roles lists, for a set rendered under the shared reference, the ids of the models the registry declares for a standard plate (generate) and for a variant (edit_sources with room for its source) */
     private function media(): array
     {
         $rendered = DB::table('video_renders')
@@ -270,16 +293,18 @@ final class LocationWriterService implements QueuedStageService
 
         try {
             $registry = app(MediaModelRegistry::class);
+            $models = $registry->forTask(LocationReferencePrompt::TASK);
 
             return [
-                'models' => $registry->forTask(LocationReferencePrompt::TASK),
+                'models' => $models,
                 'default' => $registry->defaultFor(LocationReferencePrompt::TASK),
                 'error' => null,
                 'costs' => collect(ImageQuality::cases())->mapWithKeys(static fn (ImageQuality $quality): array => [$quality->value => $quality->estimatedCostUsd()])->all(),
                 'rendered' => $rendered,
+                'roles' => array_map(static fn (string $role): array => array_values(array_column(array_filter($models, static fn (array $entry): bool => MotoLocationImagePlan::modelProblem($entry, $role) === null), 'id')), array_combine(array_keys(MotoLocationImagePlan::CAPABILITY), array_keys(MotoLocationImagePlan::CAPABILITY))),
             ];
         } catch (\InvalidArgumentException $e) {
-            return ['models' => [], 'default' => null, 'error' => 'Danh sách model ảnh Phase 5 lỗi cấu hình: '.$e->getMessage(), 'costs' => [], 'rendered' => $rendered];
+            return ['models' => [], 'default' => null, 'error' => 'Danh sách model ảnh Phase 5 lỗi cấu hình: '.$e->getMessage(), 'costs' => [], 'rendered' => $rendered, 'roles' => []];
         }
     }
 
@@ -376,6 +401,6 @@ final class LocationWriterService implements QueuedStageService
             'derived' => $evaluation['derived'],
             'check' => $evaluation['check'],
             'content_hash' => $evaluation['content_hash'],
-        ];
+        ] + (isset($evaluation['answer_preparation']) ? ['answer_preparation' => $evaluation['answer_preparation']] : []);
     }
 }

@@ -170,6 +170,7 @@ Route::group(
             Route::get('/{id}/tasks', [VideoProjectsController::class, 'tasks'])->name('video-projects.tasks');
             Route::post('/{id}/locations/render', [VideoProjectsController::class, 'renderLocationReference'])->name('video-projects.locations-render');
             Route::post('/{id}/locations/choose', [VideoProjectsController::class, 'chooseLocationReference'])->name('video-projects.locations-choose');
+            Route::post('/{id}/locations/standard', [VideoProjectsController::class, 'chooseLocationStandard'])->name('video-projects.locations-standard');
             // phase 6: scene và continuity
             Route::get('/{id}/scene/{scene?}/{step?}', [VideoProjectsController::class, 'scene'])->middleware('video.v4:scenes')->name('video-projects.scene');
             Route::post('/{id}/scenes', [VideoProjectsController::class, 'writeScenes'])->name('video-projects.scenes-write');

@@ -673,14 +673,15 @@ class DesignImageStore
     }
 
     /**
-     * @param  array<string, mixed>  $spec  `environment_key` carries the Phase 5 image id
+     * @param  array<string, mixed>  $spec  `environment_key` carries the Phase 5 image id; a request of a set rendered under the shared reference also carries `reference` — the mechanism, the role of the plate, its standard plate and the hash of what is really sent — and its `sources`
      * @return array{0: ?VideoDesignImage, 1: string} [$image, $reason]
-     *                                                reason: created|already_exists|project_not_found
+     *                                                reason: created|already_exists|project_not_found. A request with a reference is told apart by it and by its sources too: the same prompt sent with another source, in another role or under another mechanism is another request. A request without one keeps the identity it always had
      */
     public function createLocationReference(string $projectId, string $creator, array $spec): array
     {
         return $this->createKeyed($projectId, $creator, $spec, self::LOCATION_REFERENCE_TYPE, '_location_v', [
             'operation', 'spec_version', 'environment_key', 'locations_stage_id', 'locations_content_hash', 'prompt_sha256', 'attempt',
+            ...(isset($spec['reference']) ? ['reference', 'sources'] : []),
         ]);
     }
 

@@ -651,6 +651,10 @@ class VideoProjectService implements QueuedStageService
             return [null, 'scene_keyframe_needs_scene_flow'];
         }
 
+        if ($image->image_type === DesignImageStore::LOCATION_REFERENCE_TYPE && isset($image->prompt_spec_json['reference'])) {
+            return [null, 'location_reference_needs_locations_flow'];
+        }
+
         if ($image->image_type === DesignImageStore::REFERENCE_TYPE) {
             [$retryable, $why] = app(ReferencePromptWriter::class)->retryable($image, $this->referenceAnchor($projectId));
 

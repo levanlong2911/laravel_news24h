@@ -31,6 +31,11 @@ final class SuperyachtLocations implements LocationWorkflow
         return SuperyachtLocationsCheck::FORMAT;
     }
 
+    public function formats(): array
+    {
+        return [$this->format()];
+    }
+
     public function checkVersion(): string
     {
         return SuperyachtLocationsCheck::VERSION;
