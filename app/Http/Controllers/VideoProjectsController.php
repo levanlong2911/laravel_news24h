@@ -705,10 +705,9 @@ class VideoProjectsController extends Controller
             return back()->with('error', $reason);
         }
 
-        return redirect()->route('video-projects.scene', ['id' => $id, 'shots' => $data['stage_id']])
-            ->with('success', $reason === 'replayed'
-                ? 'Lần duyệt này đã được ghi trước đó — không ghi thêm.'
-                : 'Đã duyệt kế hoạch shot này.');
+        return $reason === 'replayed'
+            ? redirect()->route('video-projects.scene', ['id' => $id, 'shots' => $data['stage_id']])->with('success', 'Lần duyệt này đã được ghi trước đó — không ghi thêm.')
+            : redirect()->route('video-projects.reference', $id)->with('success', 'Đã duyệt kế hoạch shot thành công.');
     }
 
     public function renderLocationReference(Request $request, string $id)

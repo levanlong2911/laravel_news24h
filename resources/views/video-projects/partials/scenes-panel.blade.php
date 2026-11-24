@@ -396,7 +396,7 @@
                         BẢN REV {{ $shotShown['revision'] }}
                         @if($shotShown['approved'])<span class="va-tag ok">ĐÃ DUYỆT</span>@endif
                         @if($shotShown['source_problem'] !== null)<span class="va-tag amber">CẦN CẬP NHẬT</span>@endif
-                        @if($shotCheck !== null)<span class="va-tag {{ $shotCheck['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $shotCheck['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $shotCheck['status'] ?? '—' }}</span><span class="va-tag mute">Nội dung: người duyệt đánh giá</span>@endif
+                        @if($shotCheck !== null)<span class="va-tag {{ $shotCheck['verdict'] === 'PASS' ? 'ok' : 'dg' }}">RULE: {{ $shotCheck['verdict'] }}</span><span class="va-tag mute">STATUS: {{ $shotCheck['status'] ?? '—' }}</span><span class="va-tag mute">{{ $shotShown['approved'] ? 'Nội dung: đã chấp nhận' : 'Nội dung: người duyệt đánh giá' }}</span>@endif
                         @if($shotPlan !== null)<span class="va-tag mute">{{ count($shotPlan['shots']) }} SHOT</span>@endif
                         @foreach($shotShown['readiness'] as $state => $count)<span class="va-tag {{ $readinessLabels[$state][0] ?? 'mute' }}">{{ $count }} {{ $readinessLabels[$state][1] ?? $state }}</span>@endforeach
                         @if($shotShown['cost_usd'] !== null)<em>{{ $shotShown['tokens']['in'] }}/{{ $shotShown['tokens']['out'] }} token · ${{ number_format($shotShown['cost_usd'], 3) }}</em>@endif

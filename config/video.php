@@ -2350,7 +2350,7 @@ return [
                             'design_format' => \App\Video\Moto\MotoContract::DESIGN_FORMAT_V3,
                             'phases' => [
                                 'phase-6' => ['input_format' => 'moto-scenes-input-v8', 'revisions' => [['id' => '64b44bf3-55d3-4e5e-b981-bb871d7c4133', 'sha256' => '9923d9208cb0cd35df2e5af2f3467b58884de1a18aab49721ca4dad44e90b421']]],
-                                'phase-7' => ['input_format' => 'moto-shots-input-v14', 'revisions' => [['id' => '66afaccc-7253-4ff0-ab0c-d26c30a09c2f', 'sha256' => '070c813e043c6451b1a68c5dfd84c500a6fa43d02c79a67e07147ac67c4e9f5d']]],
+                                'phase-7' => ['input_format' => 'moto-shots-input-v14', 'revisions' => [['id' => '1ba3290f-6b0a-4ccd-b42c-e9d0313c0097', 'sha256' => '700fb7b136a21cdc78c80e03a6729c647da9b2b0af322da7cededf8f18418651']]],
                             ],
                             'actions' => [
                                 'spec.scenes' => [

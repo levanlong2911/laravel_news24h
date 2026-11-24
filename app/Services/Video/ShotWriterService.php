@@ -454,7 +454,7 @@ final class ShotWriterService implements QueuedStageService
                 'source_problem' => $sourceProblem,
                 'derived_problem' => $derivedProblem,
                 'approved' => $approved,
-                'approvable' => ! $approved && $check !== null && MotoCheckRules::usable($check) && $check['status'] === 'ok' && $sourceProblem === null && $derivedProblem === null,
+                'approvable' => ! $approved && $check !== null && MotoCheckRules::usable($check) && ! ShotSourceService::heldByStatus($check, $shown) && $sourceProblem === null && $derivedProblem === null,
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],
                 'cost_usd' => $shown->cost_usd === null ? null : (float) $shown->cost_usd,
             ],

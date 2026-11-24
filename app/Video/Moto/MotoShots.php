@@ -102,14 +102,16 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
         };
     }
 
+    /** @return string the check a new run is told by: every new run pins the continuity reference policy (inputs()) */
     public function checkVersion(): string
     {
-        return MotoShotsCheck::VERSION;
+        return MotoShotsCheck::VERSION_CONTINUITY;
     }
 
+    /** @return string the plan a new run is told by: every new run pins the continuity reference policy (inputs()) */
     public function plannerVersion(): string
     {
-        return MotoShotPlanner::VERSION;
+        return MotoShotPlanner::VERSION_CONTINUITY;
     }
 
     public function inputsVersion(): string
@@ -206,7 +208,11 @@ final class MotoShots implements ReleaseBound, ShotWorkflow, StructureChecked
             $this->setDesign,
             $planStaging !== null,
         );
-        $pinned = array_intersect_key($this->releasePolicy, array_flip(['shot_grouping_policy', 'shot_editing_policy', 'shot_budget']));
+        $pinned = array_intersect_key($this->releasePolicy, array_flip(['shot_grouping_policy', 'shot_editing_policy', 'shot_budget'])) + ['continuity_reference_policy' => MotoShotsCheck::CONTINUITY_POLICY];
+
+        if (($unread = MotoShotsCheck::continuityPolicyProblem($pinned)) !== null) {
+            throw new RuntimeException('Kiểm trước khi lập shot chưa qua, không gọi AI: '.$unread);
+        }
 
         if (($pinned['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE) {
             $built['payload']['film']['coverage_policy'] = MotoShotsCheck::COVERAGE;

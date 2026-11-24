@@ -9,20 +9,30 @@ final class MotoShotPlanner
 {
     public const VERSION = 'moto-shots-plan-v5';
 
+    /** @var string the plan of a run that pins the continuity reference policy (MotoShotsCheck::CONTINUITY_POLICY): the same plan, whose shots carry the reference needs MotoShotsCheck::continuityReferences() keeps, with the policy and what was left out beside them. A run that pins none is planned exactly as before */
+    public const VERSION_CONTINUITY = 'moto-shots-plan-v6';
+
     /** @var int the width in degrees of one angle group of a fingerprint */
     private const ANGLE_GROUP = 30;
 
     /**
      * @param  array<string, mixed>  $document  a moto Phase 7 document that passed its schema
      * @param  array<string, mixed>  $context  the check context pinned with the run
-     * @return array{version: string, timing?: string, total_ms: int, shots: list<array<string, mixed>>, conflicts: list<array<string, mixed>>, finished_states: list<string>} the timing the run pinned, when it pinned one, and every shot with the screen time MotoShotsCheck::timing() gives it and each coverage part, its film timing, the clip and film span of each coverage part, its build state, environment, incoming transition, scene continuity, the work items it shows, where the work holds each part at its first frame, absent parts, limits, cards and fingerprint. Code composes no prompt from a shot: a keyframe prompt is written by Phase 9 and a video prompt by Phase 10
+     * @return array{version: string, timing?: string, total_ms: int, shots: list<array<string, mixed>>, conflicts: list<array<string, mixed>>, finished_states: list<string>, continuity_reference_policy?: string, reference_adjustments?: list<array{shot_id: string, path: string, before: array<string, mixed>, reason: string}>} the timing the run pinned, when it pinned one, and every shot with the screen time MotoShotsCheck::timing() gives it and each coverage part, its film timing, the clip and film span of each coverage part, its build state, environment, incoming transition, scene continuity, the work items it shows, where the work holds each part at its first frame, absent parts, limits, cards and fingerprint. For a run that pinned the continuity reference policy, the shots carry the reference needs that policy keeps, and the plan names the policy and every need it left out with the answer's own words; the answer itself is never changed. Code composes no prompt from a shot: a keyframe prompt is written by Phase 9 and a video prompt by Phase 10
+     *
+     * @throws \RuntimeException when the run pinned a continuity reference policy code does not have (MotoShotsCheck::continuityPolicyProblem)
      */
     public static function plan(array $document, array $context): array
     {
+        if (($unread = MotoShotsCheck::continuityPolicyProblem($context)) !== null) {
+            throw new \RuntimeException($unread);
+        }
+
         $data = (array) $document['data'];
         $scenes = array_column((array) $context['scenes'], null, 'id');
         $beats = array_column((array) $context['beats'], null, 'id');
-        $authored = array_values((array) $data['shots']);
+        $kept = ($context['continuity_reference_policy'] ?? null) === MotoShotsCheck::CONTINUITY_POLICY;
+        [$authored, $dropped] = MotoShotsCheck::continuityReferences(array_values((array) $data['shots']), $context);
         $written = array_map(MotoShotsCheck::legacy(...), ($context['shot_editing_policy'] ?? null) === MotoShotsCheck::COVERAGE ? MotoShotsCheck::withCompletedWork($authored, (array) $context['scenes']) : $authored);
         $pinned = $context['timing'] ?? null;
         $fixed = $pinned === MotoShotsCheck::TIMING_FIXED;
@@ -98,13 +108,14 @@ final class MotoShotPlanner
         }
 
         return [
-            'version' => self::VERSION,
+            'version' => $kept ? self::VERSION_CONTINUITY : self::VERSION,
         ] + ($pinned === null ? [] : ['timing' => $pinned]) + [
             'total_ms' => $fixed ? $cursor : (int) $context['total_ms'],
             'shots' => $rows,
             'conflicts' => array_values((array) $data['conflicts']),
             'finished_states' => array_values((array) ($context['finished_states'] ?? [])),
-        ] + (array_key_exists('omissions', $data) ? ['omissions' => $omissions] : []);
+        ] + (array_key_exists('omissions', $data) ? ['omissions' => $omissions] : [])
+            + ($kept ? ['continuity_reference_policy' => MotoShotsCheck::CONTINUITY_POLICY, 'reference_adjustments' => $dropped] : []);
     }
 
     /**

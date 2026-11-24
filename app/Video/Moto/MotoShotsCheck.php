@@ -57,7 +57,7 @@ final class MotoShotsCheck
             default => MotoContract::SHOTS_FORMAT,
         };
 
-        return ['format' => $format] + self::scored($response, $context, $schema, $format);
+        return ['format' => $format] + self::label($context) + (($unread = self::continuityPolicyProblem($context)) === null ? self::scored($response, $context, $schema, $format) : self::result(self::UNSCORED, null, $unread));
     }
 
     /**
@@ -141,7 +141,7 @@ final class MotoShotsCheck
         }
 
         $data = (array) $response['data'];
-        $written = array_values((array) $data['shots']);
+        [$written, $dropped] = self::continuityReferences(array_values((array) $data['shots']), $context);
         $written = $full ? self::withCompletedWork($written, (array) $context['scenes']) : $written;
         $shots = array_map(self::legacy(...), $written);
         $conflicts = array_values((array) $data['conflicts']);
@@ -150,7 +150,7 @@ final class MotoShotsCheck
         $order = array_column($shots, 'id');
         $timing = self::timing($shots, $beats, $context['timing'] ?? null);
         $omissions = $editing && ! $full ? array_values((array) ($data['omissions'] ?? [])) : [];
-        $issues = [...$issues, ...self::idIssues($shots, $scenes), ...$timing['issues'], ...($fixed
+        $issues = [...$issues, ...self::continuityNotes($dropped), ...self::idIssues($shots, $scenes), ...$timing['issues'], ...($fixed
             ? [...self::eventCoverageIssues($written, $beats, $scenes, $editing && ! $full ? array_merge([], ...array_column($omissions, 'event_ids')) : null), ...self::timelineIssues($written, $beats, $context)]
             : self::coverageIssues($shots, $beats, $scenes, (int) $context['total_ms'], $timing['shots']))];
 
@@ -1624,5 +1624,95 @@ final class MotoShotsCheck
             ...Finding::fields($issues, $warnings),
             'judge' => self::JUDGE,
         ];
+    }
+
+    /** @var string the policy a run pins as continuity_reference_policy: a continuity need that names an earlier shot of a scene its own scene does not continue from is left out of the shots the check and the plan read, and told to the reviewer; the answer keeps it as written, and every other fault of a reference need is held as before. A run that pins none is checked and planned as before */
+    public const CONTINUITY_POLICY = 'drop_invalid_cross_scene_v1';
+
+    /** @var string the check of a run that pins CONTINUITY_POLICY; a run that pins none keeps VERSION */
+    public const VERSION_CONTINUITY = 'moto-shots-check-v9';
+
+    /** @var string why a continuity need was left out, kept beside the plan */
+    private const OUTSIDE_CHAIN = 'Target belongs to a scene outside the permitted continuity chain.';
+
+    /**
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return array{version?: string} the version the check of the run is told by: VERSION_CONTINUITY for a run that pinned CONTINUITY_POLICY, none for any other run, which keeps VERSION
+     */
+    private static function label(array $context): array
+    {
+        return ($context['continuity_reference_policy'] ?? null) === self::CONTINUITY_POLICY ? ['version' => self::VERSION_CONTINUITY] : [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return ?string why the continuity reference policy the run pinned cannot be read, null when it pinned none or the one code has: a run of a policy code does not have is left unscored by the check with this reason and MotoShotPlanner::plan throws it, never read by guessing
+     */
+    public static function continuityPolicyProblem(array $context): ?string
+    {
+        $policy = $context['continuity_reference_policy'] ?? null;
+
+        return $policy === null || $policy === self::CONTINUITY_POLICY ? null : 'Lượt chạy ghim continuity_reference_policy '.json_encode($policy, JSON_UNESCAPED_UNICODE).'; code chỉ tính '.self::CONTINUITY_POLICY.' hoặc lượt không ghim chính sách này.';
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $shots  the shots of the answer, in its order
+     * @param  array<string, mixed>  $context  the check context pinned with the run
+     * @return array{0: list<array<string, mixed>>, 1: list<array{shot_id: string, path: string, before: array<string, mixed>, reason: string}>} for a run that pinned CONTINUITY_POLICY, the shots the check and the plan read and what was left out of them, in the order of the answer: a need of kind continuity whose target is one earlier shot, when the scene of both is known from the pinned scenes and from their ids, and the target's scene is neither the shot's own nor the scene just before it that the pinned scene names as continuity_from. A target that does not exist, stands later or is named twice, a shot or a scene the pinned scenes do not hold, and a scene whose continuity_from is missing or is neither null nor the scene just before it — a pinned source that is broken decides nothing — are left as written for the check to hold. Any other run is returned as it is, with nothing left out
+     */
+    public static function continuityReferences(array $shots, array $context): array
+    {
+        if (($context['continuity_reference_policy'] ?? null) !== self::CONTINUITY_POLICY) {
+            return [$shots, []];
+        }
+
+        $scenes = array_column(array_filter((array) ($context['scenes'] ?? []), 'is_array'), null, 'id');
+        $order = array_map('strval', array_keys($scenes));
+        $ids = array_count_values(array_map(static fn (mixed $shot): string => is_array($shot) && is_string($shot['id'] ?? null) ? $shot['id'] : '', $shots));
+        $earlier = [];
+        $dropped = [];
+
+        foreach ($shots as $index => $shot) {
+            $id = is_string($shot['id'] ?? null) ? $shot['id'] : '';
+            $scene = is_string($shot['scene'] ?? null) ? $shot['scene'] : null;
+            $position = $scene === null ? false : array_search($scene, $order, true);
+            $before = is_int($position) && $position > 0 ? $order[$position - 1] : null;
+            $known = is_int($position) && ($ids[$id] ?? 0) === 1 && str_starts_with($id, $scene.'_') && array_key_exists('continuity_from', $scenes[$scene]) && in_array($scenes[$scene]['continuity_from'], [null, $before], true);
+            $chain = $known ? array_values(array_filter([$scene, $scenes[$scene]['continuity_from']])) : [];
+            $needs = array_values((array) ($shot['reference_needs'] ?? []));
+            $kept = [];
+
+            foreach ($needs as $at => $need) {
+                $target = is_array($need) && ($need['kind'] ?? null) === 'continuity' && is_string($need['target'] ?? null) ? $need['target'] : null;
+                $from = $target === null ? null : ($earlier[$target] ?? null);
+
+                if ($known && $from !== null && ($ids[$target] ?? 0) === 1 && isset($scenes[$from]) && str_starts_with($target, $from.'_') && ! in_array($from, $chain, true)) {
+                    $dropped[] = ['shot_id' => $id, 'path' => "data.shots.{$index}.reference_needs.{$at}", 'before' => $need, 'reason' => self::OUTSIDE_CHAIN];
+
+                    continue;
+                }
+
+                $kept[] = $need;
+            }
+
+            if (count($kept) !== count($needs)) {
+                $shots[$index]['reference_needs'] = $kept;
+            }
+
+            if ($id !== '' && $scene !== null) {
+                $earlier[$id] = $scene;
+            }
+        }
+
+        return [$shots, $dropped];
+    }
+
+    /**
+     * @param  list<array{shot_id: string, path: string, before: array<string, mixed>, reason: string}>  $dropped  what continuityReferences() left out
+     * @return list<Finding> one note for each, for the reviewer: which continuity need the shots of the plan no longer carry and that the scene of the shot does not continue from the scene of its target
+     */
+    private static function continuityNotes(array $dropped): array
+    {
+        return array_map(static fn (array $item): Finding => Finding::note('MotoShotsCheck.continuityNotes.1', "Đã bỏ continuity {$item['shot_id']} → {$item['before']['target']}: ".strstr($item['shot_id'], '_', true).' không nối hành động từ '.strstr((string) $item['before']['target'], '_', true).'.'), $dropped);
     }
 }

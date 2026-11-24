@@ -99,7 +99,7 @@ final class ShotSourceService
     }
 
     /**
-     * @return array{0: ?VideoReviewDecision, 1: string} RULE PASS is the approval of a shot plan: nobody is asked. A run that passes its check with status ok, whose derived plan is the one it stored and whose sources are still the ones in use, takes the selection; the decision keeps reviewer_id empty and basis rule_pass. Any other run stays as it is, with why
+     * @return array{0: ?VideoReviewDecision, 1: string} RULE PASS is the approval of a shot plan: nobody is asked. A run that passes its check and is usable — with status ok, or whatever status when it pinned the full-coverage policy (heldByStatus) — whose derived plan is the one it stored and whose sources are still the ones in use, takes the selection; the decision keeps reviewer_id empty and basis rule_pass. Any other run stays as it is, with why
      */
     public function approvePassed(string $projectId, string $stageId): array
     {
@@ -193,7 +193,7 @@ final class ShotSourceService
                 return [null, $check['verdict'] !== 'PASS' ? 'Kế hoạch shot này chưa đạt kiểm RULE — không duyệt được.' : 'Kế hoạch shot này còn điều kiện chưa đạt để dùng cho bước sau: '.implode('; ', (array) $check['requirements']).' — không duyệt được.'];
             }
 
-            if ($check['status'] !== 'ok') {
+            if (self::heldByStatus($check, $stage)) {
                 return [null, 'Model trả status '.json_encode($check['status']).' — còn xung đột chặn; bản này chỉ để xem.'];
             }
 
@@ -295,6 +295,18 @@ final class ShotSourceService
                 'source_fingerprint' => CanonicalJson::hash($source),
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $check  the check of the shot run
+     * @param  VideoPlanningStage  $stage  the run, with the context it pinned
+     * @return bool whether the status the model gave its plan holds a usable plan back. Not for a run that pinned the full-coverage policy (MotoShotsCheck::COVERAGE): code itself holds such a plan to every event of the source, the shot budget and the limits of a shot, so a plan that passes and is usable is approved by rule pass whatever status the model gave, and what the model calls a blocking conflict stays on the screen as its own warning for the reviewer. For any other run a status other than ok holds the plan back as before
+     */
+    public static function heldByStatus(array $check, VideoPlanningStage $stage): bool
+    {
+        $context = (array) (PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['context'] ?? []);
+
+        return ($check['status'] ?? null) !== 'ok' && ($context['shot_editing_policy'] ?? null) !== \App\Video\Moto\MotoShotsCheck::COVERAGE;
     }
 
     /** @return array{0: array<string, mixed>, 1: ?string} the evaluation with derived_problem, ShotSourceService::derivedProblem(), or why the stage cannot be evaluated */

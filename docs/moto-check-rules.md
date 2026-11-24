@@ -18,7 +18,7 @@ Sinh tự động từ các lời gọi `Finding::blocking|requirement|note|each
 |---|---|
 | RULE — giữ chặn | 26 |
 | Điều kiện để dùng ở bước sau | 296 |
-| Ghi chú nội dung — không chặn | 75 (2 mã `MotoLocationsCheck.usability.1`–`.2` không chặn cả bộ nhưng giữ lại từng ảnh nền bị ảnh hưởng) |
+| Ghi chú nội dung — không chặn | 76 (2 mã `MotoLocationsCheck.usability.1`–`.2` không chặn cả bộ nhưng giữ lại từng ảnh nền bị ảnh hưởng) |
 
 Kiểm bằng `tests/Unit/MotoCheckRulesTest.php`: quét tĩnh mọi câu thông báo của checker (kể cả hàm phụ `return [...]`) phải nằm trong lời gọi `Finding`; mỗi mã một quyết định; chạy checker thật trên câu trả lời đã lưu và các biến thể đổi ID → `unclassified` rỗng, chỉ sai `project_id` mới FAIL; check và dữ liệu dẫn xuất không chứa object.
 
@@ -392,6 +392,7 @@ Nhánh moto của `SourceCheck` không chấm điểm và không so trích dẫn
 | Phase 7 | `MotoShotsCheck.conflictIssues.1` | `app/Video/Moto/MotoShotsCheck.php:1500` | `conflictIssues` | … nêu …, không có trong shots. | Ghi chú nội dung — không chặn | đánh giá nội dung, cho người duyệt xem | — (không chặn) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
 | Phase 7 | `MotoShotsCheck.conflictIssues.2` | `app/Video/Moto/MotoShotsCheck.php:1506` | `conflictIssues` | … nêu …, không có trong kịch bản. | Ghi chú nội dung — không chặn | đánh giá nội dung, cho người duyệt xem | — (không chặn) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
 | Phase 7 | `MotoShotsCheck.conflictIssues.3` | `app/Video/Moto/MotoShotsCheck.php:1512` | `conflictIssues` | …: … | Ghi chú nội dung — không chặn | đánh giá nội dung, cho người duyệt xem | — (không chặn) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
+| Phase 7 | `MotoShotsCheck.continuityNotes.1` | `app/Video/Moto/MotoShotsCheck.php:1716` | `continuityNotes` | Đã bỏ continuity … → …: … không nối hành động từ …. | Ghi chú nội dung — không chặn | chỉ với lượt ghim `continuity_reference_policy` = `drop_invalid_cross_scene_v1`: nhu cầu continuity trỏ một shot trước có thật nhưng thuộc scene không được nối (không cùng scene, không phải scene liền trước mà `continuity_from` nêu) được bỏ khỏi kế hoạch dẫn xuất; câu trả lời AI giữ nguyên, mục bị bỏ và lý do nằm ở `derived.reference_adjustments`. Lượt không ghim chính sách vẫn bị giữ lại bởi `shotIssues.12` | — (không chặn) | MotoChecksTest::a_run_that_pins_the_continuity_reference_policy…; MotoChecksTest::a_stored_shot_answer_of_a_real_project… |
 | Phase 8 | `MotoReferenceCheck.cells.1` | `app/Video/Moto/MotoReferenceCheck.php:110` | `cells` | left_out dẫn dữ kiện … không có trong ô. | Điều kiện để dùng ở bước sau | ID không có trong nguồn đã ghim | `MotoReference` (duyệt prompt ô tham chiếu) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
 | Phase 8 | `MotoReferenceCheck.cells.2` | `app/Video/Moto/MotoReferenceCheck.php:112` | `cells` | bỏ dữ kiện … ("…value…") — chỉ dữ kiện mục tiêu mới được bỏ; quyết định của người trái dữ kiện này thì báo gap. | Ghi chú nội dung — không chặn | cách viết lại dữ kiện | — (không chặn) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
 | Phase 8 | `MotoReferenceCheck.cells.3` | `app/Video/Moto/MotoReferenceCheck.php:124` | `cells` | giữ nguyên dòng nháp … — dòng này phải viết lại cho đúng thời điểm của ô. | Ghi chú nội dung — không chặn | cách viết lại dòng nháp | — (không chặn) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
