@@ -19,8 +19,10 @@
         <em>mỗi ảnh là một bộ trang phục và trạng thái mà shot cần — tách khỏi part xe</em>
     </div>
     <div class="va-body">
-        <div class="va-brief">
-            <div class="line"><span class="k">Part xe</span><span class="v">{{ $ref['grid']['approved'] }}/{{ $ref['grid']['total'] }}</span></div>
+        <div class="va-brief" id="motoCharacterBrief" @isset($ref) data-ajax-part @endisset>
+            @isset($ref)
+                <div class="line"><span class="k">Part xe</span><span class="v">{{ $ref['grid']['approved'] }}/{{ $ref['grid']['total'] }}</span></div>
+            @endisset
             <div class="line"><span class="k">Ảnh nhân vật</span><span class="v">{{ $people['approved'] }}/{{ $people['total'] }}</span></div>
             @foreach($kindNames as $kind => $name)
                 @if(isset($people['kinds'][$kind]))
@@ -37,7 +39,7 @@
     </div>
 
     @if($groups !== [])
-        <div class="va-rows vr-rows">
+        <div class="va-rows vr-rows" id="motoCharacterRows" data-ajax-part>
             <div class="va-row va-row-head"><div>Lưới</div><div>Master</div><div>Prompt</div><div>Render</div><div>Candidate images</div></div>
 
             @foreach($groups as $row)
@@ -107,12 +109,12 @@
                                 $settingsId = 'charSettings'.$sheet['id'];
                                 $renderId = 'charRender'.$sheet['id'];
                             @endphp
-                            <form method="POST" action="{{ route('video-projects.character-reference', [$id, $row['character'], 'settings']) }}" id="{{ $settingsId }}" onsubmit="return vpLockForm(this)">
+                            <form method="POST" action="{{ route('video-projects.character-reference', [$id, $row['character'], 'settings']) }}" id="{{ $settingsId }}" data-ajax-form onsubmit="return vpLockForm(this)">
                                 @csrf
                                 <div class="va-fields">
                                     <div class="va-field">
                                         <label>Size</label>
-                                        <select class="ctl" name="size" required onchange="this.form.requestSubmit()">
+                                        <select class="ctl" name="size" required onchange="vpSubmitSoon(this.form)">
                                             @foreach($choice['sizes'] as $size)
                                                 <option value="{{ $size }}" @selected($size === $choice['size'])>{{ str_replace('x', ' × ', $size) }}</option>
                                             @endforeach
@@ -120,7 +122,7 @@
                                     </div>
                                     <div class="va-field">
                                         <label>Model</label>
-                                        <select class="ctl" name="model" required onchange="this.form.requestSubmit()">
+                                        <select class="ctl" name="model" required onchange="vpSubmitSoon(this.form)">
                                             @foreach($people['models'] as $model)
                                                 <option value="{{ $model['model'] }}" @selected($model['model'] === $choice['model'])>{{ $model['label'] }}</option>
                                             @endforeach
@@ -128,7 +130,7 @@
                                     </div>
                                     <div class="va-field">
                                         <label>Quality</label>
-                                        <select class="ctl" name="quality" required onchange="this.form.requestSubmit()">
+                                        <select class="ctl" name="quality" required onchange="vpSubmitSoon(this.form)">
                                             @foreach($choice['qualities'] as $quality)
                                                 <option value="{{ $quality }}" @selected($quality === $choice['quality'])>{{ $quality }}</option>
                                             @endforeach
@@ -147,7 +149,7 @@
                                     Dự toán: chưa có giá cho model/chất lượng này
                                 @endif
                             </div>
-                            <form method="POST" action="{{ route('video-projects.character-reference', [$id, $row['character'], 'render']) }}" id="{{ $renderId }}" data-modal="confirm{{ $renderId }}" onsubmit="return vpLockForm(this)" hidden>
+                            <form method="POST" action="{{ route('video-projects.character-reference', [$id, $row['character'], 'render']) }}" id="{{ $renderId }}" data-modal="confirm{{ $renderId }}" data-ajax-form onsubmit="return vpLockForm(this)" hidden>
                                 @csrf
                                 <input type="hidden" name="sheet_hash" value="{{ $sheet['hash'] }}">
                                 <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">

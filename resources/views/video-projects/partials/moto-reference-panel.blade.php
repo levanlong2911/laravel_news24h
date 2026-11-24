@@ -15,6 +15,7 @@
     $model = collect($ref['models'])->firstWhere('model', $choice['model']);
 @endphp
 
+@unless($fragment ?? false)
 <div class="container-fluid vp" id="motoReferencePage">
 
     <div class="vp-crumb">
@@ -39,7 +40,7 @@
         <div class="alert alert-danger">{{ session('error') }}</div>
     @endif
 
-    <div class="vp-panel va-anchor">
+    <div class="vp-panel va-anchor" id="motoReferenceHead" data-ajax-part>
         <div class="va-head">
             <b>REFERENCE · PARTS DETAIL</b>
             <em>từ shot đã duyệt — chỉ tạo ảnh còn thiếu, dùng lại nguồn đã duyệt</em>
@@ -113,8 +114,11 @@
         </div>
     </div>
 
+@endunless
+    @include('video-projects.partials.moto-reference-flash')
+
     @if($plan !== null)
-        <div class="vp-panel va-anchor">
+        <div class="vp-panel va-anchor" id="motoMasterPanel" data-ajax-part>
             <div class="va-head"><b>MASTER REFERENCE</b><em>người dùng chọn lưới và size — một master, mỗi part một ô, ô dư để trống</em></div>
             @if($ref['sheets'] === [])
                 <div class="va-body">
@@ -136,7 +140,7 @@
                     <div class="va-row va-row-head"><div>Lưới</div><div>Master</div><div>Prompt</div><div>Render</div><div>Candidate images</div></div>
                 @endif
                 @if($ref['sheets'] !== [])
-                    <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'layout']) }}" id="refLayout" onsubmit="return vpLockForm(this)" hidden>
+                    <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'layout']) }}" id="refLayout" data-ajax-form onsubmit="return vpLockForm(this)" hidden>
                         @csrf
                     </form>
                 @endif
@@ -147,7 +151,7 @@
                             <div class="vr-grid-fields">
                                 <div class="va-field">
                                     <label>Hàng</label>
-                                    <select class="ctl" name="rows" form="refLayout" required onchange="this.form.requestSubmit()">
+                                    <select class="ctl" name="rows" form="refLayout" required data-ref-rows onchange="vpSubmitSoon(this.form)">
                                         @foreach(range($grid['min'], $grid['max']) as $number)
                                             <option value="{{ $number }}" @selected($number === $choice['rows'])>{{ $number }}</option>
                                         @endforeach
@@ -155,7 +159,7 @@
                                 </div>
                                 <div class="va-field">
                                     <label>Cột</label>
-                                    <select class="ctl" name="columns" form="refLayout" required onchange="this.form.requestSubmit()">
+                                    <select class="ctl" name="columns" form="refLayout" required data-ref-columns onchange="vpSubmitSoon(this.form)">
                                         @foreach(range($grid['min'], $grid['max']) as $number)
                                             <option value="{{ $number }}" @selected($number === $choice['columns'])>{{ $number }}</option>
                                         @endforeach
@@ -165,8 +169,8 @@
                             <div class="va-lbl" style="font-weight:400">Tổng part được yêu cầu: {{ $grid['total'] }}</div>
                             <div class="va-lbl" style="font-weight:400">Đã có crop được duyệt: {{ $grid['approved'] }}</div>
                             <div class="va-lbl" style="font-weight:400">Còn thiếu/chưa duyệt: {{ $grid['unapproved'] }}</div>
-                            <div class="va-lbl" style="font-weight:400">Lưới: {{ $choice['rows'] }} × {{ $choice['columns'] }}</div>
-                            <div class="va-lbl" style="font-weight:400">Sức chứa: {{ $grid['capacity'] }} ô</div>
+                            <div class="va-lbl" style="font-weight:400" data-ref-grid>Lưới: {{ $choice['rows'] }} × {{ $choice['columns'] }}</div>
+                            <div class="va-lbl" style="font-weight:400" data-ref-capacity>Sức chứa: {{ $grid['capacity'] }} ô</div>
                             <div class="va-lbl" style="font-weight:400">Sử dụng: {{ $grid['used'] }} ô</div>
                             <div class="va-lbl" style="font-weight:400">Để trống: {{ $grid['empty'] }} ô</div>
                             @if($grid['short'] > 0 && ! $oneImage($sheet['layout']))
@@ -225,7 +229,7 @@
                             </div>
 
                             <div class="va-row-set">
-                                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'render']) }}" id="{{ $renderId }}" data-modal="confirm{{ $renderId }}" onsubmit="return vpLockForm(this)" hidden>
+                                <form method="POST" action="{{ route('video-projects.parts-detail', [$id, 'render']) }}" id="{{ $renderId }}" data-modal="confirm{{ $renderId }}" data-ajax-form onsubmit="return vpLockForm(this)" hidden>
                                     @csrf
                                     <input type="hidden" name="hash" value="{{ $preview['hash'] }}">
                                     @foreach($sheet['cell_ids'] as $cellId)<input type="hidden" name="cells[]" value="{{ $cellId }}">@endforeach
@@ -242,7 +246,7 @@
                                     </div>
                                     <div class="va-field">
                                         <label>Size</label>
-                                        <select class="ctl" name="size" form="refLayout" required onchange="this.form.requestSubmit()">
+                                        <select class="ctl" name="size" form="refLayout" required onchange="vpSubmitSoon(this.form)">
                                             @foreach((array) ($model['controls']['sizes'] ?? []) as $size)
                                                 <option value="{{ $size }}" @selected($size === $choice['size'])>{{ $pixels($size) }}</option>
                                             @endforeach
@@ -250,7 +254,7 @@
                                     </div>
                                     <div class="va-field">
                                         <label>Model</label>
-                                        <select class="ctl" name="model" form="refLayout" required data-ref-model onchange="this.form.requestSubmit()">
+                                        <select class="ctl" name="model" form="refLayout" required data-ref-model onchange="vpSubmitSoon(this.form)">
                                             @foreach($ref['models'] as $m)
                                                 <option value="{{ $m['model'] }}" @selected($m['model'] === $choice['model'])>{{ $m['label'] }}</option>
                                             @endforeach
@@ -258,7 +262,7 @@
                                     </div>
                                     <div class="va-field">
                                         <label>Quality</label>
-                                        <select class="ctl" name="quality" form="refLayout" required data-ref-quality onchange="this.form.requestSubmit()">
+                                        <select class="ctl" name="quality" form="refLayout" required data-ref-quality onchange="vpSubmitSoon(this.form)">
                                             @foreach((array) ($model['controls']['qualities'] ?? []) as $quality)
                                                 <option value="{{ $quality }}" @selected($quality === $choice['quality'])>{{ $quality }}</option>
                                             @endforeach
@@ -421,5 +425,7 @@
         </div>
     @endif
 
+@unless($fragment ?? false)
     @include('video-projects.partials.moto-character-panel')
 </div>
+@endunless

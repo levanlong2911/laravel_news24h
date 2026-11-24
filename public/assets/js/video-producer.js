@@ -215,7 +215,25 @@ function vpTaskWatch(options) {
     schedule();
 }
 
-function vpAjaxPage(rootId, onRefresh, onParts) {
+function vpSubmitSoon(form, delay) {
+    var part = form.closest('[data-ajax-part]');
+
+    if (part !== null) { part.classList.add('vp-pending'); }
+
+    window.clearTimeout(form.vpSoon);
+    form.vpSoon = window.setTimeout(function () {
+        var current = form.closest('[data-ajax-part]');
+
+        if (current !== null) {
+            current.classList.remove('vp-pending');
+            current.classList.add('vp-saving');
+        }
+
+        form.requestSubmit();
+    }, delay === undefined ? 500 : delay);
+}
+
+function vpAjaxPage(rootId, onRefresh, onParts, only) {
     var root = document.getElementById(rootId);
     var unknown = 'Chưa xác định kết quả — lượt AI có thể vẫn đang chạy hoặc đã xong. Tải lại trang để xem trạng thái, đừng bấm lại ngay.';
     var waiting = 'Đang có một thao tác chạy trên trang này — chờ nó xong rồi bấm tiếp.';
@@ -391,6 +409,7 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
         var form = event.target;
 
         if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() !== 'post') { return; }
+        if (only && !form.matches(only)) { return; }
 
         event.preventDefault();
 
@@ -410,6 +429,7 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
 
         var place = placeOf(form, trigger);
         var target = null;
+        var fragment = false;
         var settled = false;
 
         function settle() {
@@ -428,18 +448,20 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
             method: 'POST',
             body: new FormData(form),
             credentials: 'same-origin',
-            headers: { 'Accept': 'text/html' }
+            headers: { 'Accept': 'text/html', 'X-Vp-Ajax': '1' }
         })
             .then(function (response) {
                 if (!response.ok) { throw new Error('HTTP ' + response.status); }
 
-                if (new URL(response.url, window.location.href).pathname !== window.location.pathname) {
+                fragment = response.headers.get('X-Vp-Fragment') === '1';
+
+                if (!fragment && new URL(response.url, window.location.href).pathname !== window.location.pathname) {
                     window.location.href = response.url;
 
                     return null;
                 }
 
-                target = response.url;
+                target = fragment ? window.location.href : response.url;
 
                 return response.text();
             })
@@ -447,7 +469,7 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
                 if (html === null) { return; }
 
                 var fresh = new DOMParser().parseFromString(html, 'text/html');
-                var swapped = exclusive || parts(fresh) !== parts(document);
+                var swapped = !fragment && (exclusive || parts(fresh) !== parts(document));
                 var replaced = [];
                 var elsewhere = Math.abs(window.scrollY - place.scrollY) > 4 ? viewOf() : null;
 
@@ -475,6 +497,7 @@ function vpAjaxPage(rootId, onRefresh, onParts) {
             })
             .catch(function () {
                 settle();
+                root.querySelectorAll('.vp-saving').forEach(function (part) { part.classList.remove('vp-saving'); });
                 release(form, place, controls, states);
             });
     });

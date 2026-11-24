@@ -1141,10 +1141,22 @@ class VideoProjectsController extends Controller
                 })(),
             };
 
+            if ($action === 'layout' && $this->wantsReferencePart($request)) {
+                session()->now('success', $message);
+
+                return response()->view('video-projects.partials.moto-reference-panel', ['id' => $id, 'motoReference' => $service->panel($id), 'fragment' => true])->header('X-Vp-Fragment', '1');
+            }
+
             return redirect()->route('video-projects.reference', $id)->with('success', $message);
         } catch (\RuntimeException $e) {
             return redirect()->route('video-projects.reference', $id)->with('error', $e->getMessage());
         }
+    }
+
+    /** @return bool whether the page script of the Reference screen sent the form (vpAjaxPage) and takes only the panel the action changed, with its notice, instead of the whole page again */
+    private function wantsReferencePart(Request $request): bool
+    {
+        return $request->header('X-Vp-Ajax') === '1';
     }
 
     public function characterReference(Request $request, string $id, string $character, string $action)
@@ -1198,6 +1210,12 @@ class VideoProjectsController extends Controller
                     return 'Đã thu hồi duyệt — ảnh và lịch sử vẫn giữ; duyệt lại để dùng, hoặc từ chối để render lại.';
                 })(),
             };
+
+            if ($action === 'settings' && $this->wantsReferencePart($request)) {
+                session()->now('success', $message);
+
+                return response(view('video-projects.partials.moto-reference-flash')->render().view('video-projects.partials.moto-character-panel', ['id' => $id, 'motoCharacters' => $service->panel($id)])->render())->header('X-Vp-Fragment', '1');
+            }
 
             return redirect()->to($page)->with('success', $message);
         } catch (\RuntimeException $e) {

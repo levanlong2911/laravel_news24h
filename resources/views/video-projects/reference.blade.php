@@ -469,23 +469,55 @@
 @if(isset($motoReference))
 <script>
 (function () {
-    document.querySelectorAll('.va-row-set').forEach(function (cell) {
-        var model = cell.querySelector('[data-ref-model]');
-        var quality = cell.querySelector('[data-ref-quality]');
-        var price = cell.querySelector('[data-ref-price]');
+    function init() {
+        document.querySelectorAll('.va-row-set').forEach(function (cell) {
+            var model = cell.querySelector('[data-ref-model]');
+            var quality = cell.querySelector('[data-ref-quality]');
+            var price = cell.querySelector('[data-ref-price]');
 
-        if (!model || !quality || !price) { return; }
+            if (!model || !quality || !price || price.dataset.ready) { return; }
 
-        var prices = JSON.parse(price.dataset.prices || '{}');
-        var show = function () {
-            var unit = (prices[model.value] || {})[quality.value];
-            price.textContent = unit ? 'Dự toán: $' + Number(unit.usd).toFixed(3) + ' / master (bảng giá ' + unit.version + ', chưa phản ánh size)' : 'Dự toán: chưa có giá cho model/chất lượng này';
-        };
+            price.dataset.ready = '1';
 
-        model.addEventListener('change', show);
-        quality.addEventListener('change', show);
-        show();
-    });
+            var prices = JSON.parse(price.dataset.prices || '{}');
+            var show = function () {
+                var unit = (prices[model.value] || {})[quality.value];
+                price.textContent = unit ? 'Dự toán: $' + Number(unit.usd).toFixed(3) + ' / master (bảng giá ' + unit.version + ', chưa phản ánh size)' : 'Dự toán: chưa có giá cho model/chất lượng này';
+            };
+
+            model.addEventListener('change', show);
+            quality.addEventListener('change', show);
+            show();
+        });
+
+        document.querySelectorAll('#motoMasterPanel .va-row-who').forEach(function (cell) {
+            var rows = cell.querySelector('[data-ref-rows]');
+            var columns = cell.querySelector('[data-ref-columns]');
+            var grid = cell.querySelector('[data-ref-grid]');
+            var capacity = cell.querySelector('[data-ref-capacity]');
+
+            if (!rows || !columns || !grid || !capacity || grid.dataset.ready) { return; }
+
+            grid.dataset.ready = '1';
+
+            var show = function () {
+                grid.textContent = 'Lưới: ' + rows.value + ' × ' + columns.value;
+                capacity.textContent = 'Sức chứa: ' + (Number(rows.value) * Number(columns.value)) + ' ô';
+            };
+
+            rows.addEventListener('change', show);
+            columns.addEventListener('change', show);
+        });
+    }
+
+    function refresh() {
+        init();
+        vpTaskWatch();
+    }
+
+    init();
+    vpTaskWatch({ root: 'motoReferencePage', refresh: init });
+    vpAjaxPage('motoReferencePage', refresh, refresh, 'form[data-ajax-form]');
 })();
 </script>
 @else
