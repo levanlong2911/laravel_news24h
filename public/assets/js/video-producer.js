@@ -18,6 +18,7 @@ function vpTaskEdited() {
 
 function vpTaskHeld(element) {
     return element.querySelector('.modal.show') !== null
+        || element.matches('.vp-pending, .vp-saving, .vp-unsaved') || element.querySelector('.vp-pending, .vp-saving, .vp-unsaved') !== null
         || (window.vpTaskForms || []).some(function (form) { return element.contains(form); });
 }
 
@@ -218,7 +219,10 @@ function vpTaskWatch(options) {
 function vpSubmitSoon(form, delay) {
     var part = form.closest('[data-ajax-part]');
 
-    if (part !== null) { part.classList.add('vp-pending'); }
+    if (part !== null) {
+        part.classList.remove('vp-unsaved');
+        part.classList.add('vp-pending');
+    }
 
     window.clearTimeout(form.vpSoon);
     form.vpSoon = window.setTimeout(function () {
@@ -239,6 +243,9 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
     var waiting = 'Đang có một thao tác chạy trên trang này — chờ nó xong rồi bấm tiếp.';
     var whole = false;
     var running = 0;
+    var sequence = 0;
+    var sent = {};
+    var drawn = {};
 
     if (root === null) { return; }
 
@@ -382,14 +389,16 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
         return Array.prototype.map.call(doc.querySelectorAll('[data-ajax-part]'), function (element) { return element.id; }).join(' ');
     }
 
-    function replaceParts(fresh) {
+    function replaceParts(fresh, seq) {
         var replaced = [];
 
         fresh.querySelectorAll('[data-ajax-part]').forEach(function (element) {
             var current = document.getElementById(element.id);
+            var stale = seq < (sent[element.id] || 0) || seq < (drawn[element.id] || 0);
 
-            if (current !== null && current.querySelector('.modal.show') === null) {
+            if (current !== null && !stale && current.querySelector('.modal.show') === null && !current.classList.contains('vp-pending')) {
                 current.outerHTML = element.outerHTML;
+                drawn[element.id] = seq;
                 replaced.push(document.getElementById(element.id));
             }
         });
@@ -431,6 +440,11 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
         var target = null;
         var fragment = false;
         var settled = false;
+        var ownPart = form.closest('[data-ajax-part]');
+        var ownId = ownPart === null ? null : ownPart.id;
+        var seq = ++sequence;
+
+        if (ownId) { sent[ownId] = seq; }
 
         function settle() {
             if (settled) { return; }
@@ -476,7 +490,7 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
                 if (swapped) {
                     replaceWhole(fresh);
                 } else {
-                    replaced = replaceParts(fresh);
+                    replaced = replaceParts(fresh, seq);
                     unlock(place.trigger, controls, states);
                 }
 
@@ -490,14 +504,21 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
                 remember();
                 window.history.replaceState(null, '', target);
                 if (elsewhere === null) { restore(place); } else { keep(elsewhere); }
-                flash();
+                if (swapped || fresh.querySelector('[data-ajax-flash]') === null || replaced.some(function (part) { return part !== null && part.hasAttribute('data-ajax-flash'); })) { flash(); }
 
                 if (swapped && onRefresh) { onRefresh(root); }
                 if (!swapped && onParts) { onParts(replaced); }
             })
             .catch(function () {
+                var own = ownId ? document.getElementById(ownId) : null;
+
                 settle();
-                root.querySelectorAll('.vp-saving').forEach(function (part) { part.classList.remove('vp-saving'); });
+
+                if (own !== null && sent[ownId] === seq && own.classList.contains('vp-saving')) {
+                    own.classList.remove('vp-saving');
+                    own.classList.add('vp-unsaved');
+                }
+
                 release(form, place, controls, states);
             });
     });

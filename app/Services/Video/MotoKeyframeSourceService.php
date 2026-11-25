@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\DesignImageStatus;
+use App\Enums\PlanningStageName;
+use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
 use App\Video\Moto\MotoCharacterPlanner;
+use App\Video\Moto\MotoContract;
+use App\Video\Moto\MotoKeyframePrompt;
 use App\Video\Moto\MotoPipelineRelease;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -42,7 +46,14 @@ final class MotoKeyframeSourceService
         'environment' => ['environment_lighting', 'first_frame', 'Môi trường và ánh sáng của khung'],
         'continuity' => ['continuity', 'first_frame', 'Giữ liên tục từ khung đầu của shot trước'],
         'character' => ['character_appearance', 'reference_only', 'Nhận diện và trang phục nhân vật theo ô của shot trên master — không buộc có mặt ở khung đầu'],
+        self::EDIT_BASE => ['frame_to_edit', 'first_frame', 'Ảnh ứng viên cần sửa'],
     ];
+
+    /** @var string the kind of the first image of an edit: the candidate a person chose to correct */
+    public const EDIT_BASE = 'edit_base';
+
+    /** @var string the render spec whose candidates each pin the prompt they were sent with and the decision that approved it, and are checked against that prompt, never against the one the shot uses now */
+    public const SPEC_V2 = 'moto-keyframe-v2';
 
     /** @var array<string, bool> whether each file read in this round of checks still matched its hash, by artifact id */
     private array $files = [];
@@ -53,6 +64,9 @@ final class MotoKeyframeSourceService
     /** @var array<string, array{source: ?array<string, mixed>, problem: ?string}> the identity master found for a character in this read, by character and whether the face is shown */
     private array $identities = [];
 
+    /** @var array<string, VideoReviewDecision|false> the decision that holds each approved keyframe in this read, by image id; false when none does */
+    private array $approvals = [];
+
     public function __construct(
         private readonly ShotSourceService $shots,
         private readonly ShotRenderPlanService $plans,
@@ -60,6 +74,7 @@ final class MotoKeyframeSourceService
         private readonly PartsDetailService $references,
         private readonly LocationSourceService $locations,
         private readonly MotoCharacterReferenceService $characters,
+        private readonly MotoKeyframeFramingService $framing,
     ) {}
 
     /**
@@ -72,6 +87,7 @@ final class MotoKeyframeSourceService
         $this->files = [];
         $this->outputs = [];
         $this->identities = [];
+        $this->approvals = [];
 
         return ModelSheetService::readOnce(function () use ($projectId): array {
             $approved = $this->shots->approvedSource($projectId);
@@ -104,8 +120,17 @@ final class MotoKeyframeSourceService
             $ids = array_filter([$sheet['source']['artifact_id'] ?? null, ...array_keys($reference['masters']), ...array_column($plates, 'artifact_id')]);
             $stored = array_values((array) ($stage->output_json['derived']['shots'] ?? []));
             $people = MotoCharacterPlanner::planFor($stored, (array) ($metadata['context']['characters'] ?? []), MotoCharacterPlanner::settingsFor($stored), VideoProject::query()->whereKey($projectId)->value('metadata_json'));
+            $project = VideoProject::query()->findOrFail($projectId);
+            $framing = MotoKeyframeFramingService::policy($project, (string) ($metadata['context']['aspect_ratio'] ?? ''));
 
             return [
+                'framing' => $framing,
+                'frame_ratio' => (string) ($framing['master_aspect_ratio'] ?? $metadata['context']['aspect_ratio'] ?? ''),
+                'spec_version' => (string) (MotoPipelineRelease::policy($project, 'keyframe')['spec_version'] ?? MotoKeyframeService::SPEC_VERSION),
+                'edits' => MotoKeyframePrompt::inputFormatFor($project) === MotoContract::KEYFRAME_PROMPT_INPUT_V6,
+                'part_names' => (array) ($metadata['context']['parts'] ?? []),
+                'configurations' => array_column((array) ($metadata['context']['configurations'] ?? []), null, 'id'),
+                'pinned_prompts' => $this->pinnedPrompts($projectId, $found->all()),
                 'people' => $people,
                 'people_cells' => array_column($people['cells'], null, 'id'),
                 'people_images' => $this->characters->approvedMasterCells($projectId, $people),
@@ -127,7 +152,10 @@ final class MotoKeyframeSourceService
                 'rows' => $rows,
                 'images' => $images,
                 'current' => $current,
-                'prompts' => KeyframePromptWriterService::selected($projectId, (string) $stage->id),
+                'prompts' => $prompts = KeyframePromptWriterService::selected($projectId, (string) $stage->id),
+                'prompt_contracts' => array_map(static fn (VideoPlanningStage $run): array => ['inputs' => $run->input_json['source']['inputs'] ?? null, 'framing' => $run->input_json['source']['framing'] ?? null],
+                    $prompts === [] ? [] : VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->whereIn('id', array_column($prompts, 'stage_id'))->get()->keyBy('id')->all()),
+                'edit_prompts' => KeyframePromptWriterService::editSelected($projectId, (string) $stage->id),
                 'choices' => (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::CHOICES][(string) $stage->id] ?? []),
                 'artifacts' => VideoArtifact::query()->where('project_id', $projectId)->whereIn('id', $ids)->get()->keyBy('id')->all(),
             ];
@@ -225,10 +253,14 @@ final class MotoKeyframeSourceService
 
         if (($spec['source_token'] ?? null) != $context['approved']['token']) {
             $problem = 'kế hoạch shot đã đổi so với lúc render';
+        } elseif ($shot !== null && ($spec['spec_version'] ?? null) === self::SPEC_V2) {
+            $problem = self::pinnedPromptProblem($context, $spec);
         } elseif ($shot === null || ($context['prompts'][$spec['shot_id']]['text'] ?? null) !== ($spec['prompt'] ?? null)
             || ($context['prompts'][$spec['shot_id']]['stage_id'] ?? null) !== ($spec['prompt_source']['stage_id'] ?? null)) {
             $problem = 'prompt ảnh đã duyệt của shot không còn là prompt đã gửi';
-        } else {
+        }
+
+        if ($problem === null) {
             foreach ((array) ($spec['sources'] ?? []) as $entry) {
                 $problem = $this->entryProblem($context, (array) $entry, $deep, $seen);
 
@@ -248,13 +280,114 @@ final class MotoKeyframeSourceService
      */
     public function keyframeProblem(array $context, VideoDesignImage $image, bool $deep = true, array &$seen = []): ?string
     {
-        $artifact = $image->artifacts->firstWhere('id', (string) $image->selected_artifact_id);
+        return $this->frameProblem($image) ?? $this->imageProblem($context, $image, $deep, $seen);
+    }
 
-        if ($artifact === null) {
+    /**
+     * @return ?string why the files of an approved keyframe cannot be used: its rendered file is gone, changed, unreadable or not the size asked for, or, for a keyframe rendered under a framing, the approval names no delivery image or that image no longer stands for the rendered file; every file is read and hashed. Null while they stand
+     */
+    public function frameProblem(VideoDesignImage $image): ?string
+    {
+        $frame = $this->frameOf($image);
+
+        if ($frame === null) {
             return 'Keyframe không còn ảnh đã chọn';
         }
 
-        return $this->outputProblem($artifact, (array) $image->prompt_spec_json, true) ?? $this->imageProblem($context, $image, $deep, $seen);
+        $spec = (array) $image->prompt_spec_json;
+        $problem = $this->outputProblem($frame['master'], $spec, true);
+
+        if ($problem === null && $frame['framed']) {
+            $problem = $frame['delivery'] === null ? 'Bộ keyframe đã duyệt không ghi ảnh video nào' : $this->framing->problem($frame['delivery'], $frame['master'], (array) $spec['framing'], true);
+        }
+
+        return $problem;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context  what context() returned
+     * @return ?array{image: VideoDesignImage, master: VideoArtifact, delivery: ?VideoArtifact, handoff: ?VideoArtifact, framed: bool, approval: ?array{decision_id: string, reviewer_id: ?string, at: ?string}, source_token: array<string, mixed>} the keyframe set approved for the shot now, which every later step reads: the file the image model rendered, the image cut from it for the video when the keyframe was rendered under a framing, the one of the two handed on (the delivery image under a framing, else the rendered file; null when the approval names no delivery image), the decision that approved the set, and the shot plan it was made from. Null when the shot has no approved keyframe. Whether the set still holds is keyframeProblem()
+     */
+    public function approvedFrame(array $context, string $shotId): ?array
+    {
+        $image = $context['current'][$shotId] ?? null;
+
+        return $image === null ? null : $this->frameOf($image);
+    }
+
+    /** @return ?array<string, mixed> approvedFrame() of an approved keyframe, null when its file in use is not among its artifacts */
+    private function frameOf(VideoDesignImage $image): ?array
+    {
+        $master = $image->artifacts->firstWhere('id', (string) $image->selected_artifact_id);
+
+        if ($master === null) {
+            return null;
+        }
+
+        $spec = (array) $image->prompt_spec_json;
+        $decision = ($this->approvals[(string) $image->id] ??= MotoKeyframeFramingService::approval($image) ?? false) ?: null;
+        $framed = is_array($spec['framing'] ?? null);
+        $named = $framed ? ($decision?->metadata_json['delivery'] ?? null) : null;
+        $delivery = is_array($named) ? $image->artifacts->first(static fn (VideoArtifact $artifact): bool => (string) $artifact->id === ($named['artifact_id'] ?? null) && (string) $artifact->sha256 === ($named['sha256'] ?? null)) : null;
+
+        return [
+            'image' => $image,
+            'master' => $master,
+            'delivery' => $delivery,
+            'handoff' => $framed ? $delivery : $master,
+            'framed' => $framed,
+            'approval' => $decision === null ? null : ['decision_id' => (string) $decision->id, 'reviewer_id' => $decision->reviewer_id === null ? null : (string) $decision->reviewer_id, 'at' => $decision->created_at?->toIso8601String()],
+            'source_token' => (array) ($spec['source_token'] ?? []),
+        ];
+    }
+
+    /**
+     * @param  list<VideoDesignImage>  $images  every keyframe of the approved shot plan
+     * @return array<string, array{text: string, decisions: list<string>}> for every prompt run a candidate of the second render spec pinned: the prompt it wrote, word for word, and the decisions that approved it
+     */
+    private function pinnedPrompts(string $projectId, array $images): array
+    {
+        $ids = [];
+
+        foreach ($images as $image) {
+            $spec = (array) $image->prompt_spec_json;
+
+            if (($spec['spec_version'] ?? null) === self::SPEC_V2 && is_string($spec['prompt_source']['stage_id'] ?? null)) {
+                $ids[$spec['prompt_source']['stage_id']] = true;
+            }
+        }
+
+        if ($ids === []) {
+            return [];
+        }
+
+        $decisions = VideoReviewDecision::query()->where('project_id', $projectId)->whereIn('entity_type', [KeyframePromptWriterService::ENTITY_TYPE, KeyframePromptWriterService::EDIT_ENTITY_TYPE])
+            ->where('decision', 'approved')->whereIn('entity_id', array_keys($ids))->get(['id', 'entity_id'])->groupBy('entity_id');
+        $pinned = [];
+
+        foreach (VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::KEYFRAME_PROMPT->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->whereIn('id', array_keys($ids))->get() as $stage) {
+            $pinned[(string) $stage->id] = [
+                'text' => (string) ($stage->output_json['derived']['image_prompt'] ?? ''),
+                'decisions' => array_values(array_map('strval', ($decisions->get((string) $stage->id) ?? collect())->pluck('id')->all())),
+            ];
+        }
+
+        return $pinned;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context  what context() returned
+     * @param  array<string, mixed>  $spec  the render spec of a candidate of the second render spec
+     * @return ?string why the prompt the candidate was sent with no longer stands: its run is gone or wrote other words, or the decision that approved it is gone; the prompt the shot uses now is not asked, so writing or approving another one takes no candidate out of use
+     */
+    private static function pinnedPromptProblem(array $context, array $spec): ?string
+    {
+        $pinned = $context['pinned_prompts'][$spec['prompt_source']['stage_id'] ?? ''] ?? null;
+
+        return $pinned !== null && $pinned['text'] !== '' && $pinned['text'] === ($spec['prompt'] ?? null) && in_array($spec['prompt_source']['decision_id'] ?? null, $pinned['decisions'], true)
+            ? null
+            : 'prompt mà ảnh này đã ghim không còn hoặc không còn quyết định duyệt';
     }
 
     /**
@@ -310,10 +443,18 @@ final class MotoKeyframeSourceService
             [$across, $down] = array_map('intval', explode(':', (string) ($spec['aspect_ratio'] ?? '')) + [1 => 0]);
             $wanted = $across > 0 && $down > 0 ? $across / $down : 0.0;
 
-            return $wanted > 0 && $height > 0 && abs($width / $height - $wanted) / $wanted <= GeminiImageClient::ASPECT_TOLERANCE ? null : 'Ảnh lệch khung: '.$width.'x'.$height.', yêu cầu '.($spec['aspect_ratio'] ?? '—');
+            if (! ($wanted > 0 && $height > 0 && abs($width / $height - $wanted) / $wanted <= GeminiImageClient::ASPECT_TOLERANCE)) {
+                return 'Ảnh lệch khung: '.$width.'x'.$height.', yêu cầu '.($spec['aspect_ratio'] ?? '—');
+            }
+        } elseif ($width.'x'.$height !== (string) ($spec['size'] ?? '')) {
+            return 'Ảnh sai kích thước: '.$width.'x'.$height.', yêu cầu '.($spec['size'] ?? '—');
         }
 
-        return $width.'x'.$height === (string) ($spec['size'] ?? '') ? null : 'Ảnh sai kích thước: '.$width.'x'.$height.', yêu cầu '.($spec['size'] ?? '—');
+        $framing = $spec['framing'] ?? null;
+
+        return is_array($framing) && MotoKeyframeFramingService::defaultRectangle($width, $height, $framing) === null
+            ? 'Ảnh gốc '.$width.'x'.$height.' không đủ tạo ảnh video '.$framing['delivery_width'].'x'.$framing['delivery_height'].' mà không phóng lớn'
+            : null;
     }
 
     /**
@@ -330,18 +471,28 @@ final class MotoKeyframeSourceService
         if ($kind === 'continuity') {
             $target = (string) ($entry['shot'] ?? '');
             $image = $context['current'][$target] ?? null;
+            $artifact = $image === null ? null : ($this->frameOf($image)['handoff'] ?? null);
 
-            if ($image === null || (string) $image->selected_artifact_id !== $artifactId) {
+            if ($artifact === null || (string) $artifact->id !== $artifactId) {
                 return "keyframe của {$target} đã bị thay hoặc thu hồi";
             }
 
-            $artifact = $image->artifacts->firstWhere('id', $artifactId);
-
-            if ($artifact === null || (string) $artifact->sha256 !== $sha) {
+            if ((string) $artifact->sha256 !== $sha) {
                 return "keyframe của {$target} không còn đúng ảnh đã dùng";
             }
 
             return $this->keyframeProblem($context, $image, $deep, $seen) === null ? null : "keyframe của {$target} có file lỗi hoặc dùng nguồn cũ";
+        }
+
+        if ($kind === self::EDIT_BASE) {
+            $base = collect($context['images'][$entry['shot'] ?? ''] ?? [])->first(static fn (VideoDesignImage $image): bool => (string) $image->id === ($entry['image_id'] ?? null));
+            $artifact = $base?->artifacts->firstWhere('id', $artifactId);
+
+            if ($artifact === null || $artifact->role === MotoKeyframeFramingService::DELIVERY_ROLE || (string) $artifact->sha256 !== $sha) {
+                return 'ảnh gốc để sửa không còn đúng ảnh đã dùng';
+            }
+
+            return $this->imageProblem($context, $base, $deep, $seen) === null ? $this->fileProblem($context, $artifactId, $sha, $deep) : 'ảnh gốc để sửa dùng nguồn cũ';
         }
 
         if ($kind === 'character') {
@@ -554,16 +705,74 @@ final class MotoKeyframeSourceService
             return $this->card('continuity', $target, [], [$need], null, "Chờ keyframe đã duyệt của {$target}", []);
         }
 
-        $artifact = $image->artifacts->firstWhere('id', (string) $image->selected_artifact_id);
+        $frame = $this->frameOf($image);
+        $artifact = $frame['handoff'] ?? null;
         $seen = [];
 
         if ($artifact === null || $this->keyframeProblem($context, $image, $deep, $seen) !== null) {
             return $this->card('continuity', $target, [], [$need], null, "Keyframe của {$target}: ".self::STALE, []);
         }
 
-        $decision = VideoReviewDecision::query()->where('project_id', $context['project_id'])->where('entity_type', DesignImageStore::SCENE_KEYFRAME_TYPE)->where('entity_id', (string) $artifact->id)->where('decision', 'approved')->orderByDesc('revision')->value('id');
+        $decision = VideoReviewDecision::query()->where('project_id', $context['project_id'])->where('entity_type', DesignImageStore::SCENE_KEYFRAME_TYPE)->where('entity_id', (string) $frame['master']->id)->where('decision', 'approved')->orderByDesc('revision')->value('id');
 
         return $this->card('continuity', $target, [], [$need], ['image_id' => (string) $image->id, 'artifact_id' => (string) $artifact->id, 'sha256' => (string) $artifact->sha256, 'code' => (string) $image->image_code, 'decision_id' => $decision === null ? null : (string) $decision], null, []);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context  what context() returned
+     * @param  array<string, mixed>  $shot  a stored shot
+     * @param  array{cards: list<array<string, mixed>>, sources: list<array<string, mixed>>}  $built  cards() of the shot
+     * @param  list<string>  $references  the artifacts of the reference images the person keeps for this edit
+     * @return array{sources: list<array<string, mixed>>, problems: list<string>} the manifest of an edit of a candidate: the candidate first, then the kept reference images of the shot in their order, every position counted again; and why it cannot be sent — the candidate was made from what is no longer in use or its file fails, a kept image is no reference of the shot, or the set is over the limit of the image model. No image is ever left out by code
+     */
+    public function editSources(array $context, array $shot, VideoDesignImage $base, array $built, array $references, bool $deep = false): array
+    {
+        $master = MotoKeyframeFramingService::master($base);
+        $problems = [];
+
+        if ($master === null || (string) ($base->prompt_spec_json['shot_id'] ?? '') !== (string) $shot['id']) {
+            return ['sources' => [], 'problems' => ['Ảnh cần sửa không phải ứng viên của shot này.']];
+        }
+
+        $stale = $this->imageProblem($context, $base, $deep) ?? $this->outputProblem($master, (array) $base->prompt_spec_json, $deep);
+
+        if ($stale !== null) {
+            $problems[] = 'Ảnh cần sửa: '.$stale;
+        }
+
+        $offered = array_column($built['sources'], null, 'artifact_id');
+        $unknown = array_values(array_diff($references, array_keys($offered)));
+
+        if ($unknown !== []) {
+            $problems[] = 'Ảnh tham chiếu không thuộc bộ nguồn của shot: '.implode(', ', $unknown).'.';
+        }
+
+        $sources = [[
+            'position' => 0,
+            'artifact_id' => (string) $master->id,
+            'candidate_id' => (string) $base->id,
+            'sha256' => (string) $master->sha256,
+            'kind' => self::EDIT_BASE,
+            'target' => (string) $shot['id'],
+            'image_code' => (string) $base->image_code,
+            'role' => self::ROLES[self::EDIT_BASE][0],
+            'usage' => self::ROLES[self::EDIT_BASE][1],
+            'chosen' => 'person',
+            'shot' => (string) $shot['id'],
+            'image_id' => (string) $base->id,
+        ]];
+
+        foreach ($built['sources'] as $source) {
+            if (in_array($source['artifact_id'], $references, true)) {
+                $sources[] = ['position' => count($sources)] + $source;
+            }
+        }
+
+        if (count($sources) > $context['limit']) {
+            $problems[] = 'Bộ ảnh sửa gồm '.count($sources).' ảnh (ảnh cần sửa và '.(count($sources) - 1).' ảnh tham chiếu), vượt giới hạn '.$context['limit'].' của model ảnh — bỏ bớt ảnh tham chiếu trong yêu cầu sửa.';
+        }
+
+        return ['sources' => $sources, 'problems' => $problems];
     }
 
     /**

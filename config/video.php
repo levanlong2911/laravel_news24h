@@ -2351,6 +2351,7 @@ return [
                             'phases' => [
                                 'phase-6' => ['input_format' => 'moto-scenes-input-v8', 'revisions' => [['id' => '64b44bf3-55d3-4e5e-b981-bb871d7c4133', 'sha256' => '9923d9208cb0cd35df2e5af2f3467b58884de1a18aab49721ca4dad44e90b421']]],
                                 'phase-7' => ['input_format' => 'moto-shots-input-v14', 'revisions' => [['id' => '1ba3290f-6b0a-4ccd-b42c-e9d0313c0097', 'sha256' => '700fb7b136a21cdc78c80e03a6729c647da9b2b0af322da7cededf8f18418651']]],
+                                'phase-9' => ['input_format' => \App\Video\Moto\MotoContract::KEYFRAME_PROMPT_INPUT_V6, 'revisions' => [['id' => '45bce594-6272-45b5-a029-e3a8ca9b3f6a', 'sha256' => '0c86abd7be9b5e0e729a38c13f450f05ea06f3cc0da8fc42fc78c88b992d255f']]],
                             ],
                             'actions' => [
                                 'spec.scenes' => [
@@ -2372,6 +2373,17 @@ return [
                                 'script' => ['stationary_requires_support' => true, 'main_states_required' => true, 'client_role' => 'ROLE05'],
                                 'locations' => ['format' => \App\Video\Moto\MotoContract::LOCATIONS_FORMAT_V4],
                                 'scenes' => ['work_tracking_version' => \App\Video\Moto\MotoWork::LAW_V2, 'staging_version' => \App\Video\Moto\MotoScenes::STAGING_V2],
+                                'keyframe_prompt' => ['input_format' => \App\Video\Moto\MotoContract::KEYFRAME_PROMPT_INPUT_V6],
+                                'keyframe' => [
+                                    'spec_version' => \App\Services\Video\MotoKeyframeSourceService::SPEC_V2,
+                                    'framing' => [
+                                        'version' => \App\Services\Video\MotoKeyframeFramingService::VERSION,
+                                        'master_aspect_ratio' => '16:9',
+                                        'delivery_aspect_ratio' => '9:16',
+                                        'delivery_size' => '1080x1920',
+                                        'master_sizes' => ['openai' => ['3840x2160'], 'gemini' => ['4K']],
+                                    ],
+                                ],
                                 'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 15, 'target' => 15]],
                                 'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V11],
                             ],

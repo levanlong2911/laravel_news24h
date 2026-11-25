@@ -495,7 +495,7 @@ final class SceneClipDispatchService
                 ->where('selected_artifact_id', $source->id)
                 ->exists();
 
-            if (! $stillSelected) {
+            if (! $stillSelected && ! \App\Services\Video\MotoKeyframeFramingService::inUse($source, (string) $shot->scene_id)) {
                 throw new RuntimeException(
                     'source_keyframe_changed: anh nguon khong con la keyframe duoc duyet cua scene.',
                 );
@@ -562,7 +562,7 @@ final class SceneClipDispatchService
             ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
             ->where('status', DesignImageStatus::APPROVED->value)
             ->where('selected_artifact_id', $source->id)
-            ->exists()) {
+            ->exists() && ! \App\Services\Video\MotoKeyframeFramingService::inUse($source, (string) $shot->scene_id)) {
             throw new RuntimeException('source_keyframe_changed: anh nguon khong con la keyframe duoc duyet cua scene.');
         }
 

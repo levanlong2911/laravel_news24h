@@ -8,7 +8,7 @@ use App\Video\Script\CheckedWorkflow;
 use App\Video\Script\StructureChecked;
 use App\Video\Superyacht\Support\CanonicalJson;
 
-final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
+final class MotoKeyframePrompt implements CheckedWorkflow, ReleaseBound, StructureChecked
 {
     use ChecksJsonStructure;
 
@@ -17,11 +17,40 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
     /** @var list<string> every output contract this check reads: the current one, and the ones earlier runs were written to, whose fields are the same */
     public const CONTRACTS = ['moto/MotoKeyframePrompt@1.0.0', 'moto/MotoKeyframePrompt@1.0.1', self::CONTRACT];
 
-    /** @var list<string> the input formats this code prepares: the current one for a new run, and the one before it for a stored run that pinned it */
-    public const INPUT_FORMATS = [MotoContract::KEYFRAME_PROMPT_INPUT_V4, MotoContract::KEYFRAME_PROMPT_INPUT];
+    /** @var list<string> the input formats this code prepares: the one a release names or the fifth for a new run, and every earlier one for a stored run that pinned it */
+    public const INPUT_FORMATS = [MotoContract::KEYFRAME_PROMPT_INPUT_V4, MotoContract::KEYFRAME_PROMPT_INPUT, MotoContract::KEYFRAME_PROMPT_INPUT_V6];
 
-    /** @var ?string the input format the adapter reads while a stored run is verified; none for a new run, which is written from the current one */
+    public const COMPOSE = 'compose';
+
+    public const EDIT = 'edit';
+
+    /** @var list<string> what a person may name as wrong in a candidate they ask to edit: the identity of the motorcycle, a part or a person, the geometry and proportions, the build or operating state, a person and what they touch, the set and its objects, the light and the materials, and the camera and composition */
+    public const FAULTS = ['identity', 'geometry', 'state', 'people', 'set', 'lighting', 'camera'];
+
+    /** @var list<string> what a fault of an edit may point at, each by an id of the shot */
+    public const TARGET_TYPES = ['part', 'character', 'background'];
+
+    public const NOTE_MAX_CHARS = 300;
+
+    /** @var list<string> the fields of a background the sixth input hands on as the shot plan pinned them; the set design stays with the record of its place */
+    private const BACKGROUND_FIELDS = ['location', 'composition', 'subject_zone', 'camera', 'visible', 'time_of_day', 'weather', 'atmosphere', 'ground', 'lighting_plan', 'support', 'set_state', 'shot_changes'];
+
+    /** @var ?string the input format the adapter writes and reads: that of the bound project for a new run, that of a stored run while it is verified; none before either, and then the fifth */
     private ?string $inputFormat = null;
+
+    /** @return void a new adapter writes from the input format of the release of the project; an adapter already set to read the format of a stored run keeps it */
+    public function bind(\App\Models\VideoProject $project): void
+    {
+        $this->inputFormat ??= self::inputFormatFor($project);
+    }
+
+    /** @return string the input format a new keyframe prompt of the project is written from: the one its release names in its keyframe_prompt policy, else the fifth */
+    public static function inputFormatFor(\App\Models\VideoProject $project): string
+    {
+        $named = MotoPipelineRelease::policy($project, 'keyframe_prompt')['input_format'] ?? null;
+
+        return is_string($named) && $named !== '' ? $named : MotoContract::KEYFRAME_PROMPT_INPUT;
+    }
 
     /**
      * @param  string  $format  the input format a stored run pinned
@@ -116,11 +145,14 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
      * @param  list<array<string, mixed>>  $images  the reference images the render sends, in order, each with its position from 1
      * @param  array<string, mixed>  $policy  how the render composes the frame from the images, set by Laravel and pinned with the sources; the aspect ratio, the image model, the quality and the size are chosen for the render and stay out of the prompt
      * @param  string  $format  the input format to prepare, one of INPUT_FORMATS. The fourth is prepared exactly as the runs that pinned it were: no composition, and a character described only by a script that keys its characters by id. The fifth adds the composition of the shot as the plan wrote it, null when the plan has none, and describes a character from either shape of the script
-     * @return array{payload: array<string, mixed>, context: array<string, mixed>} what the model reads for the first frame of the shot, from the records of the shot alone, every record taken whole by its id, and what the check reads back
+     * @param  ?array{master_aspect_ratio: string, delivery_aspect_ratio: string}  $framing  the two frames of the keyframe under the sixth input, null when the image is rendered at the frame of the film
+     * @param  ?array{base: array<string, mixed>, faults: list<string>, targets: list<array{type: string, id: string}>, note: ?string, background?: ?array<string, mixed>}  $edit  under the sixth input, the candidate a person asked to edit, as the image at its position, with what they named as wrong, and the background of the shot by id and name, whose record is handed on even when its image is not attached to the edit; null composes a new frame
+     * @return array{payload: array<string, mixed>, context: array<string, mixed>} what the model reads for the first frame of the shot, from the records of the shot alone, every record taken whole by its id, and what the check reads back. The sixth input adds the operating state the shot opens in, the background as the shot plan pinned it, the emotion of its scene, the framing and the way the image is made; an earlier format is prepared exactly as before
      */
-    public static function inputs(array $shot, array $pinned, array $design, array $script, array $images, array $policy, string $fingerprint, int $maxPromptChars, string $format = MotoContract::KEYFRAME_PROMPT_INPUT): array
+    public static function inputs(array $shot, array $pinned, array $design, array $script, array $images, array $policy, string $fingerprint, int $maxPromptChars, string $format = MotoContract::KEYFRAME_PROMPT_INPUT, ?array $framing = null, ?array $edit = null): array
     {
         $fifth = $format !== MotoContract::KEYFRAME_PROMPT_INPUT_V4;
+        $sixth = $format === MotoContract::KEYFRAME_PROMPT_INPUT_V6;
         $state = (string) ($shot['state'] ?? '');
         $configurations = array_column((array) ($pinned['configurations'] ?? []), null, 'id');
         $partIds = self::partIds($shot, $configurations);
@@ -128,7 +160,7 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
         $named = array_values(array_unique([...$partIds, ...array_values(array_filter(array_map(static fn (string $id): ?string => $designParts[$id]['parent'] ?? null, $partIds), 'is_string'))]));
         $touches = static fn (array $ids): bool => array_intersect($ids, $partIds) !== [];
         $places = array_values(array_unique((array) ($shot['places'] ?? [])));
-        $sent = collect($images)->firstWhere('kind', 'environment');
+        $sent = collect($images)->firstWhere('kind', 'environment') ?? ($sixth && is_array($edit['background'] ?? null) ? $edit['background'] : null);
         $background = $sent === null ? null : ($sent['background'] ?? null);
         $beats = array_values(array_unique(array_map(static fn (array $item): string => (string) $item['beat'], (array) ($shot['coverage'] ?? []))));
         $characters = $fifth ? self::characterDescriptions((array) ($script['characters'] ?? [])) : (array) ($script['characters'] ?? []);
@@ -176,6 +208,23 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
             'images' => $images,
             'composition_policy' => $policy,
         ];
+
+        if ($sixth) {
+            $record = is_string($background) ? collect((array) ($pinned['input']['backgrounds'] ?? []))->first(static fn (mixed $row): bool => is_array($row) && ($row['id'] ?? null) === $background) : null;
+            $scene = collect((array) ($pinned['input']['scenes'] ?? []))->first(static fn (mixed $row): bool => is_array($row) && ($row['id'] ?? null) === ($shot['scene'] ?? null));
+            $payload['opening_frame']['operating_start'] = $shot['operating_start'] ?? null;
+
+            if (is_array($payload['background']) && is_array($record)) {
+                $payload['background'] = array_intersect_key($payload['background'], array_flip(['id', 'name', 'chosen_by'])) + array_intersect_key($record, array_flip(self::BACKGROUND_FIELDS));
+            }
+
+            $payload += [
+                'creation_mode' => $edit === null ? self::COMPOSE : self::EDIT,
+                'scene_emotion' => is_array($scene['emotion'] ?? null) ? ['scene' => (string) $scene['id'], 'start' => $scene['emotion']['start'] ?? null, 'end' => $scene['emotion']['end'] ?? null] : null,
+                'framing' => $framing === null ? null : ['master_aspect_ratio' => (string) $framing['master_aspect_ratio'], 'delivery_aspect_ratio' => (string) $framing['delivery_aspect_ratio']],
+                'edit' => $edit === null ? null : ['base_image' => $edit['base'], 'request' => ['faults' => array_values($edit['faults']), 'targets' => array_values($edit['targets']), 'note' => $edit['note']]],
+            ];
+        }
 
         return [
             'payload' => $payload,
@@ -322,6 +371,38 @@ final class MotoKeyframePrompt implements CheckedWorkflow, StructureChecked
         }
 
         return array_values(array_unique(array_map('strval', $ids)));
+    }
+
+    /**
+     * @param  array<string, mixed>  $request  what a person named as wrong in a candidate: its faults, what they point at and an optional short note
+     * @param  array<string, mixed>  $shot  the stored shot
+     * @param  array<string, array<string, mixed>>  $configurations
+     * @param  ?string  $background  the background the shot sends, null when it sends none
+     * @return ?string why the request cannot be sent: no fault or one this code does not know, a target that is no part, person or background of the shot, or a note over the limit; null when it can
+     */
+    public static function editRequestProblem(array $request, array $shot, array $configurations, ?string $background): ?string
+    {
+        $faults = $request['faults'] ?? null;
+
+        if (! is_array($faults) || $faults === [] || ! array_is_list($faults) || array_filter($faults, 'is_string') !== $faults || array_diff($faults, self::FAULTS) !== [] || count($faults) !== count(array_unique($faults))) {
+            return 'Chọn ít nhất một nhóm lỗi hợp lệ, mỗi nhóm một lần.';
+        }
+
+        $known = [
+            'part' => self::partIds($shot, $configurations),
+            'character' => array_values(array_map('strval', array_column((array) ($shot['people'] ?? []), 'character'))),
+            'background' => $background === null ? [] : [$background],
+        ];
+
+        foreach ((array) ($request['targets'] ?? []) as $target) {
+            if (! is_array($target) || ! in_array($target['type'] ?? null, self::TARGET_TYPES, true) || ! in_array($target['id'] ?? null, $known[$target['type']], true)) {
+                return 'Đối tượng cần sửa không thuộc shot: '.json_encode($target, JSON_UNESCAPED_UNICODE).'.';
+            }
+        }
+
+        $note = $request['note'] ?? null;
+
+        return $note === null || (is_string($note) && mb_strlen($note) <= self::NOTE_MAX_CHARS) ? null : 'Ghi chú sửa dài quá '.self::NOTE_MAX_CHARS.' ký tự.';
     }
 
     /**

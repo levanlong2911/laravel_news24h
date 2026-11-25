@@ -280,26 +280,43 @@ abstract class ShotPromptWriterService implements QueuedStageService
             }
 
             $prompt = (string) $evaluation['derived'][static::TEXT_KEY];
+            $entityType = $this->entityTypeOf($stage);
             $decision = VideoReviewDecision::create([
                 'project_id' => $projectId,
-                'entity_type' => static::ENTITY_TYPE,
+                'entity_type' => $entityType,
                 'entity_id' => (string) $stage->id,
                 'decision' => 'approved',
-                'revision' => 1 + (int) VideoReviewDecision::query()->where('entity_type', static::ENTITY_TYPE)->where('entity_id', (string) $stage->id)->max('revision'),
+                'revision' => 1 + (int) VideoReviewDecision::query()->where('entity_type', $entityType)->where('entity_id', (string) $stage->id)->max('revision'),
                 'reviewer_id' => $reviewer,
                 'metadata_json' => ['shot_id' => $shotId, 'shot_stage_id' => $shotStageId, 'source_fingerprint' => $fingerprint, 'prompt_sha256' => CanonicalJson::hashString($prompt)]
                     + ($modelStatus === 'ok' ? [] : ['approved_with_notes' => ['model_status' => $modelStatus, 'warnings' => array_values((array) ($evaluation['check']['warnings'] ?? []))]]),
             ]);
-            $metadata = $project->metadata_json ?? [];
-            $metadata[static::SELECTION][$shotStageId][$shotId] = [
+            $project->forceFill(['metadata_json' => $this->kept((array) ($project->metadata_json ?? []), $shotStageId, $shotId, $stage, [
                 'stage_id' => (string) $stage->id,
                 'decision_id' => (string) $decision->id,
                 'prompt_sha256' => CanonicalJson::hashString($prompt),
                 'source_fingerprint' => $fingerprint,
                 'approved_at' => now()->toIso8601String(),
-            ];
-            $project->forceFill(['metadata_json' => $metadata])->save();
+            ])])->save();
         });
+    }
+
+    /** @return string the entity a decision on the run is recorded under */
+    protected function entityTypeOf(VideoPlanningStage $stage): string
+    {
+        return static::ENTITY_TYPE;
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata  the metadata of the project
+     * @param  array<string, mixed>  $entry  the approved run, its decision, the hash of its prompt and the fingerprint of its sources
+     * @return array<string, mixed> the metadata with the run kept as the prompt its shot renders from
+     */
+    protected function kept(array $metadata, string $shotStageId, string $shotId, VideoPlanningStage $stage, array $entry): array
+    {
+        $metadata[static::SELECTION][$shotStageId][$shotId] = $entry;
+
+        return $metadata;
     }
 
     /**
@@ -341,22 +358,23 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
     /**
      * @param  ?array<string, mixed>  $selected  the approved prompt of the shot, selected()
-     * @param  \Closure(): array<string, mixed>  $package  package() of the shot, read with what the caller has already read
+     * @param  ?\Closure(): array<string, mixed>  $package  package() of the shot, read with what the caller has already read; null when what a new run sends is not known before a person asks for it, and then no estimate is given
+     * @param  ?list<VideoPlanningStage>  $stages  the runs the column is about, newest first; null reads every run of the shot
      * @return array<string, mixed> what the prompt column shows for the shot: the approved prompt and whether its sources still hold, the newest run and the run shown with its check, its history, what a new run sends and costs, and why one cannot be sent; reading it writes nothing
      */
-    protected function promptScreen(string $projectId, string $shotStageId, string $shotId, ?array $selected, \Closure $package): array
+    protected function promptScreen(string $projectId, string $shotStageId, string $shotId, ?array $selected, ?\Closure $package, ?array $stages = null): array
     {
         $unavailable = null;
         $estimate = null;
 
         try {
-            $estimate = $this->estimate($package());
+            $estimate = $package === null ? null : $this->estimate($package());
         } catch (RuntimeException $e) {
             $unavailable = $e->getMessage();
         }
 
         $adapter = static::ADAPTER;
-        $stages = $this->stagesOf($projectId, $shotStageId, $shotId);
+        $stages ??= $this->stagesOf($projectId, $shotStageId, $shotId);
         $latest = $stages[0] ?? null;
         $succeeded = array_values(array_filter($stages, static fn (VideoPlanningStage $stage): bool => $stage->status === VideoPlanningStageStatus::SUCCEEDED->value));
         $shown = $succeeded[0] ?? null;
@@ -491,7 +509,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
      *
      * @throws RuntimeException when a file of the run is gone, changed or unreadable; no model is called
      */
-    private function prepared(array $package): array
+    protected function prepared(array $package): array
     {
         [$images, $sent] = $this->images($package['sources'], $package['run']['settings']);
 
@@ -724,7 +742,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
      * @param  array<string, mixed>  $evaluation
      * @return array<string, mixed>
      */
-    private function output(array $run, array $evaluation): array
+    protected function output(array $run, array $evaluation): array
     {
         return [
             'execution' => $run['input']['execution'],

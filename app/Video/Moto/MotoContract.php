@@ -160,6 +160,9 @@ final class MotoContract
     /** @var string the input the keyframe prompts before Phase 9 revision 7 were written from; a stored run that pinned it is prepared again exactly as it was */
     public const KEYFRAME_PROMPT_INPUT_V4 = 'moto-keyframe-prompt-input-v4';
 
+    /** @var string the input a release names in its keyframe_prompt policy: the fifth with the operating state the shot opens in, the whole record of the background as the shot plan pinned it, the emotion of the scene as story context, the framing of the master and of the image handed to the video, and the way the image is made — composed from the references or edited from a chosen candidate */
+    public const KEYFRAME_PROMPT_INPUT_V6 = 'moto-keyframe-prompt-input-v6';
+
     public const KEYFRAME_PROMPT_FORMAT = 'moto-keyframe-prompt-v1';
 
     public const KEYFRAME_PROMPT_EXECUTION = 'db-moto-phase-9-v1';

@@ -14,6 +14,8 @@ use App\Models\VideoReviewDecision;
 use App\Video\Environment\EnvironmentPlatePrompt;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Media\OpenAiImagePricing;
+use App\Video\Moto\MotoContract;
+use App\Video\Moto\MotoKeyframePrompt;
 use App\Video\Queue\VideoQueues;
 use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Superyacht\Support\CanonicalJson;
@@ -28,6 +30,20 @@ final class MotoKeyframeService implements QueuedImageService
     public const STEP = 'moto_keyframe';
 
     public const SPEC_VERSION = 'moto-keyframe-v1';
+
+    /** @var string the render spec a release names in its keyframe policy: every candidate says how it was made, composed or edited, and pins the prompt it was sent with and the decision that approved that prompt */
+    public const SPEC_VERSION_V2 = MotoKeyframeSourceService::SPEC_V2;
+
+    /** @var array<string, string> how the screen names each fault a person may point at in a candidate */
+    public const FAULT_LABELS = [
+        'identity' => 'Nhận diện',
+        'geometry' => 'Hình học',
+        'state' => 'Trạng thái',
+        'people' => 'Nhân vật / tương tác',
+        'set' => 'Bối cảnh / đạo cụ',
+        'lighting' => 'Ánh sáng / vật liệu',
+        'camera' => 'Camera / bố cục',
+    ];
 
     /** @var list<string> the Gemini models the keyframe screen offers next to the OpenAI ones */
     private const GEMINI_MODELS = ['gemini-nano-banana-2.1'];
@@ -81,24 +97,31 @@ final class MotoKeyframeService implements QueuedImageService
         private readonly ShotRenderPlanService $plans,
         private readonly DesignImageStore $store,
         private readonly OpenAiImagePricing $pricing,
+        private readonly MotoKeyframeFramingService $framing,
     ) {}
 
-    /** @return array<string, mixed> everything the Keyframes screen shows; reading it writes nothing */
-    public function panel(string $projectId): array
+    /**
+     * @param  ?string  $onlyShot  the one shot whose row is read, for a part of the screen that is drawn again alone; null reads every shot
+     * @return array<string, mixed> everything the Keyframes screen shows; reading it writes nothing
+     */
+    public function panel(string $projectId, ?string $onlyShot = null): array
     {
         try {
             $context = $this->sources->context($projectId);
         } catch (RuntimeException $e) {
-            return ['error' => $e->getMessage(), 'stage' => null, 'token' => null, 'aspect_ratio' => null, 'rows' => [], 'counts' => [], 'states' => self::STATES];
+            return ['error' => $e->getMessage(), 'stage' => null, 'token' => null, 'aspect_ratio' => null, 'frame_ratio' => null, 'framing' => null, 'rows' => [], 'counts' => [], 'states' => self::STATES];
         }
 
-        $rows = array_values(array_map(fn (array $shot): array => $this->row($context, $shot), $context['shots']));
+        $shots = $onlyShot === null ? $context['shots'] : array_intersect_key($context['shots'], [$onlyShot => true]);
+        $rows = array_values(array_map(fn (array $shot): array => $this->row($context, $shot), $shots));
 
         return [
             'error' => null,
             'stage' => $context['stage'],
             'token' => $context['approved']['token'],
             'aspect_ratio' => $context['aspect_ratio'],
+            'frame_ratio' => $context['frame_ratio'],
+            'framing' => $context['framing'],
             'rows' => $rows,
             'counts' => array_count_values(array_column($rows, 'state')),
             'states' => self::STATES,
@@ -196,29 +219,112 @@ final class MotoKeyframeService implements QueuedImageService
 
             $scene = $this->plans->ensure($projectId, $context['approved'], $shotId);
 
-            return [$this->store->createSceneCandidate($scene, [
-                'project_id' => $projectId,
-                'operation' => 'scene_keyframe',
-                'spec_version' => self::SPEC_VERSION,
-                'shot_id' => $shotId,
-                'shot_stage_id' => (string) $context['stage']->id,
-                'planning_revision' => (int) $context['stage']->planning_revision,
-                'source_token' => $context['approved']['token'],
-                'render_scene_id' => (string) $scene->id,
-                'prompt' => (string) $row['prompt']['text'],
-                'image_sha256' => (string) $row['prompt']['sha256'],
-                'composer' => (string) $row['prompt']['version'],
-                'prompt_source' => ['stage_id' => (string) $row['prompt']['stage_id'], 'decision_id' => (string) $row['prompt']['decision_id'], 'source_fingerprint' => (string) $row['prompt']['fingerprint']],
-                'sources' => $row['sources'],
-                'reference_manifest_hash' => CanonicalJson::hash($row['sources']),
-                'model' => $row['settings']['model'],
-                'variations' => 1,
-                'pricing' => $row['settings']['pricing'],
-                'operation_id' => $operation,
-                'request_hash' => $previewHash,
-            ] + self::providerSpec($row, (string) $context['aspect_ratio']), $identity), 'created'];
+            return [$this->store->createSceneCandidate($scene, self::spec($context, $row, (string) $scene->id, $row['prompt'], $row['sources'], $operation, $previewHash)
+                + ($context['spec_version'] === self::SPEC_VERSION_V2 ? ['creation_mode' => MotoKeyframePrompt::COMPOSE] : []), $identity), 'created'];
         };
 
+        return $this->send($create, $requester);
+    }
+
+    /**
+     * @param  string  $artifactId  the rendered file of the candidate to edit
+     * @param  string  $stageId  the edit prompt a person approved for that candidate, as the screen showed it
+     * @param  ?array{id: string, name: string}  $requester
+     * @return array{0: ?VideoDesignImage, 1: string} reason queued, rendered, failed, already_exists, or why nothing was sent. The result is a new candidate that names the one it was edited from; the candidate edited, its file and the keyframe in use are not written
+     */
+    public function renderEdit(string $projectId, string $shotId, string $artifactId, string $stageId, string $previewHash, string $operation, ?array $requester = null): array
+    {
+        if (! Str::isUuid($operation)) {
+            return [null, 'Mã lượt render không hợp lệ.'];
+        }
+
+        $create = function () use ($projectId, $shotId, $artifactId, $stageId, $previewHash, $operation): array {
+            VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+            $identity = hash('sha256', 'moto_keyframe|'.$projectId.'|'.$operation);
+            $existing = VideoDesignImage::query()->where('project_id', $projectId)->where('prompt_sha256', $identity)->first();
+
+            if ($existing !== null) {
+                return hash_equals((string) ($existing->prompt_spec_json['request_hash'] ?? ''), $previewHash)
+                    ? [$existing, 'already_exists']
+                    : [null, 'Mã thao tác đã dùng cho một lượt render khác — tải lại trang.'];
+            }
+
+            $context = $this->sources->context($projectId);
+            $shot = $context['shots'][$shotId] ?? null;
+
+            if ($shot === null) {
+                return [null, "Shot {$shotId} không có trong kế hoạch shot đã duyệt."];
+            }
+
+            $row = $this->row($context, $shot, true);
+            $edit = collect($row['candidates'])->first(static fn (array $candidate): bool => (string) $candidate['artifact']?->id === $artifactId)['edit'] ?? null;
+
+            if ($edit === null) {
+                return [null, 'Ảnh này không sửa được: không phải ứng viên còn hiệu lực của shot.'];
+            }
+
+            if ($edit['problems'] !== []) {
+                return [null, implode(' · ', $edit['problems'])];
+            }
+
+            if (($edit['prompt']['stage_id'] ?? null) !== $stageId || ! hash_equals((string) $edit['preview_hash'], $previewHash)) {
+                return [null, 'Prompt sửa hoặc nguồn đã đổi so với lúc xem — tải lại trang, chưa render.'];
+            }
+
+            if ($row['busy']) {
+                return [null, "Shot {$shotId} đang có một lượt chờ hoặc đang render."];
+            }
+
+            $scene = $this->plans->ensure($projectId, $context['approved'], $shotId);
+
+            return [$this->store->createSceneCandidate($scene, self::spec($context, $row, (string) $scene->id, $edit['prompt'], $edit['sources'], $operation, $previewHash) + [
+                'creation_mode' => MotoKeyframePrompt::EDIT,
+                'edit' => ['base_image_id' => (string) $edit['sources'][0]['image_id'], 'base_artifact_id' => (string) $edit['sources'][0]['artifact_id'], 'base_sha256' => (string) $edit['sources'][0]['sha256'], 'request' => $edit['request']],
+            ], $identity), 'created'];
+        };
+
+        return $this->send($create, $requester);
+    }
+
+    /**
+     * @param  array<string, mixed>  $context  MotoKeyframeSourceService::context()
+     * @param  array<string, mixed>  $row  the keyframe row being rendered
+     * @param  array<string, mixed>  $prompt  the approved prompt the render sends word for word, with its run, its decision and the fingerprint of its sources
+     * @param  list<array<string, mixed>>  $sources  the manifest the render sends, in order
+     * @return array<string, mixed> the render spec of one candidate, frozen with the request: the shot plan it is made from, the prompt and the decision that approved it, the manifest, the model, quality and size, and the framing of the release when it has one
+     */
+    private static function spec(array $context, array $row, string $sceneId, array $prompt, array $sources, string $operation, string $previewHash): array
+    {
+        return [
+            'project_id' => (string) $context['project_id'],
+            'operation' => 'scene_keyframe',
+            'spec_version' => (string) $context['spec_version'],
+            'shot_id' => (string) $row['shot']['id'],
+            'shot_stage_id' => (string) $context['stage']->id,
+            'planning_revision' => (int) $context['stage']->planning_revision,
+            'source_token' => $context['approved']['token'],
+            'render_scene_id' => $sceneId,
+            'prompt' => (string) $prompt['text'],
+            'image_sha256' => (string) $prompt['sha256'],
+            'composer' => (string) $prompt['version'],
+            'prompt_source' => ['stage_id' => (string) $prompt['stage_id'], 'decision_id' => (string) $prompt['decision_id'], 'source_fingerprint' => (string) $prompt['fingerprint']],
+            'sources' => $sources,
+            'reference_manifest_hash' => CanonicalJson::hash($sources),
+            'model' => $row['settings']['model'],
+            'variations' => 1,
+            'pricing' => $row['settings']['pricing'],
+            'operation_id' => $operation,
+            'request_hash' => $previewHash,
+        ] + self::providerSpec($row, (string) $context['frame_ratio']) + ($context['framing'] === null ? [] : ['framing' => $context['framing']]);
+    }
+
+    /**
+     * @param  \Closure(): array{0: ?VideoDesignImage, 1: string}  $create  what stores the candidate of one operation, or says why none is stored
+     * @param  ?array{id: string, name: string}  $requester
+     * @return array{0: ?VideoDesignImage, 1: string} the candidate queued for a worker, or rendered in this request when no queue runs
+     */
+    private function send(\Closure $create, ?array $requester): array
+    {
         try {
             if (VideoQueues::enabled()) {
                 return app(ImageRenderQueue::class)->createQueued(
@@ -368,10 +474,10 @@ final class MotoKeyframeService implements QueuedImageService
                 throw new RuntimeException("Shot {$shotId} không có trong kế hoạch shot đã duyệt.");
             }
 
-            $entry = collect($this->modelsFor($context['aspect_ratio']))->firstWhere('model', $model);
+            $entry = collect($this->modelsFor($context['frame_ratio'], $context['framing']))->firstWhere('model', $model);
 
             if ($entry === null || ! in_array($size, $entry['sizes'], true) || ($entry['qualities'] === [] ? $quality !== '' : ! in_array($quality, $entry['qualities'], true))) {
-                throw new RuntimeException('Model, chất lượng hoặc size không hợp lệ cho khung '.$context['aspect_ratio'].'.');
+                throw new RuntimeException('Model, chất lượng hoặc size không hợp lệ cho khung '.$context['frame_ratio'].'.');
             }
 
             $meta = $project->metadata_json ?? [];
@@ -383,26 +489,47 @@ final class MotoKeyframeService implements QueuedImageService
 
     /**
      * @param  ?string  $reviewer  who decides
-     * @return void the keyframe is the one the shot uses now, the one before it stays in the history, other shots do not change
+     * @param  ?string  $deliveryId  for a candidate rendered under a framing, the image cut from it that the person approves with it; the set of the two is what the shot uses from now on
+     * @param  ?string  $expectedInUse  the decision that held the keyframe of the shot when the person looked, an empty string for none; null does not ask
+     * @return void the keyframe is the one the shot uses now, the one before it stays in the history, other shots do not change. Every file, hash and source of the set is read again before the decision is stored, and a prompt, an edit or a window that was only tried never takes the place of the set in use
      *
-     * @throws RuntimeException when the keyframe is not of this shot, was made from what is no longer in use or its file cannot be read
+     * @throws RuntimeException when the keyframe is not of this shot, was made from what is no longer in use, its file cannot be read, a candidate rendered under a framing comes without a delivery image that stands, or the keyframe in use changed since the person looked
      */
-    public function approve(string $projectId, string $shotId, string $artifactId, ?string $reviewer): void
+    public function approve(string $projectId, string $shotId, string $artifactId, ?string $reviewer, ?string $deliveryId = null, ?string $expectedInUse = null): void
     {
-        DB::transaction(function () use ($projectId, $shotId, $artifactId, $reviewer): void {
+        DB::transaction(function () use ($projectId, $shotId, $artifactId, $reviewer, $deliveryId, $expectedInUse): void {
             VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
             $context = $this->sources->context($projectId);
             [$artifact, $image] = $this->candidate($context, $shotId, $artifactId);
+            $before = $this->sources->approvedFrame($context, $shotId);
+
+            if ($expectedInUse !== null && $expectedInUse !== (string) ($before['approval']['decision_id'] ?? '')) {
+                throw new RuntimeException("Bộ keyframe đang dùng của {$shotId} đã đổi ở nơi khác — tải lại rồi duyệt.");
+            }
+
             $problem = $this->sources->imageProblem($context, $image, true);
 
             if ($problem !== null) {
                 throw new RuntimeException($problem.' — không duyệt được.');
             }
 
-            $file = $this->sources->outputProblem($artifact, (array) $image->prompt_spec_json, true);
+            $spec = (array) $image->prompt_spec_json;
+            $file = $this->sources->outputProblem($artifact, $spec, true);
 
             if ($file !== null) {
                 throw new RuntimeException($file.' — không duyệt được.');
+            }
+
+            $delivery = null;
+
+            if (is_array($spec['framing'] ?? null)) {
+                $delivery = collect(MotoKeyframeFramingService::deliveries($image, $artifact))->first(static fn (VideoArtifact $cut): bool => (string) $cut->id === $deliveryId)
+                    ?? throw new RuntimeException('Chưa có ảnh video của ảnh này — bấm "Áp dụng khung" rồi duyệt bộ ảnh.');
+                $cut = $this->framing->problem($delivery, $artifact, $spec['framing'], true);
+
+                if ($cut !== null) {
+                    throw new RuntimeException($cut.' — không duyệt được.');
+                }
             }
 
             $previous = isset($context['current'][$shotId]) ? (string) $context['current'][$shotId]->selected_artifact_id : null;
@@ -417,7 +544,46 @@ final class MotoKeyframeService implements QueuedImageService
                 throw new RuntimeException('Không duyệt được ảnh này ('.$reason.').');
             }
 
-            $this->decide($context, $shotId, $artifact, $image, 'approved', $reviewer, ['previous_artifact_id' => $previous]);
+            if ($delivery !== null && $previous === (string) $artifact->id && (string) ($before['delivery']?->id ?? '') !== (string) $delivery->id) {
+                app(ShotIntentService::class)->invalidateForKeyframe((string) $image->render_scene_id);
+            }
+
+            $this->decide($context, $shotId, $artifact, $image, 'approved', $reviewer, ['previous_artifact_id' => $previous]
+                + (($spec['spec_version'] ?? null) === self::SPEC_VERSION_V2 ? ['spec_version' => self::SPEC_VERSION_V2, 'source_token' => $context['approved']['token'], 'prompt' => (array) ($spec['prompt_source'] ?? []) + ['sha256' => $spec['image_sha256'] ?? null], 'master' => ['artifact_id' => (string) $artifact->id, 'sha256' => (string) $artifact->sha256]] : [])
+                + ($delivery === null ? [] : ['delivery' => ['artifact_id' => (string) $delivery->id, 'sha256' => (string) $delivery->sha256, 'width' => (int) $delivery->width, 'height' => (int) $delivery->height], 'crop' => $delivery->metadata_json['crop'] ?? null, 'crop_hash' => $delivery->metadata_json['crop_hash'] ?? null]));
+        });
+    }
+
+    /**
+     * @param  string  $artifactId  the rendered file of a candidate of the shot
+     * @param  array{x: int, y: int, width: int, height: int}  $rectangle  the window of the delivery frame, in pixels of that file
+     * @return VideoArtifact the image handed to the video for that window, made now or already made from the same file and window; it is a candidate until a person approves the set, and the keyframe in use is not written. No model is called
+     *
+     * @throws RuntimeException when the candidate was not rendered under a framing, was made from what is no longer in use, its file cannot be read, or the window cannot be cut from it
+     */
+    public function applyFrame(string $projectId, string $shotId, string $artifactId, array $rectangle): VideoArtifact
+    {
+        return DB::transaction(function () use ($projectId, $shotId, $artifactId, $rectangle): VideoArtifact {
+            VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+            $context = $this->sources->context($projectId);
+            [$artifact, $image] = $this->candidate($context, $shotId, $artifactId);
+            $spec = (array) $image->prompt_spec_json;
+
+            if (! is_array($spec['framing'] ?? null)) {
+                throw new RuntimeException('Ảnh này không render theo chính sách khung — không có ảnh video riêng.');
+            }
+
+            if (! in_array($image->status, [DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value, DesignImageStatus::SUPERSEDED->value], true)) {
+                throw new RuntimeException('Ảnh chưa render xong — chưa chọn khung được.');
+            }
+
+            $problem = $this->sources->imageProblem($context, $image, true) ?? $this->sources->outputProblem($artifact, $spec, true);
+
+            if ($problem !== null) {
+                throw new RuntimeException($problem.' — không tạo ảnh video.');
+            }
+
+            return $this->framing->apply($image, $artifact, $rectangle, $spec['framing']);
         });
     }
 
@@ -448,15 +614,13 @@ final class MotoKeyframeService implements QueuedImageService
     public function approvedKeyframe(string $projectId, string $shotId): ?array
     {
         $context = $this->sources->context($projectId);
-        $image = $context['current'][$shotId] ?? null;
+        $frame = $this->sources->approvedFrame($context, $shotId);
 
-        if ($image === null || $this->sources->keyframeProblem($context, $image) !== null) {
+        if ($frame === null || $frame['handoff'] === null || $this->sources->keyframeProblem($context, $frame['image']) !== null) {
             return null;
         }
 
-        $artifact = $image->artifacts->firstWhere('id', (string) $image->selected_artifact_id);
-
-        return $artifact === null ? null : ['image_id' => (string) $image->id, 'artifact_id' => (string) $artifact->id, 'sha256' => (string) $artifact->sha256, 'render_scene_id' => (string) $image->render_scene_id];
+        return ['image_id' => (string) $frame['image']->id, 'artifact_id' => (string) $frame['handoff']->id, 'sha256' => (string) $frame['handoff']->sha256, 'render_scene_id' => (string) $frame['image']->render_scene_id];
     }
 
     /**
@@ -474,13 +638,18 @@ final class MotoKeyframeService implements QueuedImageService
         $problems = [...$built['problems'], ...$settings['problems']];
         $sourced = $problems === [];
 
+        $contract = $prompt === null ? null : ($context['prompt_contracts'][$prompt['stage_id']] ?? null);
+        $framed = is_array($context['framing'] ?? null) ? array_intersect_key($context['framing'], array_flip(['version', 'master_aspect_ratio', 'delivery_aspect_ratio', 'delivery_width', 'delivery_height'])) : null;
+
         if ($prompt === null) {
             $problems[] = 'Chưa có prompt ảnh đã duyệt — viết prompt ảnh bằng AI rồi duyệt trước khi render.';
         } elseif ($writer['stale']) {
             $problems[] = 'Nguồn đã đổi — cần viết hoặc duyệt lại prompt ảnh.';
+        } elseif ($framed !== null && (($contract['inputs'] ?? null) !== MotoContract::KEYFRAME_PROMPT_INPUT_V6 || ($contract['framing'] ?? null) != $framed)) {
+            $problems[] = 'Prompt ảnh đã duyệt viết theo đầu vào '.($contract['inputs'] ?? '—').' cho khung của phim, chưa theo khung ảnh gốc '.$framed['master_aspect_ratio'].' / ảnh video '.$framed['delivery_aspect_ratio'].' — viết lại prompt ảnh rồi duyệt trước khi render.';
         }
 
-        $candidates = $this->candidates($context, $shot);
+        $candidates = $this->candidates($context, $shot, $built, $settings, $deep);
         $states = array_column($candidates, 'state');
         $inUse = array_column(array_filter($candidates, static fn (array $row): bool => $row['image']->status === DesignImageStatus::APPROVED->value), 'state');
         $busy = array_intersect($states, ['queued', 'rendering']) !== [];
@@ -514,31 +683,66 @@ final class MotoKeyframeService implements QueuedImageService
                 'prompt' => $prompt === null ? null : ['stage_id' => $prompt['stage_id'], 'sha256' => $prompt['sha256']],
                 'sources' => $built['sources'],
                 'variations' => 1,
-            ]),
+            ] + ($context['spec_version'] === self::SPEC_VERSION ? [] : ['spec_version' => $context['spec_version'], 'framing' => $context['framing']])),
             'candidates' => $candidates,
             'state' => $state,
             'busy' => $busy,
             'renderable' => $problems === [] && ! $busy,
             'has_candidates' => $candidates !== [],
+            'in_use_decision' => (string) ($this->sources->approvedFrame($context, (string) $shot['id'])['approval']['decision_id'] ?? ''),
+            'edit_form' => $this->editable($context) ? [
+                'faults' => self::FAULT_LABELS,
+                'targets' => self::targets($context, $shot, $built),
+                'references' => array_map(static fn (array $source): array => ['artifact_id' => (string) $source['artifact_id'], 'code' => (string) $source['image_code'], 'kind' => (string) $source['kind']], $built['sources']),
+                'limit' => (int) $context['limit'],
+            ] : null,
+        ];
+    }
+
+    /** @param  array<string, mixed>  $context */
+    private function editable(array $context): bool
+    {
+        return ($context['edits'] ?? false) && $context['spec_version'] === self::SPEC_VERSION_V2;
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $shot
+     * @param  array<string, mixed>  $built  the cards of the shot
+     * @return list<array{type: string, id: string, label: string}> what a fault of an edit may point at in this shot: every part it names, every person of the clip and the background it sends, each by its id
+     */
+    private static function targets(array $context, array $shot, array $built): array
+    {
+        $environment = collect($built['sources'])->firstWhere('kind', 'environment');
+
+        return [
+            ...array_map(static fn (string $id): array => ['type' => 'part', 'id' => $id, 'label' => trim($id.' '.($context['part_names'][$id] ?? ''))], MotoKeyframePrompt::partIds($shot, (array) $context['configurations'])),
+            ...array_map(static fn (string $id): array => ['type' => 'character', 'id' => $id, 'label' => $id], array_values(array_unique(array_map('strval', array_column((array) ($shot['people'] ?? []), 'character'))))),
+            ...($environment === null ? [] : [['type' => 'background', 'id' => (string) $environment['target'], 'label' => trim($environment['target'].' '.($environment['title'] ?? ''))]]),
         ];
     }
 
     /**
      * @param  array<string, mixed>  $context
      * @param  array<string, mixed>  $shot
-     * @return list<array<string, mixed>> every keyframe of the shot in this shot plan, the one in use first and then the newest, with its state and whether it can be approved or revoked
+     * @param  array<string, mixed>  $built  the cards of the shot
+     * @param  array<string, mixed>  $settings  the image settings of the shot
+     * @return list<array<string, mixed>> every keyframe of the shot in this shot plan, the one in use first and then the newest, with its state and whether it can be approved or revoked; a candidate rendered under a framing with the windows cut from it, and a candidate that still stands with the edit a person may ask of it
      */
-    private function candidates(array $context, array $shot): array
+    private function candidates(array $context, array $shot, array $built, array $settings, bool $deep = false): array
     {
         $list = [];
 
         foreach ($context['images'][$shot['id']] ?? [] as $image) {
-            $artifact = $image->artifacts->firstWhere('id', (string) $image->selected_artifact_id) ?? $image->artifacts->sortByDesc('created_at')->first();
+            $artifact = MotoKeyframeFramingService::master($image);
             $spec = (array) $image->prompt_spec_json;
             $task = ImageRenderQueue::taskOf($image);
             $finished = in_array($image->status, [DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value, DesignImageStatus::SUPERSEDED->value], true);
             $problem = $finished ? $this->sources->imageProblem($context, $image) : null;
-            $file = ! $finished ? null : ($artifact === null ? 'File ảnh không còn' : $this->sources->outputProblem($artifact, $spec, $image->status === DesignImageStatus::APPROVED->value));
+            $rendered = ! $finished || $artifact === null ? null : $this->sources->outputProblem($artifact, $spec, $image->status === DesignImageStatus::APPROVED->value);
+            $file = ! $finished ? null : ($artifact === null ? 'File ảnh không còn' : ($image->status === DesignImageStatus::APPROVED->value ? $this->sources->frameProblem($image) : $rendered));
+            $stands = $finished && $artifact !== null && $problem === null && $rendered === null;
+            $framing = is_array($spec['framing'] ?? null) ? $spec['framing'] : null;
             $state = match (true) {
                 ($task['status'] ?? null) === 'pending' => 'queued',
                 ($task['status'] ?? null) === 'running' => 'rendering',
@@ -561,6 +765,8 @@ final class MotoKeyframeService implements QueuedImageService
                 'file_problem' => $file,
                 'approvable' => $artifact !== null && $problem === null && $file === null && in_array($state, ['awaiting', 'superseded'], true),
                 'revocable' => $artifact !== null && $image->status === DesignImageStatus::APPROVED->value,
+                'frame' => $framing === null || $artifact === null || ! $finished ? null : $this->frame($context, $image, $artifact, $framing, $stands),
+                'edit' => $stands && $this->editable($context) && ($spec['framing'] ?? null) == $context['framing'] ? $this->edit($context, $shot, $built, $settings, $image, $artifact, $deep) : null,
             ];
         }
 
@@ -571,14 +777,92 @@ final class MotoKeyframeService implements QueuedImageService
 
     /**
      * @param  array<string, mixed>  $context
-     * @return array{0: VideoArtifact, 1: VideoDesignImage}
+     * @param  array<string, mixed>  $framing  the framing the candidate was rendered under
+     * @param  bool  $stands  whether the candidate was made from what is still in use and its rendered file reads as stored
+     * @return array<string, mixed> what the screen shows of the window handed to the video: the size of the rendered file, the unit and the smallest and largest multiple of a window, the centred window, whether a window can be cut now, the delivery image the approved set uses, and every delivery image cut from the file with its window, whether it still stands and whether a person may approve the set with it
+     */
+    private function frame(array $context, VideoDesignImage $image, VideoArtifact $master, array $framing, bool $stands): array
+    {
+        $shotId = (string) ($image->prompt_spec_json['shot_id'] ?? '');
+        $current = $context['current'][$shotId] ?? null;
+        $inUse = $current !== null && (string) $current->id === (string) $image->id ? ($this->sources->approvedFrame($context, $shotId)['delivery'] ?? null) : null;
+        $default = MotoKeyframeFramingService::defaultRectangle((int) $master->width, (int) $master->height, $framing);
+
+        return [
+            'width' => (int) $master->width,
+            'height' => (int) $master->height,
+            'unit' => $framing['unit'],
+            'k_min' => (int) $framing['k_min'],
+            'k_max' => $default === null ? 0 : intdiv($default['width'], $framing['unit'][0]),
+            'default' => $default,
+            'delivery_size' => $framing['delivery_width'].'x'.$framing['delivery_height'],
+            'can_apply' => $stands && $default !== null,
+            'in_use' => $inUse === null ? null : (string) $inUse->id,
+            'deliveries' => array_map(function (VideoArtifact $delivery) use ($master, $framing, $stands, $inUse): array {
+                $problem = $this->framing->problem($delivery, $master, $framing, false);
+
+                return [
+                    'artifact' => $delivery,
+                    'crop' => (array) ($delivery->metadata_json['crop'] ?? []),
+                    'problem' => $problem,
+                    'in_use' => $inUse !== null && (string) $inUse->id === (string) $delivery->id,
+                    'approvable' => $stands && $problem === null && ! ($inUse !== null && (string) $inUse->id === (string) $delivery->id),
+                ];
+            }, MotoKeyframeFramingService::deliveries($image, $master)),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $shot
+     * @param  array<string, mixed>  $built  the cards of the shot
+     * @param  array<string, mixed>  $settings  the image settings of the shot
+     * @return array<string, mixed> what the screen shows of the edit of a candidate: the edit runs written for it and the one approved, the request that one was written for, the manifest a render of it sends — the candidate first, then the reference images the person kept — why it cannot render, and the hash of what a render would send
+     */
+    private function edit(array $context, array $shot, array $built, array $settings, VideoDesignImage $image, VideoArtifact $master, bool $deep): array
+    {
+        $shotId = (string) $shot['id'];
+        $artifactId = (string) $master->id;
+        $screen = $this->writer->editScreen((string) $context['project_id'], $context, $shot, $built, $settings, $artifactId);
+        $prompt = $context['edit_prompts'][$shotId][$artifactId] ?? null;
+        $manifest = $prompt === null ? ['sources' => [], 'problems' => []] : $this->sources->editSources($context, $shot, $image, $built, array_values((array) ($prompt['request']['references'] ?? [])), $deep);
+        $problems = [
+            ...$settings['problems'],
+            ...($prompt === null ? ['Chưa có prompt sửa đã duyệt cho ảnh này — viết yêu cầu sửa rồi duyệt prompt trước khi render.'] : ($screen['stale'] ? ['Nguồn đã đổi — cần viết hoặc duyệt lại prompt sửa.'] : [])),
+            ...$manifest['problems'],
+        ];
+
+        return [
+            'screen' => $screen,
+            'prompt' => $prompt,
+            'request' => $prompt === null ? null : array_intersect_key((array) $prompt['request'], array_flip(['faults', 'targets', 'note'])),
+            'sources' => $manifest['sources'],
+            'problems' => $problems,
+            'renderable' => $problems === [],
+            'preview_hash' => CanonicalJson::hash([
+                'token' => $context['approved']['token'],
+                'shot_id' => $shotId,
+                'edit_of' => $artifactId,
+                'prompt' => $prompt === null ? null : ['stage_id' => $prompt['stage_id'], 'sha256' => $prompt['sha256']],
+                'sources' => $manifest['sources'],
+                'settings' => array_intersect_key($settings, array_flip(['model', 'quality', 'size'])),
+                'variations' => 1,
+                'spec_version' => $context['spec_version'],
+                'framing' => $context['framing'],
+            ]),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $context
+     * @return array{0: VideoArtifact, 1: VideoDesignImage} the rendered file of a candidate of the shot and its image; an image cut from a rendered file is never a candidate of its own
      *
      * @throws RuntimeException when the artifact is not a keyframe of this shot in the approved shot plan
      */
     private function candidate(array $context, string $shotId, string $artifactId): array
     {
         foreach ($context['images'][$shotId] ?? [] as $image) {
-            $artifact = $image->artifacts->firstWhere('id', $artifactId);
+            $artifact = $image->artifacts->first(static fn (VideoArtifact $file): bool => (string) $file->id === $artifactId && $file->role !== MotoKeyframeFramingService::DELIVERY_ROLE);
 
             if ($artifact !== null) {
                 return [$artifact, $image];
@@ -612,7 +896,9 @@ final class MotoKeyframeService implements QueuedImageService
      */
     public function settingsFor(array $context, array $shot): array
     {
-        $models = $this->modelsFor($context['aspect_ratio']);
+        $ratio = (string) ($context['frame_ratio'] ?? $context['aspect_ratio']);
+        $framing = $context['framing'] ?? null;
+        $models = $this->modelsFor($ratio, $framing);
         $saved = (array) ($context['choices'][$shot['id']] ?? []);
         $entry = collect($models)->firstWhere('model', $saved['model'] ?? null) ?? collect($models)->firstWhere('default', true) ?? ($models[0] ?? null);
 
@@ -631,7 +917,7 @@ final class MotoKeyframeService implements QueuedImageService
             'models' => $models,
             'sizes' => $entry['sizes'],
             'qualities' => $entry['qualities'],
-            'problems' => $size === '' ? ['Model '.$entry['model'].' không có size cho khung '.$context['aspect_ratio'].'.'] : [],
+            'problems' => $size === '' ? ['Model '.$entry['model'].' không có size cho khung '.$ratio.($framing === null ? '' : ' đủ tạo ảnh video '.$framing['delivery_width'].'x'.$framing['delivery_height']).'.'] : [],
         ];
     }
 
@@ -683,9 +969,14 @@ final class MotoKeyframeService implements QueuedImageService
         return $this->pricing->unitFor($settings['model'], $settings['quality']);
     }
 
-    /** @return list<array<string, mixed>> the image models of the keyframe task, each with only the sizes of this frame and the qualities it supports; a Gemini model has no quality, its sizes are the image sizes when it offers the frame, with their prices */
-    private function modelsFor(string $aspectRatio): array
+    /**
+     * @param  ?array<string, mixed>  $framing  the framing of the release, whose master sizes are the only ones offered for a provider it names
+     * @return list<array<string, mixed>> the image models of the keyframe task, each with only the sizes of this frame and the qualities it supports; a Gemini model has no quality, its sizes are the image sizes when it offers the frame, with their prices
+     */
+    private function modelsFor(string $aspectRatio, ?array $framing = null): array
     {
+        $held = static fn (string $provider, array $sizes): array => isset($framing['master_sizes'][$provider]) ? array_values(array_intersect($sizes, $framing['master_sizes'][$provider])) : $sizes;
+
         if ($this->models === null) {
             try {
                 $this->models = array_values(array_filter(
@@ -698,7 +989,7 @@ final class MotoKeyframeService implements QueuedImageService
             }
         }
 
-        return array_map(static function (array $entry) use ($aspectRatio): array {
+        return array_map(static function (array $entry) use ($aspectRatio, $held): array {
             if ($entry['provider'] === 'gemini') {
                 $controls = (array) $entry['controls'];
 
@@ -710,7 +1001,7 @@ final class MotoKeyframeService implements QueuedImageService
                     'pricing' => (string) $entry['pricing'],
                     'default_size' => (string) $controls['default_image_size'],
                     'default_quality' => '',
-                    'sizes' => in_array($aspectRatio, (array) $controls['aspect_ratios'], true) ? array_values((array) $controls['image_sizes']) : [],
+                    'sizes' => in_array($aspectRatio, (array) $controls['aspect_ratios'], true) ? $held('gemini', array_values((array) $controls['image_sizes'])) : [],
                     'qualities' => [],
                     'prices' => (array) ($controls['prices'] ?? []),
                     'pricing_version' => $entry['pricing_version'] ?? null,
@@ -729,7 +1020,7 @@ final class MotoKeyframeService implements QueuedImageService
                 'pricing' => (string) $entry['pricing'],
                 'default_size' => (string) $entry['controls']['default_size'],
                 'default_quality' => (string) $entry['controls']['default_quality'],
-                'sizes' => array_values(array_filter((array) $entry['controls']['sizes'], static fn (string $size): bool => self::ratio($size) === $aspectRatio)),
+                'sizes' => $held('openai', array_values(array_filter((array) $entry['controls']['sizes'], static fn (string $size): bool => self::ratio($size) === $aspectRatio))),
                 'qualities' => array_values(array_filter((array) $entry['controls']['qualities'], static fn (string $quality): bool => $model !== null && ImageQuality::tryFrom($quality) !== null && $model->supports(ImageQuality::from($quality)))),
             ];
         }, $this->models);

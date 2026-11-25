@@ -3,9 +3,14 @@
     $states = $panel['states'];
     $pixels = static fn (string $size): string => str_replace('x', ' × ', $size);
     $stateTag = static fn (string $state): string => '<span class="va-tag '.($states[$state][0] ?? 'mute').'">'.e($states[$state][1] ?? $state).'</span>';
+    $fragment = $fragment ?? false;
+    $framing = $panel['framing'] ?? null;
+    $faultLabels = \App\Services\Video\MotoKeyframeService::FAULT_LABELS;
 @endphp
 
+@unless($fragment)
 <div class="container-fluid vp" id="keyframesPage">
+    @include('video-projects.partials.moto-reference-flash', ['flashId' => 'keyframesFlash'])
 
     <div class="vp-crumb">
         <a href="{{ route('video-projects.index') }}">Video Projects</a>
@@ -40,10 +45,14 @@
                     <div class="line"><span class="k">Khoá render</span><span class="v" style="color:var(--vp-red)">{{ $panel['error'] }}</span></div>
                 @else
                     <div class="line"><span class="k">Kế hoạch shot</span><span class="v">rev {{ $panel['stage']->planning_revision }} · {{ substr((string) $panel['stage']->id, 0, 8) }} · {{ $panel['token']['content_hash'] }}</span></div>
+                    @if($framing !== null)
+                        <div class="line"><span class="k">Khung hình</span><span class="v">ảnh gốc {{ $framing['master_aspect_ratio'] }} · ảnh video {{ $framing['delivery_aspect_ratio'] }} {{ $framing['delivery_width'] }} × {{ $framing['delivery_height'] }}, cắt từ ảnh gốc, không phóng lớn</span></div>
+                    @endif
                 @endif
             </div>
         </div>
     </div>
+@endunless
 
     @foreach($panel['rows'] as $row)
         @php
@@ -56,8 +65,9 @@
             $writer = $row['writer'];
             $shown = $writer['shown'];
             $promptText = $shown['prompt'] ?? ($row['prompt']['text'] ?? '');
+            $editForm = $row['edit_form'];
         @endphp
-        <div class="vs-shot-detail" id="shot-{{ $shot['id'] }}">
+        <div class="vs-shot-detail" id="shot-{{ $shot['id'] }}" data-ajax-part>
             <div class="vs-shot-grid">
                 <div class="vs-h"><b>1</b> Planning</div>
                 <div class="vs-h"><b>2</b> Prompt</div>
@@ -134,7 +144,7 @@
                     @if($writer['unavailable'] !== null)
                         <div class="d" style="color:var(--vp-amber-fg)">Chưa viết được: {{ $writer['unavailable'] }}</div>
                     @endif
-                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'prompt']) }}" id="{{ $promptForm }}" onsubmit="return vpLockForm(this)" hidden>
+                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'prompt']) }}" id="{{ $promptForm }}" data-modal="confirm{{ $promptForm }}" onsubmit="return vpLockForm(this)" hidden>
                         @csrf
                         <input type="hidden" name="operation_id" value="{{ $writer['operation_id'] }}">
                         <input type="hidden" name="confirm_cost" value="1">
@@ -243,7 +253,7 @@
                             </select>
                         </div>
                         <div class="va-field">
-                            <label>Size <em>({{ $panel['aspect_ratio'] }})</em></label>
+                            <label>Size <em>({{ $panel['frame_ratio'] }})</em></label>
                             <select class="ctl" name="size" form="{{ $renderForm }}" required>
                                 @foreach($settings['sizes'] as $size)
                                     <option value="{{ $size }}" @selected($size === $settings['size'])>{{ $pixels($size) }}</option>
@@ -269,6 +279,12 @@
                         <input type="hidden" name="preview_hash" value="{{ $row['preview_hash'] }}">
                         <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
                         <input type="hidden" name="confirm_cost" value="1">
+                    </form>
+                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'settings']) }}" data-settings-of="{{ $renderForm }}" hidden>
+                        @csrf
+                        <input type="hidden" name="model" value="{{ $settings['model'] }}">
+                        <input type="hidden" name="quality" value="{{ $settings['quality'] }}">
+                        <input type="hidden" name="size" value="{{ $settings['size'] }}">
                     </form>
                     <div class="vk-actions">
                         <button type="button" class="vp-btn pri" data-toggle="modal" data-target="#confirm{{ $renderForm }}" data-busy="Đang gửi…"
@@ -308,14 +324,20 @@
                             @if($candidate['file_problem'] !== null)
                                 <div class="d" style="color:var(--vp-red)">{{ $candidate['file_problem'] }}</div>
                             @endif
+                            @php
+                                $frame = $candidate['frame'];
+                                $edit = $candidate['edit'];
+                                $key = str_replace('-', '', (string) $image->id);
+                            @endphp
                             <div class="vk-actions">
                                 @if($artifact !== null)
                                     <a class="vp-btn sm" href="{{ route('video-artifacts.show', $artifact->id) }}" target="_blank" rel="noopener">Xem lớn</a>
                                 @endif
-                                @if($candidate['approvable'])
+                                @if($candidate['approvable'] && $frame === null)
                                     <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'approve']) }}" onsubmit="return vpLockForm(this)">
                                         @csrf
                                         <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                        <input type="hidden" name="in_use" value="{{ $row['in_use_decision'] }}">
                                         <button class="vp-btn sm ok" data-busy="Đang duyệt…">✓ Duyệt và dùng ảnh này</button>
                                     </form>
                                 @endif
@@ -327,10 +349,166 @@
                                     </form>
                                 @endif
                             </div>
+                            @if($frame !== null)
+                                <div class="vk-frame" data-frame="{{ $artifact->id }}" data-width="{{ $frame['width'] }}" data-height="{{ $frame['height'] }}" data-unit-x="{{ $frame['unit'][0] }}" data-unit-y="{{ $frame['unit'][1] }}" data-k-min="{{ $frame['k_min'] }}" data-k-max="{{ $frame['k_max'] }}" data-delivery="{{ str_replace('x', ' × ', $frame['delivery_size']) }}">
+                                    <div class="va-lbl">Khung video — cắt từ ảnh gốc {{ $frame['width'] }} × {{ $frame['height'] }} thành {{ str_replace('x', ' × ', $frame['delivery_size']) }}</div>
+                                    @if($frame['can_apply'])
+                                        <div class="vk-frame-view">
+                                            <div class="vk-frame-stage" data-frame-stage>
+                                                <img src="{{ route('video-artifacts.show', $artifact->id) }}" alt="{{ $image->image_code }}" loading="lazy">
+                                                <div class="vk-frame-window" data-frame-window></div>
+                                            </div>
+                                            <div class="vk-frame-preview" data-frame-preview style="aspect-ratio: {{ $frame['unit'][0] }} / {{ $frame['unit'][1] }}; background-image:url('{{ route('video-artifacts.show', $artifact->id) }}')"></div>
+                                        </div>
+                                        <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'frame']) }}" class="vk-frame-form" onsubmit="return vpLockForm(this)">
+                                            @csrf
+                                            <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                            <input type="hidden" name="x" data-frame-field="x" value="{{ $frame['default']['x'] }}">
+                                            <input type="hidden" name="y" data-frame-field="y" value="{{ $frame['default']['y'] }}">
+                                            <input type="hidden" name="width" data-frame-field="width" value="{{ $frame['default']['width'] }}">
+                                            <input type="hidden" name="height" data-frame-field="height" value="{{ $frame['default']['height'] }}">
+                                            <label class="d">Ngang <input type="range" min="0" max="1000" value="500" data-frame-range="x"></label>
+                                            <label class="d">Dọc <input type="range" min="0" max="1000" value="500" data-frame-range="y"></label>
+                                            <label class="d">Cỡ khung <input type="range" min="{{ $frame['k_min'] }}" max="{{ $frame['k_max'] }}" value="{{ $frame['k_max'] }}" data-frame-range="k"></label>
+                                            <div class="d" data-frame-readout>{{ $frame['default']['width'] }} × {{ $frame['default']['height'] }} tại x {{ $frame['default']['x'] }}, y {{ $frame['default']['y'] }}</div>
+                                            <button class="vp-btn sm" data-busy="Đang cắt…">Áp dụng khung</button>
+                                        </form>
+                                    @elseif($frame['default'] === null)
+                                        <div class="d" style="color:var(--vp-red)">Ảnh gốc không đủ tạo ảnh video {{ str_replace('x', ' × ', $frame['delivery_size']) }} mà không phóng lớn — tạo bản khác.</div>
+                                    @endif
+                                    @foreach($frame['deliveries'] as $delivery)
+                                        <div class="vk-delivery">
+                                            <a href="{{ route('video-artifacts.show', $delivery['artifact']->id) }}" target="_blank" rel="noopener"><img src="{{ route('video-artifacts.show', $delivery['artifact']->id) }}" alt="Ảnh video" width="{{ $delivery['artifact']->width }}" height="{{ $delivery['artifact']->height }}" loading="lazy"></a>
+                                            <div class="vk-delivery-info">
+                                                @if($delivery['in_use'])<span class="va-tag ok">Đang dùng cho video</span>@endif
+                                                <div class="d">Ảnh video {{ $delivery['artifact']->width }} × {{ $delivery['artifact']->height }}</div>
+                                                <div class="d">Vùng {{ $delivery['crop']['width'] ?? '—' }} × {{ $delivery['crop']['height'] ?? '—' }} tại x {{ $delivery['crop']['x'] ?? '—' }}, y {{ $delivery['crop']['y'] ?? '—' }}</div>
+                                                @if($delivery['problem'] !== null)
+                                                    <div class="d" style="color:var(--vp-red)">{{ $delivery['problem'] }}</div>
+                                                @endif
+                                                @if($delivery['approvable'])
+                                                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'approve']) }}" onsubmit="return vpLockForm(this)">
+                                                        @csrf
+                                                        <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                                        <input type="hidden" name="delivery_id" value="{{ $delivery['artifact']->id }}">
+                                                        <input type="hidden" name="in_use" value="{{ $row['in_use_decision'] }}">
+                                                        <button class="vp-btn sm ok" data-busy="Đang duyệt…">✓ Duyệt bộ ảnh này</button>
+                                                    </form>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+                            @if($edit !== null && $editForm !== null)
+                                @php
+                                    $editScreen = $edit['screen'];
+                                    $editShown = $editScreen['shown'];
+                                    $editWrite = 'kfEdit'.$key;
+                                    $editRender = 'kfEditRender'.$key;
+                                    $sendable = count($editForm['references']) <= $editForm['limit'] - 1;
+                                @endphp
+                                <details class="vk-edit" data-keep-open="edit-{{ $key }}">
+                                    <summary class="vp-btn sm">Sửa ảnh này</summary>
+                                    <div class="va-lbl">Nhóm lỗi cần sửa</div>
+                                    <div class="vk-checks">
+                                        @foreach($editForm['faults'] as $fault => $label)
+                                            <label><input type="checkbox" name="faults[]" value="{{ $fault }}" form="{{ $editWrite }}" data-keep="{{ $key }}"> {{ $label }}</label>
+                                        @endforeach
+                                    </div>
+                                    @if($editForm['targets'] !== [])
+                                        <div class="va-lbl">Đối tượng liên quan (không bắt buộc)</div>
+                                        <div class="vk-checks">
+                                            @foreach($editForm['targets'] as $target)
+                                                <label><input type="checkbox" name="targets[]" value="{{ $target['type'] }}:{{ $target['id'] }}" form="{{ $editWrite }}" data-keep="{{ $key }}"> {{ $target['label'] }}</label>
+                                            @endforeach
+                                        </div>
+                                    @endif
+                                    <div class="va-lbl">Ảnh gửi kèm — ảnh cần sửa và tối đa {{ $editForm['limit'] - 1 }} ảnh tham chiếu</div>
+                                    <div class="vk-checks" data-edit-references="{{ $editForm['limit'] - 1 }}">
+                                        @foreach($editForm['references'] as $reference)
+                                            <label><input type="checkbox" name="references[]" value="{{ $reference['artifact_id'] }}" form="{{ $editWrite }}" data-keep="{{ $key }}" @checked($sendable)> {{ $reference['code'] }} · {{ $reference['kind'] }}</label>
+                                        @endforeach
+                                    </div>
+                                    <div class="d" data-edit-count></div>
+                                    <input class="ctl" type="text" name="note" maxlength="{{ \App\Video\Moto\MotoKeyframePrompt::NOTE_MAX_CHARS }}" placeholder="Ghi chú ngắn (không bắt buộc)" form="{{ $editWrite }}" data-keep="{{ $key }}">
+                                    <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'edit-prompt']) }}" id="{{ $editWrite }}" data-modal="confirm{{ $editWrite }}" onsubmit="return vpLockForm(this)" hidden>
+                                        @csrf
+                                        <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                        <input type="hidden" name="operation_id" value="{{ $editScreen['operation_id'] }}">
+                                        <input type="hidden" name="confirm_cost" value="1">
+                                    </form>
+                                    <div class="vk-actions">
+                                        <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirm{{ $editWrite }}" data-busy="Đang gửi…"
+                                                @if(! $editScreen['can_write']) disabled title="Đang có lượt viết chờ hoặc đang chạy" @endif>{{ $editShown !== null ? 'Viết lại prompt sửa' : 'Viết prompt sửa bằng AI' }}</button>
+                                    </div>
+                                    @include('modal.confirm_action', ['id' => 'confirm'.$editWrite, 'form' => $editWrite, 'content' => 'Gọi AI một lần để viết prompt sửa cho '.$image->image_code.' từ ảnh cần sửa, dữ liệu shot và các ảnh tham chiếu đã chọn — TÁC VỤ NÀY TÍNH TIỀN. Viết xong không tự duyệt, không render, ảnh đang dùng không đổi.', 'detail' => $writer['estimate'] !== null ? 'Dự toán gần bằng một lượt viết prompt ảnh của shot: '.$writer['estimate']['text'].'.' : 'Chưa có dự toán cho lượt này.'])
+                                    @if($editScreen['running'])
+                                        <div class="d"><span class="dot"></span>Đang viết prompt sửa…</div>
+                                        <div class="va-brief">@include('video-projects.partials.stream-state', ['stream' => $editScreen['stream']])</div>
+                                    @elseif($editScreen['pending'])
+                                        <div class="d">Đang chờ máy chạy nền nhận lượt viết.</div>
+                                    @elseif($editScreen['error'] !== null)
+                                        <div class="d" style="color:var(--vp-red)">{{ $editScreen['error'] }}</div>
+                                    @endif
+                                    @if($editShown !== null)
+                                        <div class="va-lbl">Prompt sửa — AI viết, gửi nguyên văn bản đã duyệt</div>
+                                        <div class="d">Yêu cầu: {{ implode(', ', array_map(static fn (string $fault): string => $faultLabels[$fault] ?? $fault, (array) ($editScreen['request']['faults'] ?? []))) }}@if(($editScreen['request']['targets'] ?? []) !== []) · {{ implode(', ', array_map(static fn (array $target): string => $target['id'], (array) $editScreen['request']['targets'])) }}@endif @if(($editScreen['request']['note'] ?? null) !== null) · “{{ $editScreen['request']['note'] }}”@endif</div>
+                                        <textarea class="va-ta" readonly>{{ $editShown['prompt'] }}</textarea>
+                                        <div class="d">Lượt {{ $editShown['revision'] }} · {{ $editShown['verdict'] ?? '—' }} · {{ $editShown['status'] ?? '—' }} · {{ $editShown['model'] }} @if($editShown['cost_usd'] !== null) · ${{ number_format($editShown['cost_usd'], 4) }}@endif @if($editShown['selected']) · đã duyệt @endif</div>
+                                        @if($editShown['error'] !== null)
+                                            <div class="d" style="color:var(--vp-red)">{{ $editShown['error'] }}</div>
+                                        @endif
+                                        @foreach([...$editShown['schema'], ...$editShown['issues']] as $issue)
+                                            <div class="d" style="color:var(--vp-red)">{{ $issue }}</div>
+                                        @endforeach
+                                        @foreach($editShown['gaps'] as $gap)
+                                            <div class="d" style="color:var(--vp-amber-fg)">Thiếu dữ kiện: {{ $gap['missing'] }} — {{ $gap['why'] }}</div>
+                                        @endforeach
+                                        @foreach($editShown['conflicts'] as $conflict)
+                                            <div class="d" style="color:var(--vp-amber-fg)">Mâu thuẫn ({{ implode(' / ', $conflict['sources']) }}): {{ $conflict['what'] }}</div>
+                                        @endforeach
+                                        @foreach($editShown['flags'] as $flag)
+                                            <div class="d" style="color:var(--vp-dim)">Ghi chú của AI: {{ $flag }}</div>
+                                        @endforeach
+                                        @if(! $editShown['current'])
+                                            <div class="d" style="color:var(--vp-amber-fg)">Lượt này viết từ nguồn cũ</div>
+                                        @endif
+                                        @if($editShown['approvable'])
+                                            <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'prompt-approve']) }}" onsubmit="return vpLockForm(this)">
+                                                @csrf
+                                                <input type="hidden" name="stage_id" value="{{ $editShown['id'] }}">
+                                                <button class="vp-btn sm ok" data-busy="Đang duyệt…">✓ Duyệt prompt sửa này</button>
+                                            </form>
+                                        @endif
+                                    @endif
+                                    @if($edit['prompt'] !== null)
+                                        <div class="d">Prompt sửa đang dùng: lượt {{ substr($edit['prompt']['stage_id'], 0, 8) }} · gửi {{ count($edit['sources']) }} ảnh (ảnh cần sửa ở vị trí 1)</div>
+                                        @foreach($edit['problems'] as $problem)
+                                            <div class="d" style="color:var(--vp-amber-fg)">{{ $problem }}</div>
+                                        @endforeach
+                                        <form method="POST" action="{{ route('video-projects.keyframe-action', [$id, $shot['id'], 'edit-render']) }}" id="{{ $editRender }}" data-modal="confirm{{ $editRender }}" onsubmit="return vpLockForm(this)" hidden>
+                                            @csrf
+                                            <input type="hidden" name="artifact_id" value="{{ $artifact->id }}">
+                                            <input type="hidden" name="stage_id" value="{{ $edit['prompt']['stage_id'] }}">
+                                            <input type="hidden" name="preview_hash" value="{{ $edit['preview_hash'] }}">
+                                            <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                                            <input type="hidden" name="confirm_cost" value="1">
+                                        </form>
+                                        <div class="vk-actions">
+                                            <button type="button" class="vp-btn sm pri" data-toggle="modal" data-target="#confirm{{ $editRender }}" data-busy="Đang gửi…"
+                                                    @if(! $edit['renderable'] || $row['busy']) disabled title="{{ $row['busy'] ? 'Shot đang có một lượt chờ hoặc đang render' : implode(' · ', $edit['problems']) }}" @endif>Render bản sửa</button>
+                                        </div>
+                                        @include('modal.confirm_action', ['id' => 'confirm'.$editRender, 'form' => $editRender, 'content' => 'Gửi prompt sửa đã duyệt kèm ảnh cần sửa và '.max(0, count($edit['sources']) - 1).' ảnh tham chiếu theo '.$settings['model'].' · '.($settings['quality'] !== '' ? $settings['quality'].' · ' : '').$settings['size'].': một request, một ảnh mới — TÁC VỤ NÀY TÍNH TIỀN. Ảnh cần sửa và ảnh đang dùng không bị ghi đè.', 'detail' => 'Kết quả là một ứng viên mới của '.$shot['id'].'.'])
+                                    @endif
+                                </details>
+                            @endif
                         </div>
                     @endforeach
                 </div>
             </div>
         </div>
     @endforeach
+@unless($fragment)
 </div>
+@endunless

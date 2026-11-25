@@ -282,7 +282,9 @@ final class MotoClipSourceService
             return self::blocked('keyframe_source_changed', "Keyframe của shot {$shotId} được làm từ nguồn khác bản kế hoạch đã duyệt.");
         }
 
-        if ($spec['image_sha256'] !== ($context['prompts'][$shotId]['sha256'] ?? null) || ($spec['prompt_source']['stage_id'] ?? null) !== ($context['prompts'][$shotId]['stage_id'] ?? null)) {
+        $pinned = ($spec['spec_version'] ?? null) === MotoKeyframeSourceService::SPEC_V2;
+
+        if (! $pinned && ($spec['image_sha256'] !== ($context['prompts'][$shotId]['sha256'] ?? null) || ($spec['prompt_source']['stage_id'] ?? null) !== ($context['prompts'][$shotId]['stage_id'] ?? null))) {
             return self::blocked('keyframe_prompt_changed', "Prompt của keyframe shot {$shotId} khác prompt shot hiện hành — render và duyệt lại keyframe.");
         }
 
@@ -290,7 +292,15 @@ final class MotoClipSourceService
             return self::blocked('keyframe_unapproved', "Keyframe của shot {$shotId} chưa có quyết định duyệt cho một file.");
         }
 
-        $artifact = VideoArtifact::query()->whereKey($image->selected_artifact_id)->where('project_id', $projectId)->where('design_image_id', $image->id)->first();
+        $frame = $this->frames->approvedFrame($context, $shotId);
+        $held = $frame !== null && (string) $frame['image']->id === (string) $image->id;
+
+        if ($held && $frame['framed'] && $frame['handoff'] === null) {
+            return self::blocked('keyframe_delivery_missing', "Bộ keyframe đã duyệt của shot {$shotId} không ghi ảnh video — áp dụng khung và duyệt lại bộ ảnh.");
+        }
+
+        $artifact = $held && $frame['framed'] ? $frame['handoff']
+            : VideoArtifact::query()->whereKey($image->selected_artifact_id)->where('project_id', $projectId)->where('design_image_id', $image->id)->first();
 
         if ($artifact === null || $artifact->render_id === null) {
             return self::blocked('keyframe_artifact_missing', "File keyframe đã duyệt của shot {$shotId} không còn hoặc không gắn lượt render nào.");
