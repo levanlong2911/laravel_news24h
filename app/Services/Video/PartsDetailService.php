@@ -14,6 +14,11 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Media\OpenAiImagePricing;
 use App\Video\ModelSheet\ModelSheetMaster;
@@ -74,9 +79,17 @@ class PartsDetailService implements QueuedImageService
         'blocked_surface' => ['dg', 'CẦN KIỂM BỀ MẶT'],
     ];
 
+    public function __construct(
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoDesignImageRepositoryInterface $images,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
+    ) {}
+
     public function supports(string $projectId): bool
     {
-        $slug = VideoProject::query()->with('article.category')->find($projectId)?->article?->category?->slug;
+        $slug = $this->projects->findProjectWithCategory($projectId)?->article?->category?->slug;
 
         return MotoContract::is(config('video.superyacht.contracts.categories')[$slug ?? ''] ?? null);
     }
@@ -111,10 +124,9 @@ class PartsDetailService implements QueuedImageService
      */
     private function pinnedCameras(string $projectId): array
     {
-        $images = VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', self::MASTER)
-            ->whereIn('status', [...self::IN_FLIGHT, DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value])->orderBy('created_at')->get(['id', 'status', 'prompt_spec_json']);
+        $images = $this->images->findForCameraPins($projectId, self::MASTER, [...self::IN_FLIGHT, DesignImageStatus::RENDERED->value, DesignImageStatus::APPROVED->value]);
         $planIds = $images->map(static fn (VideoDesignImage $image): string => (string) ($image->prompt_spec_json['plan_id'] ?? ''))->filter()->unique()->values();
-        $plans = $planIds->isEmpty() ? collect() : VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::REFERENCE_PROMPT->value)->whereIn('id', $planIds)->get()->keyBy('id');
+        $plans = $planIds->isEmpty() ? collect() : $this->stages->findStagesOfKind($projectId, PlanningStageName::REFERENCE_PROMPT, $planIds)->keyBy('id');
         $printed = [];
         $held = [];
 
@@ -140,7 +152,7 @@ class PartsDetailService implements QueuedImageService
         $cameras = $held;
         $problems = [];
 
-        foreach ((array) ((VideoProject::query()->whereKey($projectId)->value('metadata_json') ?? [])[self::SELECTION]['references'] ?? []) as $chosen) {
+        foreach ((array) (($this->projects->findMetadata($projectId) ?? [])[self::SELECTION]['references'] ?? []) as $chosen) {
             $part = is_array($chosen) && is_string($chosen['part_id'] ?? null) ? $chosen['part_id'] : null;
 
             if ($part === null) {
@@ -168,8 +180,8 @@ class PartsDetailService implements QueuedImageService
      */
     private function memo(string $kind, string $projectId, ?array $shots, \Closure $make): array
     {
-        $masters = VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', self::MASTER)->selectRaw('count(*) as total, max(updated_at) as changed')->toBase()->first();
-        $key = implode('|', [$kind, $projectId, md5((string) json_encode(VideoProject::query()->whereKey($projectId)->value('metadata_json'))), md5((string) json_encode(config('video.moto'))), $shots === null ? '-' : md5((string) json_encode($shots)), ($masters->total ?? 0).'@'.($masters->changed ?? '-')]);
+        $masters = $this->images->countAndLastChangeOfType($projectId, self::MASTER);
+        $key = implode('|', [$kind, $projectId, md5((string) json_encode($this->projects->findMetadata($projectId))), md5((string) json_encode(config('video.moto'))), $shots === null ? '-' : md5((string) json_encode($shots)), ($masters->total ?? 0).'@'.($masters->changed ?? '-')]);
 
         if (! array_key_exists($key, self::$memo)) {
             $value = $make();
@@ -212,8 +224,7 @@ class PartsDetailService implements QueuedImageService
     /** @return array<string, list<string>> by shot, the parts the Reference plan saved last gave a detail image to; empty when the project has saved none */
     public function savedPartsByShot(string $projectId): array
     {
-        $stage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::REFERENCE_PROMPT->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->where('input_json->execution', MotoReferencePlanner::PART_VERSION)->orderByDesc('planning_revision')->first();
+        $stage = $this->stages->findLatestSucceededReferencePlan($projectId, MotoReferencePlanner::PART_VERSION);
         $parts = [];
 
         foreach ((array) ($stage?->output_json['plan']['needs'] ?? []) as $need) {
@@ -253,7 +264,7 @@ class PartsDetailService implements QueuedImageService
     public function state(string $projectId, array $preview, ?string $ignore = null): array
     {
         $references = array_column($preview['plan']['references'], null, 'id');
-        $meta = (array) (VideoProject::query()->findOrFail($projectId)->metadata_json ?? []);
+        $meta = (array) ($this->projects->findProjectOrFail($projectId)->metadata_json ?? []);
         $selection = (array) ($meta[self::SELECTION]['references'] ?? []);
         $accepted = (array) ($meta[self::ACCEPTED] ?? []);
         $reviewed = array_filter($references, static fn (array $reference): bool => ($reference['kind'] ?? null) !== 'part') !== [];
@@ -954,7 +965,7 @@ class PartsDetailService implements QueuedImageService
     {
         $approved = app(ShotSourceService::class)->approvedSource($projectId);
         $sheet = $this->sheetSources($projectId);
-        $shotStage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($approved['stage_id']);
+        $shotStage = $this->stages->findStageForProjectOrFail($projectId, $approved['stage_id']);
         $shotSource = app(ShotSourceService::class)->source($shotStage);
         $scene = app(SceneSourceService::class)->sceneStage($projectId, (string) ($shotSource['scenes']['stage_id'] ?? ''));
         $designSource = $scene === null ? [] : (PlanningStageStore::metadataOf($scene->input_json)['source']['design'] ?? []);
@@ -976,11 +987,11 @@ class PartsDetailService implements QueuedImageService
     private function sheetSources(string $projectId): array
     {
         $sheet = app(ModelSheetService::class)->approvedSheet($projectId, true);
-        $designStage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($sheet['design_stage_id']);
+        $designStage = $this->stages->findStageForProjectOrFail($projectId, $sheet['design_stage_id']);
         $raw = (string) $designStage->raw_response;
         // A legacy design is read as it is; a v3 design by its checkpoints, the way every later step reads the states.
         $design = \App\Video\Moto\MotoDesignStates::normalize(json_decode($raw, true, 512, JSON_THROW_ON_ERROR));
-        $review = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($sheet['review_stage_id']);
+        $review = $this->stages->findStageForProjectOrFail($projectId, $sheet['review_stage_id']);
         $crops = [];
 
         foreach ((array) ($review->output_json['crops'] ?? []) as $crop) {
@@ -1111,9 +1122,7 @@ class PartsDetailService implements QueuedImageService
     private function reviews(string $projectId): array
     {
         $latest = [];
-        $stages = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::REFERENCE_REVIEW->value)
-            ->whereIn('status', [VideoPlanningStageStatus::SUCCEEDED->value, VideoPlanningStageStatus::FAILED->value])
-            ->whereNull('input_json->orphan_of_stage_id')->orderByDesc('planning_revision')->get();
+        $stages = $this->stages->findFinishedReferenceReviews($projectId);
 
         foreach ($stages as $stage) {
             $derived = is_array($stage->output_json['derived'] ?? null) ? $stage->output_json['derived'] : null;
@@ -1150,8 +1159,7 @@ class PartsDetailService implements QueuedImageService
     {
         $fingerprints = [];
 
-        foreach (VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::REFERENCE_REVIEW->value)
-            ->whereIn('status', [VideoPlanningStageStatus::PENDING->value, VideoPlanningStageStatus::RUNNING->value])->whereNotNull('claim_token')->get() as $stage) {
+        foreach ($this->stages->findClaimedReferenceReviews($projectId) as $stage) {
             foreach ((array) ($stage->input_json['cells'] ?? []) as $cell) {
                 $fingerprints[] = (string) ($cell['fingerprint'] ?? '');
             }
@@ -1167,8 +1175,7 @@ class PartsDetailService implements QueuedImageService
     private function held(string $projectId, array $references, ?string $ignore): array
     {
         $held = [];
-        $images = VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', self::MASTER)
-            ->whereIn('status', [...self::IN_FLIGHT, 'rendered'])->with('artifacts')->get();
+        $images = $this->images->findOfTypeByStatusesWithArtifacts($projectId, self::MASTER, [...self::IN_FLIGHT, 'rendered']);
 
         foreach ($images as $image) {
             if ((string) $image->id === $ignore) {
@@ -1212,10 +1219,10 @@ class PartsDetailService implements QueuedImageService
             return [];
         }
 
-        $crops = VideoArtifact::query()->where('project_id', $projectId)->where('role', self::ROLE)->whereIn('id', array_filter(array_column($selection, 'artifact_id')))->get()->keyBy('id');
-        $reviews = VideoReviewDecision::query()->where('project_id', $projectId)->where('entity_type', self::ROLE)->where('decision', 'approved')->whereIn('id', array_filter(array_column($selection, 'review_id')))->get()->keyBy('id');
-        $masters = VideoArtifact::query()->where('project_id', $projectId)->whereIn('id', $crops->map(static fn (VideoArtifact $crop): string => (string) ($crop->metadata_json['master_artifact_id'] ?? ''))->filter()->unique()->values())->get()->keyBy('id');
-        $images = VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', self::MASTER)->whereIn('id', $masters->pluck('design_image_id')->filter()->unique()->values())->get()->keyBy('id');
+        $crops = $this->artifacts->findOwnedArtifactsWithRoleByIds($projectId, self::ROLE, array_filter(array_column($selection, 'artifact_id')))->keyBy('id');
+        $reviews = $this->decisions->findApprovedByIds($projectId, self::ROLE, array_filter(array_column($selection, 'review_id')))->keyBy('id');
+        $masters = $this->artifacts->findOwnedArtifactsByIds($projectId, $crops->map(static fn (VideoArtifact $crop): string => (string) ($crop->metadata_json['master_artifact_id'] ?? ''))->filter()->unique()->values())->keyBy('id');
+        $images = $this->images->findOfTypeByIds($projectId, self::MASTER, $masters->pluck('design_image_id')->filter()->unique()->values())->keyBy('id');
         $sizes = [];
         $valid = [];
 

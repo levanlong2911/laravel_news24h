@@ -14,6 +14,8 @@ use RuntimeException;
 
 final class SuperyachtDesign implements DesignWorkflow
 {
+    public function __construct(private readonly PhaseResolver $resolver) {}
+
     public function execution(): string
     {
         return YachtDesignService::EXECUTION;
@@ -108,7 +110,7 @@ final class SuperyachtDesign implements DesignWorkflow
         $wordLimits = [];
 
         try {
-            $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))
+            $bundle = $this->resolver
                 ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
 
             if (($decoded->format ?? null) === YachtDesignCheck::FORMAT_V3) {

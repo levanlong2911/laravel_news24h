@@ -39,6 +39,7 @@ final class MotoDesignRevisionService
         private readonly PlanningStageStore $stageStore,
         private readonly DesignApprovalLock $approval,
         private readonly DesignRevisionRuns $runs,
+        private readonly MotoDesign $design,
     ) {}
 
     /**
@@ -66,7 +67,7 @@ final class MotoDesignRevisionService
         $themed = MotoDesign::themed($manifest);
 
         try {
-            $report['schema'] = PhaseOneEvidence::schemaDiagnostics($answer, MotoDesign::schemas($manifest));
+            $report['schema'] = PhaseOneEvidence::schemaDiagnostics($answer, $this->design->schemas($manifest));
             $report['schema_lines'] = MotoDesignRefs::schemaIssues($report['schema'], $data, $themed);
         } catch (\Throwable $e) {
             $report['schema_lines'] = ['không kiểm được schema: '.$e->getMessage()];
@@ -328,7 +329,7 @@ final class MotoDesignRevisionService
         $schemas = [];
 
         try {
-            $schemas = MotoDesign::schemas($manifest);
+            $schemas = $this->design->schemas($manifest);
         } catch (\Throwable) {
         }
 

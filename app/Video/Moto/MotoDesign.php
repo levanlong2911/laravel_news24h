@@ -13,6 +13,8 @@ use RuntimeException;
 
 final class MotoDesign implements DesignWorkflow
 {
+    public function __construct(private readonly PhaseResolver $resolver) {}
+
     public function execution(): string
     {
         return MotoContract::DESIGN_EXECUTION;
@@ -49,9 +51,9 @@ final class MotoDesign implements DesignWorkflow
      *
      * @throws RuntimeException when the run kept no manifest or the manifest does not hold its schemas
      */
-    public static function schemas(?array $manifest): array
+    public function schemas(?array $manifest): array
     {
-        return MotoContract::technicalSchemas(PhaseResolver::fromConfig((array) config('video.superyacht'))
+        return MotoContract::technicalSchemas($this->resolver
             ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
             ->outputSchemas());
     }
@@ -60,9 +62,9 @@ final class MotoDesign implements DesignWorkflow
      * @param  ?array<string, mixed>  $manifest  the bundle a run is sent with
      * @return list<array{label: string, json_schema_id: string, sha256: string, content: string}> the output schemas of the bundle exactly as they are pinned, with every constraint: what a record joined under an assembly protocol is held to
      */
-    public static function pinnedSchemas(?array $manifest): array
+    public function pinnedSchemas(?array $manifest): array
     {
-        return PhaseResolver::fromConfig((array) config('video.superyacht'))
+        return $this->resolver
             ->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
             ->outputSchemas();
     }
@@ -165,7 +167,7 @@ final class MotoDesign implements DesignWorkflow
         $assembled = ($run['assembly'] ?? null) !== null;
 
         try {
-            $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, $assembled ? self::pinnedSchemas($manifest) : self::schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format !== MotoContract::DESIGN_FORMAT);
+            $schemaErrors = MotoDesignRefs::schemaIssues(PhaseOneEvidence::schemaDiagnostics($decoded, $assembled ? $this->pinnedSchemas($manifest) : $this->schemas($manifest)), (array) (is_array($response) ? ($response['data'] ?? []) : []), $format !== MotoContract::DESIGN_FORMAT);
         } catch (\Throwable $e) {
             $fault = MotoContract::structureFault($e);
 

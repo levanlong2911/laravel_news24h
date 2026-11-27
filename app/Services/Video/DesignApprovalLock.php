@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Video\Moto\MotoCheckRules;
-use App\Enums\DesignImageStatus;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
-use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
-use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoDesignCheck;
 use App\Video\Llm\JsonAnswer;
@@ -29,18 +30,19 @@ final class DesignApprovalLock
 {
     public const MESSAGE = 'Bản thiết kế đã duyệt cùng model sheet — không tạo Design hoặc DNA mới.';
 
-    public function __construct(private readonly PlanningStageStore $stageStore) {}
+    public function __construct(
+        private readonly PlanningStageStore $stageStore,
+        private readonly PhaseResolver $resolver,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoDesignImageRepositoryInterface $images,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
+        private readonly AiPhaseRepositoryInterface $phases,
+    ) {}
 
     /** @return ?VideoPlanningStage the newest succeeded design, the one the panel shows and the model sheet works from */
     public function currentDesign(string $projectId): ?VideoPlanningStage
     {
-        return VideoPlanningStage::query()->withoutSnapshot()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::YACHT_DESIGN->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereNull('input_json->orphan_of_stage_id')
-            ->orderByDesc('planning_revision')
-            ->first();
+        return $this->stages->findCurrentDesign($projectId);
     }
 
     public function holds(string $projectId): bool
@@ -59,22 +61,15 @@ final class DesignApprovalLock
             return false;
         }
 
-        $images = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::MODEL_SHEET_MASTER_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(prompt_spec_json, '$.design_stage_id')) = ?", [(string) $design->id])
-            ->get();
+        $images = $this->images->findApprovedSelectedModelSheetMasters($projectId, (string) $design->id);
 
         if ($images->isEmpty()) {
             return false;
         }
 
         $setIds = $images->map(static fn (VideoDesignImage $image): mixed => ((array) $image->prompt_spec_json)['model_sheet_set_id'] ?? null)->filter(static fn (mixed $id): bool => is_string($id) && $id !== '')->unique()->values();
-        $sets = VideoPlanningStage::query()->withoutSnapshot()->whereIn('id', $setIds)->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::MODEL_SHEET->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->get()->keyBy('id');
-        $artifacts = VideoArtifact::query()->whereIn('id', $images->pluck('selected_artifact_id')->unique()->values())->where('project_id', $projectId)->get()->keyBy('id');
+        $sets = $this->stages->findSucceededStagesOfKind($projectId, PlanningStageName::MODEL_SHEET, $setIds)->keyBy('id');
+        $artifacts = $this->artifacts->findOwnedArtifactsByIds($projectId, $images->pluck('selected_artifact_id')->unique()->values())->keyBy('id');
         $reviews = [];
 
         foreach ($images as $image) {
@@ -90,12 +85,7 @@ final class DesignApprovalLock
             $reviews[] = $this->stageStore->inputHash(ModelSheetService::reviewInput($set, $image, $artifact));
         }
 
-        return $reviews !== [] && VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::MODEL_SHEET_REVIEW->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereIn('input_hash', array_values(array_unique($reviews)))
-            ->exists();
+        return $reviews !== [] && $this->stages->succeededStageExistsForInputHashes($projectId, PlanningStageName::MODEL_SHEET_REVIEW, array_values(array_unique($reviews)));
     }
 
     /** @return ?string why a stored design cannot be trusted: its own records, and the DNA it says it was written from */
@@ -109,8 +99,7 @@ final class DesignApprovalLock
 
         $dna = $design->input_json['dna_stage_id'] ?? null;
 
-        return is_string($dna) && ! VideoPlanningStage::query()->whereKey($dna)->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::DESIGN_DNA->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->exists()
+        return is_string($dna) && ! $this->stages->succeededStageExists($projectId, $dna, PlanningStageName::DESIGN_DNA)
                 ? 'Không tìm thấy lượt DNA nguồn của bản thiết kế này.'
                 : null;
     }
@@ -185,13 +174,13 @@ final class DesignApprovalLock
             return $this->checks[$key];
         }
 
-        $prompt = AiPhase::query()->find($input['phase_id'] ?? null);
+        $prompt = $this->phases->findPhase($input['phase_id'] ?? null);
 
         if ($prompt === null) {
             return $unverified('không còn revision prompt Phase 3 mà lượt chạy đã ghim');
         }
 
-        $dnaRun = VideoPlanningStage::query()->find($input['dna_stage_id'] ?? null);
+        $dnaRun = $this->stages->findStageWithSnapshot($input['dna_stage_id'] ?? null);
         $dna = JsonAnswer::object((string) ($dnaRun?->output_json['raw_text'] ?? ''))['dna'] ?? null;
 
         if (! is_array($dna)) {
@@ -214,7 +203,7 @@ final class DesignApprovalLock
                     'prompt_version' => YachtDesignService::instructionVersion($prompt),
                     'dna' => $dna,
                     'model_sheet' => $modelSheet,
-                    'schemas' => PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest)->outputSchemas(),
+                    'schemas' => $this->resolver->fromManifest($manifest)->outputSchemas(),
                 ]);
 
                 if ($assembly === null || ! hash_equals((string) ($input['assembly_dna_sha256'] ?? ''), $assembly['dna_sha256'])) {
@@ -264,7 +253,7 @@ final class DesignApprovalLock
             }
 
             $source = $stage->input_json['revision_of'] ?? null;
-            $stage = is_string($source) ? VideoPlanningStage::query()->withoutSnapshot()->whereKey($source)->where('project_id', $design->project_id)->first() : null;
+            $stage = is_string($source) ? $this->stages->findStageForProject((string) $design->project_id, $source) : null;
         }
 
         return null;

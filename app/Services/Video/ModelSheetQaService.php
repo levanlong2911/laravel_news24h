@@ -8,6 +8,7 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Video\Concept\Claude\AnthropicStructuredOutputClient;
 use App\Video\Concept\Claude\AnthropicStructuredOutputResponse;
 use App\Video\Concept\Exceptions\AnthropicRefusalException;
@@ -35,6 +36,7 @@ final class ModelSheetQaService
 
     public function __construct(
         private readonly PlanningStageStore $stageStore,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
     ) {}
 
     /**
@@ -121,7 +123,7 @@ Return exactly one JSON object, with no text or code fence around it, that valid
      */
     public function run(string $projectId, VideoPlanningStage $set, bool $retry, string $operationId, ?array $requester = null): array
     {
-        return (new StageQueue($this->stageStore))->submit(
+        return (new StageQueue($this->stageStore, $this->stages))->submit(
             'qa',
             $projectId,
             PlanningStageName::MODEL_SHEET_PROMPT,
@@ -145,7 +147,7 @@ Return exactly one JSON object, with no text or code fence around it, that valid
      */
     public function execute(string $stageId, string $token, \Closure $currentSet): array
     {
-        return (new StageQueue($this->stageStore))->execute(
+        return (new StageQueue($this->stageStore, $this->stages))->execute(
             $stageId,
             $token,
             fn (): array => $this->prepared($currentSet()),

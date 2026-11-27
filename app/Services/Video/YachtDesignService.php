@@ -10,6 +10,8 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
@@ -42,6 +44,9 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
         private readonly DesignDnaService $dna,
         private readonly LlmClient $writer,
         private readonly DesignApprovalLock $approval,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly PhaseResolver $resolver,
+        private readonly AiPhaseRepositoryInterface $phases,
     ) {}
 
     /**
@@ -50,7 +55,7 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
      */
     public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
     {
-        return (new StageQueue($this->stageStore))->submit(
+        return (new StageQueue($this->stageStore, $this->stages))->submit(
             'design',
             $projectId,
             PlanningStageName::YACHT_DESIGN,
@@ -226,7 +231,7 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
             return [null, 'Lượt thiết kế không còn — bỏ qua.'];
         }
 
-        return (new StageQueue($this->stageStore))->execute(
+        return (new StageQueue($this->stageStore, $this->stages))->execute(
             $stageId,
             $token,
             function () use ($projectId): array {
@@ -246,7 +251,7 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
     /** @return \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string} */
     private function perform(): \Closure
     {
-        return (new StageQueue($this->stageStore))->singleCall($this->writer, PlanningStageName::YACHT_DESIGN, fn (array $run, string $raw): array => $this->output($run, $raw), 'thiết kế', 'yacht design');
+        return (new StageQueue($this->stageStore, $this->stages))->singleCall($this->writer, PlanningStageName::YACHT_DESIGN, fn (array $run, string $raw): array => $this->output($run, $raw), 'thiết kế', 'yacht design');
     }
 
     private function project(string $projectId): VideoProject
@@ -364,10 +369,10 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
             throw new RuntimeException('Design DNA chưa đạt kiểm kỹ thuật cho đúng Phase 1 và prompt hiện tại.');
         }
 
-        $dnaStage = VideoPlanningStage::query()->findOrFail($dnaPanel['stage_id']);
+        $dnaStage = $this->stages->findStageWithSnapshotOrFail($dnaPanel['stage_id']);
         $dna = JsonAnswer::object((string) ($dnaStage->output_json['raw_text'] ?? ''))['dna'] ?? null;
         // A DNA that is phase3_ready ran on the current Phase 1 run: its input names that run, and it was read just now.
-        $phaseOne = VideoPlanningStage::query()->find($dnaStage->input_json['inspiration_stage_id'] ?? null);
+        $phaseOne = $this->stages->findStageWithSnapshot($dnaStage->input_json['inspiration_stage_id'] ?? null);
         $source = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($phaseOne?->output_json['raw_text'] ?? '')));
         $identity = $source['source_identity'] ?? null;
 
@@ -378,14 +383,14 @@ final class YachtDesignService implements DesignRevisionRuns, QueuedStageService
         $category = $project->article?->category ?? throw new RuntimeException('Bài viết của dự án không có chủ đề.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
         $adapter = self::adapter($workflow);
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject((string) $project->id, self::ACTION);
+        $bundle = $this->resolver->forProject((string) $project->id, self::ACTION);
 
         if (! $bundle->ready()) {
             throw new RuntimeException('Hợp đồng '.self::ACTION.' chưa sẵn sàng: '.implode('; ', $bundle->mismatches()).'.');
         }
 
         $manifest = $bundle->manifest();
-        $prompt = AiPhase::query()->findOrFail($manifest['phase']['id']);
+        $prompt = $this->phases->findPhaseOrFail($manifest['phase']['id']);
 
         foreach ($adapter->markers($manifest) as $marker) {
             if (! str_contains((string) $prompt->prompt_content, $marker)) {

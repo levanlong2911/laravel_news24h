@@ -17,6 +17,10 @@ use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\ModelSheet\ModelSheetFacts;
@@ -66,6 +70,10 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
         private readonly YachtDesignService $design,
         private readonly ModelSheetQaService $qa,
         private readonly DesignApprovalLock $approval,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoDesignImageRepositoryInterface $designImages,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
     ) {}
 
     public const PROMPT_APPROVAL_EXECUTION = 'model-sheet-master-prompt-approval-v1';
@@ -483,20 +491,13 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     {
         [$stage, $canonicalHash] = $this->approvedSource($projectId);
         $supported = [...array_map('strval', (array) config('video.superyacht.model_sheet.master.supported_executions')), self::execution(MotoContract::WORKFLOW)];
-        $images = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::MODEL_SHEET_MASTER_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(prompt_spec_json, '$.design_stage_id')) = ?", [(string) $stage->id])
-            ->orderByDesc('approved_at')
-            ->get();
+        $images = $this->designImages->findApprovedModelSheetMasters($projectId, (string) $stage->id);
         $problem = null;
 
         foreach ($images as $image) {
             $spec = (array) $image->prompt_spec_json;
-            $set = VideoPlanningStage::query()->whereKey($spec['model_sheet_set_id'] ?? null)->where('project_id', $projectId)
-                ->where('stage', PlanningStageName::MODEL_SHEET->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first();
-            $artifact = $image->selected_artifact_id === null ? null : VideoArtifact::query()->whereKey($image->selected_artifact_id)->where('project_id', $projectId)->first();
+            $set = $this->stages->findSucceededStageOfKindWithSnapshot($projectId, $spec['model_sheet_set_id'] ?? null, PlanningStageName::MODEL_SHEET);
+            $artifact = $image->selected_artifact_id === null ? null : $this->artifacts->findOwnedArtifact($projectId, $image->selected_artifact_id);
 
             if ($set === null || $artifact === null || ! in_array((string) ($set->input_json['execution'] ?? ''), $supported, true)
                 || ($set->input_json['design_stage_id'] ?? null) !== (string) $stage->id || ($spec['design_canonical_hash'] ?? null) !== $canonicalHash) {
@@ -896,7 +897,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      */
     private function context(string $projectId): array
     {
-        $project = VideoProject::query()->with('article.category')->find($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        $project = $this->projects->findProjectWithCategory($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — model sheet không áp dụng.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
 
@@ -912,7 +913,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
             throw new RuntimeException('Chưa có bản thiết kế Phase 3 đạt kiểm tự động cho Design DNA hiện hành.');
         }
 
-        $stage = VideoPlanningStage::query()->whereKey($panel['stage_id'])->where('project_id', $projectId)->first();
+        $stage = $this->stages->findStageForProjectWithSnapshot($projectId, $panel['stage_id']);
 
         if ($stage === null || $stage->status !== VideoPlanningStageStatus::SUCCEEDED->value) {
             throw new RuntimeException('Bản thiết kế nguồn không thuộc dự án hoặc chưa chạy thành công.');
@@ -969,14 +970,9 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
 
             return [$stage, $canonicalHash];
         } catch (RuntimeException $current) {
-            $project = VideoProject::query()->with('article.category')->find($projectId);
+            $project = $this->projects->findProjectWithCategory($projectId);
             $workflow = (string) (config('video.superyacht.contracts.categories')[$project?->article?->category?->slug ?? ''] ?? '');
-            $stage = VideoPlanningStage::query()
-                ->where('project_id', $projectId)
-                ->where('stage', PlanningStageName::YACHT_DESIGN->value)
-                ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-                ->orderByDesc('planning_revision')
-                ->first();
+            $stage = $this->stages->findLatestSucceededStageOfKindWithSnapshot($projectId, PlanningStageName::YACHT_DESIGN);
             $canonicalHash = $stage === null ? null : self::designHash($stage, $workflow);
 
             if (! self::sheetWorkflow($workflow) || $stage === null

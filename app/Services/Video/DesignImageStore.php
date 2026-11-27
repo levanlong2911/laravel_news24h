@@ -5,10 +5,12 @@ namespace App\Services\Video;
 use App\Enums\DesignImageStatus;
 use App\Enums\ImageQuality;
 use App\Models\VideoArtifact;
-use App\Models\VideoCostEntry;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoRenderScene;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoCostEntryRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
 use App\Video\Media\OpenAiImagePricing;
 use App\Video\Reference\ReferenceSheet;
 use Illuminate\Database\Eloquent\Builder;
@@ -54,6 +56,9 @@ class DesignImageStore
     ];
 
     public function __construct(
+        private readonly VideoArtifactRepositoryInterface $artifacts,
+        private readonly VideoCostEntryRepositoryInterface $costs,
+        private readonly VideoDesignImageRepositoryInterface $images,
         private readonly OpenAiImagePricing $openAiPricing = new OpenAiImagePricing,
     ) {}
 
@@ -224,30 +229,12 @@ class DesignImageStore
             return [];
         }
 
-        $entries = VideoCostEntry::query()
-            ->where('project_id', $projectId)
-            ->where('entity_type', 'design_image')
-            ->whereIn('entity_id', array_keys($summary));
-
         // `recorded` chi cong tien DA XAC NHAN. Hang cu mang uoc tinh trong cot tien
         // (pricing=estimated, chua co metadata estimate) thi doc bang COALESCE va
         // xep sang cot uoc tinh — khong migration, chi doi cach doc.
-        $totals = (clone $entries)
-            ->selectRaw(
-                'entity_id,'
-                ."SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.pricing')) "
-                ."IN ('reported', 'reconciled', 'free') THEN cost_usd ELSE 0 END) as confirmed,"
-                ."SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.pricing')) = 'estimated' "
-                ."THEN COALESCE(JSON_EXTRACT(metadata_json, '$.estimated_cost_usd'), cost_usd) ELSE 0 END) as estimated,"
-                ."SUM(CASE WHEN JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.pricing')) = 'estimated' "
-                ."THEN 1 ELSE 0 END) as estimates,"
-                // Hang cu khong mang khoa `pricing` nao: khong ai biet con so do la
-                // uoc tinh hay tien that, nen no khong duoc dung o ca hai cot tren.
-                ."SUM(CASE WHEN JSON_EXTRACT(metadata_json, '$.pricing') IS NULL THEN cost_usd ELSE 0 END) as unclassified,"
-                ."SUM(CASE WHEN JSON_EXTRACT(metadata_json, '$.pricing') IS NULL THEN 1 ELSE 0 END) as unclassifieds",
-            )
-            ->groupBy('entity_id')
-            ->get();
+        // Hang cu khong mang khoa `pricing` nao: khong ai biet con so do la
+        // uoc tinh hay tien that, nen no khong duoc dung o ca hai cot tren.
+        $totals = $this->costs->summarizeDesignImageCosts($projectId, array_keys($summary));
 
         foreach ($totals as $row) {
             $id = (string) $row->entity_id;
@@ -260,10 +247,7 @@ class DesignImageStore
             $summary[$id]['has_unclassified'] = (int) $row->unclassifieds > 0;
         }
 
-        $unpriced = (clone $entries)
-            ->where('metadata_json->pricing', 'unpriced')
-            ->distinct()
-            ->pluck('entity_id');
+        $unpriced = $this->costs->pluckUnpricedDesignImageIds($projectId, array_keys($summary));
 
         foreach ($unpriced as $id) {
             $summary[(string) $id]['has_unpriced'] = true;
@@ -291,14 +275,7 @@ class DesignImageStore
 
     public function approvedAnchorFor(string $projectId, string $subjectKey): ?VideoDesignImage
     {
-        return $this->whereAnchorSubject(VideoDesignImage::query(), $subjectKey)
-            ->where('project_id', $projectId)
-            ->where('image_type', self::ANCHOR_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->with('artifact')
-            ->orderByDesc('approved_at')
-            ->first();
+        return $this->images->findApprovedAnchorForSubject($projectId, $subjectKey);
     }
 
     public static function anchorSubjectKey(VideoDesignImage $image): string
@@ -487,13 +464,7 @@ class DesignImageStore
 
     public function sheetCrops(string $projectId, VideoArtifact $master, string $role): array
     {
-        return VideoArtifact::query()
-            ->where('project_id', $projectId)
-            ->where('role', $role)
-            ->whereNull('design_image_id')
-            ->whereRaw("JSON_UNQUOTE(JSON_EXTRACT(metadata_json, '$.master_artifact_id')) = ?", [(string) $master->id])
-            ->whereRaw("JSON_EXTRACT(metadata_json, '$.superseded_at') IS NULL")
-            ->get()
+        return $this->artifacts->findSheetCrops($projectId, (string) $master->id, $role)
             ->map(fn (VideoArtifact $crop): array => [
                 'id' => (string) $crop->id,
                 'view_id' => (string) ($crop->metadata_json['view_id'] ?? ''),

@@ -11,6 +11,9 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoVisualIdentity;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Prompt\Exceptions\TextCompletionException;
@@ -60,6 +63,9 @@ TEXT;
         private readonly ScreenplayExpansionService $expansion,
         private readonly VideoProjectRepositoryInterface $projects,
         private readonly VisualIdentityStore $identities,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoDesignImageRepositoryInterface $images,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
     ) {}
 
     /** @return array{0: ?array<string, mixed>, 1: string} */
@@ -496,14 +502,9 @@ TEXT;
 
     public function currentStage(string $projectId): ?VideoPlanningStage
     {
-        $selected = VideoProject::query()->find($projectId)?->metadata_json[VesselDesign::SELECTION_KEY]['stage_id'] ?? null;
+        $selected = $this->projects->findProject($projectId)?->metadata_json[VesselDesign::SELECTION_KEY]['stage_id'] ?? null;
 
-        return VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->orderByDesc('planning_revision')
-            ->get()
+        return $this->stages->findSucceededStagesOfKindWithSnapshot($projectId, PlanningStageName::VESSEL_DESIGN)
             ->first(static fn (VideoPlanningStage $stage): bool => VesselDesign::isDesign($stage->output_json)
                 && (! self::isCorrection($stage) || (string) $stage->id === $selected));
     }
@@ -990,12 +991,7 @@ TEXT;
             return null;
         }
 
-        $stage = VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::VESSEL_DESIGN->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $stage = $this->stages->findSucceededStageOfKindWithSnapshot($projectId, $stageId, PlanningStageName::VESSEL_DESIGN);
 
         return VesselDesign::isDesign($stage?->output_json)
             ? $stage
@@ -1385,15 +1381,8 @@ TEXT;
     /** @param array<string, mixed> $lock */
     public function anchorBySource(string $projectId, array $lock): ?VideoDesignImage
     {
-        $image = VideoDesignImage::query()
-            ->whereKey((string) ($lock['image_id'] ?? ''))
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::ANCHOR_TYPE)
-            ->first();
-        $artifact = $image === null ? null : VideoArtifact::query()
-            ->whereKey((string) ($lock['artifact_id'] ?? ''))
-            ->where('design_image_id', $image->id)
-            ->first();
+        $image = $this->images->findForProjectOfType($projectId, DesignImageStore::ANCHOR_TYPE, (string) ($lock['image_id'] ?? ''));
+        $artifact = $image === null ? null : $this->artifacts->findArtifactOfImage((string) ($lock['artifact_id'] ?? ''), $image->id);
 
         if ($artifact === null || ! hash_equals((string) ($lock['artifact_sha256'] ?? ''), (string) $artifact->sha256)) {
             return null;
@@ -1427,7 +1416,7 @@ TEXT;
         }
 
         $image = $this->anchorBySource($projectId, $current);
-        $selected = $image === null ? null : VideoDesignImage::query()->whereKey($image->id)->value('selected_artifact_id');
+        $selected = $image === null ? null : $this->images->findSelectedArtifactId($image->id);
 
         return $image !== null
             && $image->status === \App\Enums\DesignImageStatus::APPROVED->value
