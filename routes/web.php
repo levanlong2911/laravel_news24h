@@ -20,7 +20,20 @@ use App\Http\Controllers\PromptFrameworkController;
 use App\Http\Controllers\RawArticleController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\VideoArtifactController;
-use App\Http\Controllers\VideoProjectsController;
+use App\Http\Controllers\Video\DesignController;
+use App\Http\Controllers\Video\DesignDnaController;
+use App\Http\Controllers\Video\FinalCompositionController;
+use App\Http\Controllers\Video\InspirationController;
+use App\Http\Controllers\Video\KeyframeController;
+use App\Http\Controllers\Video\LegacyVideoController;
+use App\Http\Controllers\Video\LocationController;
+use App\Http\Controllers\Video\ReferenceController;
+use App\Http\Controllers\Video\RenderVideoController;
+use App\Http\Controllers\Video\SceneController;
+use App\Http\Controllers\Video\ScriptController;
+use App\Http\Controllers\Video\ShotController;
+use App\Http\Controllers\Video\VideoProjectController;
+use App\Http\Controllers\Video\VideoTaskController;
 use Illuminate\Support\Facades\Route;
 
 // Route::get('/', function () {
@@ -139,96 +152,120 @@ Route::group(
 
         // video projects — chủ thể sống qua nhiều lượt: ảnh neo & ảnh tham chiếu
         Route::group(['prefix' => 'video-projects'], function () {
-            Route::post('/from-article/{article}', [VideoProjectsController::class, 'store'])->name('video-projects.store');
-            Route::get('/', [VideoProjectsController::class, 'index'])->name('video-projects.index');
-            Route::get('/{id}/anchor', [VideoProjectsController::class, 'anchor'])->name('video-projects.anchor');
-            //phase 1
-            Route::post('/{id}/inspiration', [VideoProjectsController::class, 'inspiration'])->name('video-projects.inspiration');
-            Route::post('/{id}/inspiration/reset', [VideoProjectsController::class, 'resetInspiration'])->name('video-projects.inspiration-reset');
-            //phase 2
-            Route::post('/{id}/design-dna', [VideoProjectsController::class, 'designDna'])->name('video-projects.design-dna');
-            Route::post('/{id}/design-dna/reset', [VideoProjectsController::class, 'resetDesignDna'])->name('video-projects.design-dna-reset');
-            //phase 3
-            Route::post('/{id}/design', [VideoProjectsController::class, 'vesselDesign'])->name('video-projects.vessel-design');
-            Route::post('/{id}/design/reset', [VideoProjectsController::class, 'resetVesselDesign'])->name('video-projects.vessel-design-reset');
-            Route::post('/{id}/model-sheet/qa', [VideoProjectsController::class, 'qaModelSheet'])->name('video-projects.model-sheet-qa');
-            Route::post('/{id}/model-sheet/qa/reset', [VideoProjectsController::class, 'resetModelSheetQa'])->name('video-projects.model-sheet-qa-reset');
-            Route::post('/{id}/model-sheet/render',[VideoProjectsController::class, 'renderModelSheet'])->name('video-projects.model-sheet-render');
-            Route::post('/{id}/model-sheet/approve', [VideoProjectsController::class, 'approveModelSheet'])->name('video-projects.model-sheet-approve');
-            Route::post('/{id}/model-sheet/reject', [VideoProjectsController::class, 'rejectModelSheet'])->name('video-projects.model-sheet-reject');
-            Route::post('/{id}/model-sheet/process', [VideoProjectsController::class, 'processModelSheet'])->name('video-projects.model-sheet-process');
-            //phase 4
-            Route::post('/{id}/script', [VideoProjectsController::class, 'writeScript'])->name('video-projects.script');
-            Route::post('/{id}/script/reset', [VideoProjectsController::class, 'resetScript'])->name('video-projects.script-reset');
-            Route::post('/{id}/script/brief', [VideoProjectsController::class, 'saveScriptBrief'])->name('video-projects.script-brief');
-            Route::post('/{id}/script/approve', [VideoProjectsController::class, 'approveScript'])->name('video-projects.script-approve');
+            Route::get('/', [VideoProjectController::class, 'index'])->name('video-projects.index');
+            Route::post('/from-article/{article}', [VideoProjectController::class, 'store'])->name('video-projects.store');
+            Route::get('/{id}/anchor', [VideoProjectController::class, 'show'])->name('video-projects.anchor');
+            Route::get('/{id}/tasks', [VideoTaskController::class, 'index'])->name('video-projects.tasks');
+            Route::get('/{id}/planning-stages/{stage}/status', [VideoTaskController::class, 'stage'])->name('video-projects.stage-status');
+
+            // phase 1: inspiration
+            Route::group(['prefix' => '{id}/inspiration'], function () {
+                Route::post('/', [InspirationController::class, 'run'])->name('video-projects.inspiration');
+                Route::post('/reset', [InspirationController::class, 'reset'])->name('video-projects.inspiration-reset');
+            });
+            // phase 2: design dna
+            Route::group(['prefix' => '{id}/design-dna'], function () {
+                Route::post('/', [DesignDnaController::class, 'run'])->name('video-projects.design-dna');
+                Route::post('/reset', [DesignDnaController::class, 'reset'])->name('video-projects.design-dna-reset');
+            });
+            // phase 3: thiết kế và model sheet
+            Route::group(['prefix' => '{id}'], function () {
+                Route::post('/design', [DesignController::class, 'run'])->name('video-projects.vessel-design');
+                Route::post('/design/reset', [DesignController::class, 'reset'])->name('video-projects.vessel-design-reset');
+                Route::post('/model-sheet/qa', [DesignController::class, 'sheetQa'])->name('video-projects.model-sheet-qa');
+                Route::post('/model-sheet/qa/reset', [DesignController::class, 'sheetQaReset'])->name('video-projects.model-sheet-qa-reset');
+                Route::post('/model-sheet/render', [DesignController::class, 'sheetRender'])->name('video-projects.model-sheet-render');
+                Route::post('/model-sheet/approve', [DesignController::class, 'sheetApprove'])->name('video-projects.model-sheet-approve');
+                Route::post('/model-sheet/reject', [DesignController::class, 'sheetReject'])->name('video-projects.model-sheet-reject');
+                Route::post('/model-sheet/process', [DesignController::class, 'sheetProcess'])->name('video-projects.model-sheet-process');
+            });
+            // phase 4: kịch bản
+            Route::group(['prefix' => '{id}/script'], function () {
+                Route::post('/', [ScriptController::class, 'run'])->name('video-projects.script');
+                Route::post('/reset', [ScriptController::class, 'reset'])->name('video-projects.script-reset');
+                Route::post('/brief', [ScriptController::class, 'brief'])->name('video-projects.script-brief');
+                Route::post('/approve', [ScriptController::class, 'approve'])->name('video-projects.script-approve');
+            });
             // phase 5: địa điểm và bối cảnh
-            Route::get('/{id}/locations', [VideoProjectsController::class, 'locations'])->name('video-projects.locations');
-            Route::post('/{id}/locations', [VideoProjectsController::class, 'writeLocations'])->name('video-projects.locations-write');
-            Route::post('/{id}/locations/reset', [VideoProjectsController::class, 'resetLocations'])->name('video-projects.locations-reset');
-            Route::get('/{id}/planning-stages/{stage}/status', [VideoProjectsController::class, 'stageStatus'])->name('video-projects.stage-status');
-            Route::get('/{id}/tasks', [VideoProjectsController::class, 'tasks'])->name('video-projects.tasks');
-            Route::post('/{id}/locations/render', [VideoProjectsController::class, 'renderLocationReference'])->name('video-projects.locations-render');
-            Route::post('/{id}/locations/choose', [VideoProjectsController::class, 'chooseLocationReference'])->name('video-projects.locations-choose');
-            Route::post('/{id}/locations/standard', [VideoProjectsController::class, 'chooseLocationStandard'])->name('video-projects.locations-standard');
+            Route::group(['prefix' => '{id}/locations'], function () {
+                Route::get('/', [LocationController::class, 'index'])->name('video-projects.locations');
+                Route::post('/', [LocationController::class, 'run'])->name('video-projects.locations-write');
+                Route::post('/reset', [LocationController::class, 'reset'])->name('video-projects.locations-reset');
+                Route::post('/render', [LocationController::class, 'render'])->name('video-projects.locations-render');
+                Route::post('/choose', [LocationController::class, 'choose'])->name('video-projects.locations-choose');
+                Route::post('/standard', [LocationController::class, 'standard'])->name('video-projects.locations-standard');
+            });
             // phase 6: scene và continuity
-            Route::get('/{id}/scene/{scene?}/{step?}', [VideoProjectsController::class, 'scene'])->middleware('video.v4:scenes')->name('video-projects.scene');
-            Route::post('/{id}/scenes', [VideoProjectsController::class, 'writeScenes'])->name('video-projects.scenes-write');
-            Route::post('/{id}/scenes/reset', [VideoProjectsController::class, 'resetScenes'])->name('video-projects.scenes-reset');
+            Route::group(['prefix' => '{id}'], function () {
+                Route::get('/scene/{scene?}/{step?}', [SceneController::class, 'index'])->name('video-projects.scene');
+                Route::post('/scenes', [SceneController::class, 'run'])->name('video-projects.scenes-write');
+                Route::post('/scenes/reset', [SceneController::class, 'reset'])->name('video-projects.scenes-reset');
+            });
             // phase 7: kế hoạch shot
-            Route::post('/{id}/shots', [VideoProjectsController::class, 'writeShots'])->name('video-projects.shots-write');
-            Route::post('/{id}/shots/reset', [VideoProjectsController::class, 'resetShots'])->name('video-projects.shots-reset');
-            Route::post('/{id}/shots/approve', [VideoProjectsController::class, 'approveShots'])->name('video-projects.shots-approve');
-            // phase 8: ảnh nhân vật
-            Route::post('/{id}/reference/characters/{character}/{action}', [VideoProjectsController::class, 'characterReference'])->where('character', '[A-Za-z0-9_-]+')->whereIn('action', ['settings', 'render', 'process', 'approve', 'reject', 'revoke'])->name('video-projects.character-reference');
+            Route::group(['prefix' => '{id}/shots'], function () {
+                Route::post('/', [ShotController::class, 'run'])->name('video-projects.shots-write');
+                Route::post('/reset', [ShotController::class, 'reset'])->name('video-projects.shots-reset');
+                Route::post('/approve', [ShotController::class, 'approve'])->name('video-projects.shots-approve');
+            });
+            // phase 8: reference và ảnh nhân vật
+            Route::group(['prefix' => '{id}/reference'], function () {
+                Route::match(['get', 'post'], '/', [ReferenceController::class, 'index'])->name('video-projects.reference');
+                Route::post('/parts-detail/{action}', [ReferenceController::class, 'partsDetail'])->whereIn('action', ['plan', 'layout', 'review', 'accept', 'render', 'process', 'approve', 'reject', 'revoke', 'answer'])->name('video-projects.parts-detail');
+                Route::post('/characters/{character}/{action}', [ReferenceController::class, 'character'])->where('character', '[A-Za-z0-9_-]+')->whereIn('action', ['settings', 'render', 'process', 'approve', 'reject', 'revoke'])->name('video-projects.character-reference');
+            });
             // phase 9: keyframe
-            Route::get('/{id}/keyframes', [VideoProjectsController::class, 'keyframes'])->name('video-projects.keyframes');
-            Route::post('/{id}/keyframes/{shot}/{action}', [VideoProjectsController::class, 'keyframeAction'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['source', 'source-reset', 'source-off', 'source-on', 'settings', 'render', 'approve', 'revoke', 'frame', 'edit-prompt', 'edit-render', 'prompt', 'prompt-approve'])->name('video-projects.keyframe-action');
-
-            Route::middleware('video.v4')->group(function () {
-            Route::post('/{id}/design-images/{imageId}/enqueue', [VideoProjectsController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');
-            Route::post('/{id}/reference/approve', [VideoProjectsController::class, 'approveReference'])->name('video-projects.reference-approve');
-            Route::post('/{id}/reference/delete', [VideoProjectsController::class, 'deleteReference'])->name('video-projects.reference-delete');
-            Route::post('/{id}/reference/prompt', [VideoProjectsController::class, 'writeReferencePrompt'])->name('video-projects.reference-prompt');
-            Route::get('/{id}/reference/sheet-preview', [VideoProjectsController::class, 'referenceSheetPreview'])->name('video-projects.reference-sheet-preview');
-            Route::post('/{id}/reference/lock',[VideoProjectsController::class, 'lockReferences'])->name('video-projects.reference-lock');
-            Route::post('/{id}/reference/plan', [VideoProjectsController::class, 'writeReferencePlan'])->name('video-projects.reference-plan');
-            Route::post('/{id}/reference/plan/decide', [VideoProjectsController::class, 'decideReferencePlanItem'])->name('video-projects.reference-plan-decide');
-            Route::post('/{id}/reference/plan/render', [VideoProjectsController::class, 'renderReferencePlanItem'])->name('video-projects.reference-plan-render');
-            Route::post('/{id}/reference/parts-detail/{action}', [VideoProjectsController::class, 'partsDetail'])->whereIn('action', ['plan', 'layout', 'review', 'accept', 'render', 'process', 'approve', 'reject', 'revoke', 'answer'])->name('video-projects.parts-detail');
-            Route::match(['get', 'post'], '/{id}/reference', [VideoProjectsController::class, 'reference'])->name('video-projects.reference');
-            Route::post('/{id}/environment/approve', [VideoProjectsController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
-            Route::match(['get', 'post'], '/{id}/environment', [VideoProjectsController::class, 'environment'])->name('video-projects.environment');
+            Route::group(['prefix' => '{id}/keyframes'], function () {
+                Route::get('/', [KeyframeController::class, 'index'])->name('video-projects.keyframes');
+                Route::post('/{shot}/{action}', [KeyframeController::class, 'action'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['source', 'source-reset', 'source-off', 'source-on', 'settings', 'render', 'approve', 'revoke', 'frame', 'edit-prompt', 'edit-render', 'prompt', 'prompt-approve'])->name('video-projects.keyframe-action');
+            });
+            // phase 10: render video
+            Route::group(['prefix' => '{id}'], function () {
+                Route::get('/render-video', [RenderVideoController::class, 'index'])->name('video-projects.render-video');
+                Route::post('/render-video/{shot}/{action}', [RenderVideoController::class, 'action'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['prompt', 'prompt-approve', 'input', 'settings', 'render', 'approve', 'reject', 'revoke', 'poll'])->name('video-projects.clip-prompt-action');
+                Route::get('/render-video/{shot}/review/{render}', [RenderVideoController::class, 'review'])->where('shot', 'SC\d+_SH\d+')->whereUuid('render')->name('video-projects.clip-review');
+                Route::get('/render-video/stills/{render}/{key}/{index}', [RenderVideoController::class, 'still'])->whereUuid('render')->where('key', '[a-f0-9]{64}')->whereNumber('index')->name('video-projects.clip-still');
+                Route::post('/scenes/{sceneId}/clip', [RenderVideoController::class, 'sceneRender'])->name('video-projects.scene-clip-render');
+                Route::post('/scene-clips/{shotId}/select', [RenderVideoController::class, 'sceneSelect'])->name('video-projects.scene-clip-select');
+                Route::post('/scene-clips/{render}/poll', [RenderVideoController::class, 'scenePoll'])->name('video-projects.scene-clip-poll');
+                Route::get('/scene-clips/{render}/file', [RenderVideoController::class, 'sceneFile'])->name('video-projects.scene-clip-file');
+            });
+            // phase 11: final composition
+            Route::group(['prefix' => '{id}'], function () {
+                Route::get('/final-composition-preview', [FinalCompositionController::class, 'index'])->name('video-projects.final-composition-preview');
+                Route::post('/final-composition/render', [FinalCompositionController::class, 'render'])->name('video-projects.final-render');
+                Route::get('/final-composition/{final}/file', [FinalCompositionController::class, 'file'])->name('video-projects.final-file');
+                Route::get('/final-composition/{final}/status', [FinalCompositionController::class, 'status'])->name('video-projects.final-status');
+                Route::post('/final-composition/{final}/approve', [FinalCompositionController::class, 'approve'])->name('video-projects.final-approve');
             });
 
-            Route::middleware(['video.shot-plan:clips', 'video.v4:clips'])->group(function () {
-            Route::get('/{id}/render-video', [VideoProjectsController::class, 'clips'])->name('video-projects.render-video');
-            Route::post('/{id}/render-video/{shot}/{action}', [VideoProjectsController::class, 'clipPromptAction'])->where('shot', 'SC\d+_SH\d+')->whereIn('action', ['prompt', 'prompt-approve', 'input'])->name('video-projects.clip-prompt-action');
-            // Clip va Final Composition: moi chu de dung chung route va man. Chu de co workflow trong video.clips / video.films
-            // chay luong moi (prompt, schema, duyet doc tu DB); chu de chua co chay luong cu. Nhom :clips de luong cu qua y nhu truoc.
-            Route::post('/{id}/scenes/{sceneId}/clip', [VideoProjectsController::class, 'renderSceneClip'])->name('video-projects.scene-clip-render');
-            Route::post('/{id}/scene-clips/{shotId}/select', [VideoProjectsController::class, 'selectSceneClip'])->name('video-projects.scene-clip-select');
-            Route::post('/{id}/scene-clips/{render}/poll', [VideoProjectsController::class, 'pollSceneClip'])->name('video-projects.scene-clip-poll');
-            Route::get('/{id}/scene-clips/{render}/file', [VideoProjectsController::class, 'sceneClipFile'])->name('video-projects.scene-clip-file');
-            Route::get('/{id}/final-composition-preview', [VideoProjectsController::class, 'finalCompositionPreview'])->name('video-projects.final-composition-preview');
-            Route::post('/{id}/final-composition/render', [VideoProjectsController::class, 'renderFinalComposition'])->name('video-projects.final-render');
-            Route::get('/{id}/final-composition/{final}/file', [VideoProjectsController::class, 'finalCompositionFile'])->name('video-projects.final-file');
-            Route::get('/{id}/final-composition/{final}/status', [VideoProjectsController::class, 'finalCompositionStatus'])->name('video-projects.final-status');
-            Route::post('/{id}/final-composition/{final}/approve', [VideoProjectsController::class, 'approveFinalComposition'])->name('video-projects.final-approve');
+            // luồng du thuyền cũ (v6.3): reference cũ, environment
+            Route::group(['prefix' => '{id}', 'middleware' => 'video.v4'], function () {
+                Route::post('/design-images/{imageId}/enqueue', [LegacyVideoController::class, 'renderDesignImage'])->name('video-projects.design-image-enqueue');
+                Route::post('/reference/approve', [LegacyVideoController::class, 'approveReference'])->name('video-projects.reference-approve');
+                Route::post('/reference/delete', [LegacyVideoController::class, 'deleteReference'])->name('video-projects.reference-delete');
+                Route::post('/reference/prompt', [LegacyVideoController::class, 'writeReferencePrompt'])->name('video-projects.reference-prompt');
+                Route::get('/reference/sheet-preview', [LegacyVideoController::class, 'referenceSheetPreview'])->name('video-projects.reference-sheet-preview');
+                Route::post('/reference/lock', [LegacyVideoController::class, 'lockReferences'])->name('video-projects.reference-lock');
+                Route::post('/reference/plan', [LegacyVideoController::class, 'writeReferencePlan'])->name('video-projects.reference-plan');
+                Route::post('/reference/plan/decide', [LegacyVideoController::class, 'decideReferencePlanItem'])->name('video-projects.reference-plan-decide');
+                Route::post('/reference/plan/render', [LegacyVideoController::class, 'renderReferencePlanItem'])->name('video-projects.reference-plan-render');
+                Route::post('/environment/approve', [LegacyVideoController::class, 'approveEnvironment'])->name('video-projects.environment-approve');
+                Route::match(['get', 'post'], '/environment', [LegacyVideoController::class, 'environment'])->name('video-projects.environment');
             });
-
-            Route::middleware(['video.shot-plan', 'video.v4'])->group(function () {
-            Route::post('/{id}/storyboard/generate', [VideoProjectsController::class, 'generateStoryboard'])->name('video-projects.storyboard-generate');
-            Route::post('/{id}/storyboard/approve', [VideoProjectsController::class, 'approveStoryboard'])->name('video-projects.storyboard-approve');
-            Route::post('/{id}/storyboard/recheck', [VideoProjectsController::class, 'recheckStoryboard'])->name('video-projects.storyboard-recheck');
-            Route::post('/{id}/storyboard/findings/accept', [VideoProjectsController::class, 'acceptStoryboardFinding'])->name('video-projects.storyboard-finding-accept');
-            Route::post('/{id}/scenes/{sceneId}/reference-confirm', [VideoProjectsController::class, 'confirmShotReference'])->name('video-projects.scene-reference-confirm');            Route::get('/{id}/scenes/{sceneId}/keyframe/preview', [VideoProjectsController::class, 'sceneKeyframePreview'])->name('video-projects.scene-keyframe-preview');
-            Route::post('/{id}/scenes/{sceneId}/keyframe', [VideoProjectsController::class, 'renderSceneKeyframe'])->name('video-projects.scene-keyframe-render');
-            Route::post('/{id}/scenes/{sceneId}/references', [VideoProjectsController::class, 'saveSceneReferences'])->name('video-projects.scene-references');
-            Route::post('/{id}/scenes/{sceneId}/keyframe/use', [VideoProjectsController::class, 'chooseSceneKeyframe'])->name('video-projects.scene-keyframe-use');
-            Route::post('/{id}/scenes/{sceneId}/film-views', [VideoProjectsController::class, 'chooseFilmViews'])->name('video-projects.film-reference-views');
-            Route::post('/{id}/scene-keyframes/{image}/retry', [VideoProjectsController::class, 'retrySceneKeyframe'])->name('video-projects.scene-keyframe-retry');
-            Route::post('/{id}/scene-keyframes/{image}/approve', [VideoProjectsController::class, 'approveSceneKeyframe'])->name('video-projects.scene-keyframe-approve');
+            // luồng du thuyền cũ (v6.3): storyboard và keyframe theo scene
+            Route::group(['prefix' => '{id}', 'middleware' => ['video.shot-plan', 'video.v4']], function () {
+                Route::post('/storyboard/generate', [LegacyVideoController::class, 'generateStoryboard'])->name('video-projects.storyboard-generate');
+                Route::post('/storyboard/approve', [LegacyVideoController::class, 'approveStoryboard'])->name('video-projects.storyboard-approve');
+                Route::post('/storyboard/recheck', [LegacyVideoController::class, 'recheckStoryboard'])->name('video-projects.storyboard-recheck');
+                Route::post('/storyboard/findings/accept', [LegacyVideoController::class, 'acceptStoryboardFinding'])->name('video-projects.storyboard-finding-accept');
+                Route::post('/scenes/{sceneId}/reference-confirm', [LegacyVideoController::class, 'confirmShotReference'])->name('video-projects.scene-reference-confirm');
+                Route::get('/scenes/{sceneId}/keyframe/preview', [LegacyVideoController::class, 'sceneKeyframePreview'])->name('video-projects.scene-keyframe-preview');
+                Route::post('/scenes/{sceneId}/keyframe', [LegacyVideoController::class, 'renderSceneKeyframe'])->name('video-projects.scene-keyframe-render');
+                Route::post('/scenes/{sceneId}/references', [LegacyVideoController::class, 'saveSceneReferences'])->name('video-projects.scene-references');
+                Route::post('/scenes/{sceneId}/keyframe/use', [LegacyVideoController::class, 'chooseSceneKeyframe'])->name('video-projects.scene-keyframe-use');
+                Route::post('/scenes/{sceneId}/film-views', [LegacyVideoController::class, 'chooseFilmViews'])->name('video-projects.film-reference-views');
+                Route::post('/scene-keyframes/{image}/retry', [LegacyVideoController::class, 'retrySceneKeyframe'])->name('video-projects.scene-keyframe-retry');
+                Route::post('/scene-keyframes/{image}/approve', [LegacyVideoController::class, 'approveSceneKeyframe'])->name('video-projects.scene-keyframe-approve');
             });
         });
 
