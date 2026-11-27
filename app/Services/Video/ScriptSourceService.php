@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
-use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Script\ProjectsScriptDocument;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Script\ScriptWorkflow;
@@ -29,6 +31,13 @@ final class ScriptSourceService
     /** @var array<string, array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string}> one adapter per project, so what it read while building a page is not read again */
     private array $workflows = [];
 
+    public function __construct(
+        private readonly ScriptEvaluation $evaluation,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
+    ) {}
+
     /** @return array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string} */
     public function workflowFor(string $projectId): array
     {
@@ -38,7 +47,7 @@ final class ScriptSourceService
     /** @return array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string} */
     private function readWorkflow(string $projectId): array
     {
-        $project = VideoProject::query()->with('article.category')->find($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        $project = $this->projects->findProjectWithCategory($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — bước Kịch bản không áp dụng.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
         $entry = $workflow === '' ? null : (config('video.script.workflows')[$workflow] ?? null);
@@ -185,7 +194,7 @@ final class ScriptSourceService
     public function approvedSource(string $projectId): array
     {
         $flow = $this->workflowFor($projectId);
-        $project = VideoProject::query()->findOrFail($projectId);
+        $project = $this->projects->findProjectOrFail($projectId);
         $selection = $project->metadata_json[self::SELECTION_KEY] ?? null;
 
         if (! is_array($selection) || ! is_string($selection['stage_id'] ?? null)) {
@@ -193,9 +202,8 @@ final class ScriptSourceService
         }
 
         $stage = $this->scriptStage($projectId, $selection['stage_id']) ?? throw new RuntimeException('Bản kịch bản đang chọn không còn hoặc không thuộc dự án.');
-        $decision = VideoReviewDecision::query()->whereKey($selection['approval_id'] ?? null)->where('project_id', $projectId)
-            ->where('entity_type', self::ENTITY_TYPE)->where('entity_id', $stage->id)->first();
-        $latest = VideoReviewDecision::query()->where('entity_type', self::ENTITY_TYPE)->where('entity_id', $stage->id)->orderByDesc('revision')->first();
+        $decision = $this->decisions->findDecisionFor($projectId, $selection['approval_id'] ?? null, self::ENTITY_TYPE, $stage->id);
+        $latest = $this->decisions->findLatestForEntity(self::ENTITY_TYPE, $stage->id);
 
         if ($decision === null || $decision->decision !== 'approved' || $latest?->id !== $decision->id) {
             throw new RuntimeException('Quyết định duyệt của bản kịch bản đang chọn không hợp lệ.');
@@ -284,13 +292,7 @@ final class ScriptSourceService
 
     public function scriptStage(string $projectId, string $stageId): ?VideoPlanningStage
     {
-        return VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCRIPT->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereNull('input_json->orphan_of_stage_id')
-            ->first();
+        return $this->stages->findSucceededSourceStage($projectId, $stageId, PlanningStageName::SCRIPT);
     }
 
     /** @return array{0: array<string, mixed>, 1: ?string} */
@@ -308,7 +310,7 @@ final class ScriptSourceService
         }
 
         try {
-            $evaluation = ScriptEvaluation::of((string) $stage->raw_response, $meta['manifest'], $meta['context'], $meta['source'], $adapter);
+            $evaluation = $this->evaluation->of((string) $stage->raw_response, $meta['manifest'], $meta['context'], $meta['source'], $adapter);
         } catch (RuntimeException $e) {
             return [[], 'Không kiểm lại được bản kịch bản theo hợp đồng của nó: '.$e->getMessage()];
         }

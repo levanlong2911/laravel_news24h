@@ -10,6 +10,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
 use App\Video\Moto\MotoContract;
@@ -32,6 +33,9 @@ final class ScriptWriterService implements QueuedStageService
         private readonly PlanningStageStore $stageStore,
         private readonly ScriptSourceService $sources,
         private readonly LlmClient $llm,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly PhaseResolver $resolver,
+        private readonly ScriptEvaluation $evaluation,
     ) {}
 
     /**
@@ -40,7 +44,7 @@ final class ScriptWriterService implements QueuedStageService
      */
     public function run(string $projectId, bool $regenerate, string $operationId, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->submit(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->submit(
             'script',
             $projectId,
             PlanningStageName::SCRIPT,
@@ -64,7 +68,7 @@ final class ScriptWriterService implements QueuedStageService
             return [null, 'Lượt viết kịch bản không còn — bỏ qua.'];
         }
 
-        return (new SpecStageRunner($this->stageStore))->execute(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->execute(
             $stageId,
             $token,
             fn (): array => $this->prepare($projectId),
@@ -166,7 +170,7 @@ final class ScriptWriterService implements QueuedStageService
         }
 
         $raw = (string) json_encode($revised, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $result = ScriptEvaluation::of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $current, $run['adapter']);
+        $result = $this->evaluation->of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $current, $run['adapter']);
         // The policy the revision is checked by: the one a run made now pins, never one sent with the request.
         $report['validation'] = $run['adapter'] instanceof ProjectsScriptDocument ? $run['adapter']->validation((array) $run['metadata']['context']) : null;
         $report['check'] = $result['check'];
@@ -573,7 +577,7 @@ final class ScriptWriterService implements QueuedStageService
     {
         $flow = $this->sources->workflowFor($projectId);
         $adapter = $flow['adapter'];
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($projectId, $flow['action']);
+        $bundle = $this->resolver->forProject($projectId, $flow['action']);
 
         if (! $bundle->ready()) {
             throw new RuntimeException("Hợp đồng {$flow['action']} chưa sẵn sàng: ".implode('; ', $bundle->mismatches()).' — chạy video:phase-release cho chủ đề này trước.');

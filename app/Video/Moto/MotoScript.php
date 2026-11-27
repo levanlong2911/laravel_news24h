@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Video\Moto;
 
 use App\Enums\PlanningStageName;
-use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Services\Video\ModelSheetService;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Llm\JsonAnswer;
@@ -88,7 +88,10 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
     /** @var list<string> */
     private const RIDER_COORDINATES = ['seat_point', 'grip_points', 'peg_points'];
 
-    public function __construct(private readonly ModelSheetService $sheets) {}
+    public function __construct(
+        private readonly ModelSheetService $sheets,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+    ) {}
 
     public function bind(VideoProject $project): void
     {
@@ -360,8 +363,7 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
 
     private function stage(string $projectId, mixed $stageId, PlanningStageName $name, string $label): VideoPlanningStage
     {
-        $stage = is_string($stageId) && $stageId !== '' ? VideoPlanningStage::query()->whereKey($stageId)->where('project_id', $projectId)
-            ->where('stage', $name->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first() : null;
+        $stage = is_string($stageId) && $stageId !== '' ? $this->stages->findSucceededStageOfKindWithSnapshot($projectId, $stageId, $name) : null;
 
         return $stage ?? throw new RuntimeException("Không tìm thấy {$label} đã chạy thành công cho dự án này.");
     }
