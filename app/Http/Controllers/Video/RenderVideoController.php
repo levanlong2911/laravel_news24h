@@ -349,7 +349,7 @@ final class RenderVideoController extends VideoController
         ];
 
         if ($disk instanceof \Illuminate\Filesystem\FilesystemAdapter && $disk->getAdapter() instanceof \League\Flysystem\Local\LocalFilesystemAdapter) {
-            return new \Symfony\Component\HttpFoundation\BinaryFileResponse($disk->path($path), 200, $headers, false, 'inline', false, false);
+            return new \App\Http\Responses\RangeFileResponse($disk->path($path), 200, $headers, false, 'inline', false, false);
         }
 
         return $disk->response($path, basename($path), $headers);
