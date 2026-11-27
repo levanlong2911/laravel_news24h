@@ -46,6 +46,7 @@ final class MotoFilmPlanService
     public function __construct(
         private readonly MotoFilmSourceService $sources,
         private readonly PlanningStageStore $stages,
+        private readonly PhaseResolver $resolver,
     ) {}
 
     /**
@@ -56,7 +57,7 @@ final class MotoFilmPlanService
     public function contract(string $projectId): array
     {
         $flow = $this->sources->workflowFor($projectId);
-        $resolved = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($projectId, $flow['action']);
+        $resolved = $this->resolver->forProject($projectId, $flow['action']);
 
         if (! $resolved->ready()) {
             throw new RuntimeException('Hợp đồng Phase 11 chưa sẵn sàng: '.implode('; ', $resolved->mismatches()).'.');
@@ -133,13 +134,12 @@ final class MotoFilmPlanService
             ->sharedLock()
             ->get()
             ->groupBy('phase_code');
-        $resolver = PhaseResolver::fromConfig((array) config('video.superyacht'));
         $key = config('video.superyacht.contracts.workflows.'.$workflow.'.release_key');
         $release = is_string($key) ? ($project->metadata_json[$key] ?? null) : null;
         $held = [];
 
         foreach (self::LIVE_PHASES as $code) {
-            $phase = PhaseResolver::choose($rows->get($code, collect())->all(), $resolver->rule($workflow, is_string($release) && $release !== '' ? $release : null, $code));
+            $phase = PhaseResolver::choose($rows->get($code, collect())->all(), $this->resolver->rule($workflow, is_string($release) && $release !== '' ? $release : null, $code));
 
             if ($phase !== null) {
                 $held[] = ['id' => (string) $phase->id, 'phase_code' => (string) $phase->phase_code, 'revision' => (int) $phase->revision];
