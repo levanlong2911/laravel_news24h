@@ -731,6 +731,10 @@ return [
         // chat hon diem mu 21,3 ms cua phep dem mau.
         'compose_timing_tolerance_ms' => (int) env('VIDEO_COMPOSE_TIMING_TOLERANCE_MS', 5),
         'duration_tolerance_ms' => (int) env('VIDEO_VEO_DURATION_TOLERANCE_MS', 1500),
+        'output_sizes' => [
+            '9:16' => ['720p' => [720, 1280]],
+        ],
+        'output_size_evidence' => 'veo_last_frame_canary_2026_09_15.json',
     ],
 
     'creative_profiles' => [
@@ -2352,8 +2356,37 @@ return [
                                 'phase-6' => ['input_format' => 'moto-scenes-input-v8', 'revisions' => [['id' => '64b44bf3-55d3-4e5e-b981-bb871d7c4133', 'sha256' => '9923d9208cb0cd35df2e5af2f3467b58884de1a18aab49721ca4dad44e90b421']]],
                                 'phase-7' => ['input_format' => 'moto-shots-input-v14', 'revisions' => [['id' => '1ba3290f-6b0a-4ccd-b42c-e9d0313c0097', 'sha256' => '700fb7b136a21cdc78c80e03a6729c647da9b2b0af322da7cededf8f18418651']]],
                                 'phase-9' => ['input_format' => \App\Video\Moto\MotoContract::KEYFRAME_PROMPT_INPUT_V6, 'revisions' => [['id' => '45bce594-6272-45b5-a029-e3a8ca9b3f6a', 'sha256' => '0c86abd7be9b5e0e729a38c13f450f05ea06f3cc0da8fc42fc78c88b992d255f']]],
+                                'phase-10' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V12, 'revisions' => [['id' => '11c1281c-da19-41ca-be10-76a0d35c5a9f', 'sha256' => '2f97d5e96ec0d886bca12b685b82a716c9e08c0a377cd3090f650f6771bcf2cd']]],
                             ],
                             'actions' => [
+                                'spec.clips' => [
+                                    'phase' => 'phase-10',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['clip_plan'],
+                                    ],
+                                    'outputs' => [
+                                        'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v3, policy moto-clip-execution-v1): for every approved shot how its clip is moved (AI video or dynamic crop), what it opens from (its approved keyframe set or reference images), the model or processor, the length of the file and the part the film keeps, the images as sent with their role, the crop path, the audio and media policies and why it cannot be sent; compiled by PHP; release moto-cinematic-3s-v9'],
+                                        'clip_prompt' => ['namespace' => 'moto', 'schema' => 'MotoClipPrompt', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 Output (format moto-clip-prompt-v1): for one shot, the one English video prompt the model wrote from the approved shot, its scene, events and timeline, and the images the clip is sent — its approved keyframe as first frame or the reference images a person chose — with the source ids it relies on and what the sources do not give or where they disagree; release moto-cinematic-3s-v9'],
+                                    ],
+                                ],
+                                'spec.clip_prompt' => [
+                                    'phase' => 'phase-10',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['clip_prompt'],
+                                    ],
+                                    'outputs' => [
+                                        'clip_plan' => ['namespace' => 'moto', 'schema' => 'MotoClipPlan', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 plan (format moto-clip-plan-v3, policy moto-clip-execution-v1): for every approved shot how its clip is moved (AI video or dynamic crop), what it opens from (its approved keyframe set or reference images), the model or processor, the length of the file and the part the film keeps, the images as sent with their role, the crop path, the audio and media policies and why it cannot be sent; compiled by PHP; release moto-cinematic-3s-v9'],
+                                        'clip_prompt' => ['namespace' => 'moto', 'schema' => 'MotoClipPrompt', 'version' => '1.0.1', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 10 Output (format moto-clip-prompt-v1): for one shot, the one English video prompt the model wrote from the approved shot, its scene, events and timeline, and the images the clip is sent — its approved keyframe as first frame or the reference images a person chose — with the source ids it relies on and what the sources do not give or where they disagree; release moto-cinematic-3s-v9'],
+                                    ],
+                                ],
                                 'spec.scenes' => [
                                     'phase' => 'phase-6',
                                     'instructions' => [],
@@ -2385,7 +2418,37 @@ return [
                                     ],
                                 ],
                                 'shots' => ['shot_grouping_policy' => \App\Video\Moto\MotoShotsCheck::GROUPING, 'shot_editing_policy' => \App\Video\Moto\MotoShotsCheck::COVERAGE, 'shot_budget' => ['max' => 15, 'target' => 15]],
-                                'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V11],
+                                'clip_prompt' => ['input_format' => \App\Video\Moto\MotoContract::CLIP_PROMPT_INPUT_V12],
+                                'clip_execution' => [
+                                    'version' => \App\Video\Moto\MotoContract::CLIP_EXECUTION,
+                                    'content_duration_ms' => \App\Video\Moto\MotoContract::SHOT_MS,
+                                    'default_motion_method' => \App\Video\Moto\MotoContract::MOTION_AI_VIDEO,
+                                    'default_input_mode' => 'keyframe',
+                                    'audio_policy' => [
+                                        \App\Video\Moto\MotoContract::MOTION_AI_VIDEO => \App\Video\Moto\MotoContract::AUDIO_ALLOW_SILENT,
+                                        \App\Video\Moto\MotoContract::MOTION_DYNAMIC_CROP => \App\Video\Moto\MotoContract::AUDIO_ALLOW_SILENT,
+                                    ],
+                                    'offers' => [
+                                        \App\Video\Moto\MotoContract::MOTION_AI_VIDEO => [
+                                            'keyframe' => [
+                                                ['model' => 'gemini:gemini-omni-1.2-flash', 'send' => 'first_frame', 'task' => 'image_to_video', 'resolutions' => ['720p', '1080p'], 'max_images' => 1, 'evidence' => ['omni_video_contract_2026_11_10.json']],
+                                                ['model' => 'gemini:veo-3.1-lite-generate-preview', 'send' => 'first_frame', 'task' => null, 'resolutions' => ['720p'], 'unavailable_resolutions' => [['resolution' => '1080p', 'reason' => 'Veo 3.1 Lite ở 1080p buộc file 8 giây và repo chưa có lượt đo nào ở 1080p.']], 'max_images' => 1, 'evidence' => ['veo_last_frame_canary_2026_09_15.json', 'veo_video_contract_2026_09_15.json']],
+                                                ['model' => 'gemini:veo-3.1-fast-generate-preview', 'unavailable' => 'Chưa có canary nào chạy trên Veo 3.1 Fast; canary ảnh của Veo chỉ chạy trên bản Lite.'],
+                                                ['model' => 'gemini:veo-3.1-generate-preview', 'unavailable' => 'Chưa có canary nào chạy trên Veo 3.1; canary ảnh của Veo chỉ chạy trên bản Lite.'],
+                                            ],
+                                            'references' => [
+                                                ['model' => 'gemini:gemini-omni-1.2-flash', 'send' => 'references', 'task' => \App\Video\Moto\MotoContract::REFERENCE_TO_VIDEO, 'resolutions' => ['720p', '1080p'], 'max_images' => 6, 'evidence' => ['omni_video_canary_2026_11_10_100134_v5l9vt.json', 'omni_video_contract_2026_11_10.json']],
+                                                ['model' => 'gemini:veo-3.1-lite-generate-preview', 'unavailable' => 'Veo không nhận bộ ảnh tham chiếu như Omni; đường gửi ảnh tham chiếu chỉ đi qua interactions.'],
+                                            ],
+                                        ],
+                                        \App\Video\Moto\MotoContract::MOTION_DYNAMIC_CROP => [
+                                            'keyframe' => [
+                                                ['model' => null, 'send' => 'crop_source', 'processor' => \App\Video\Moto\MotoContract::DYNAMIC_CROP_PROCESSOR, 'resolutions' => ['1080p'], 'max_images' => 1, 'evidence' => []],
+                                            ],
+                                        ],
+                                    ],
+                                    'dynamic_crop' => ['processor' => \App\Video\Moto\MotoContract::DYNAMIC_CROP_PROCESSOR, 'width' => 1080, 'height' => 1920, 'fps' => 30, 'frames' => 90, 'sar' => '1:1', 'codec' => 'h264', 'pixel_format' => 'yuv420p', 'duration_tolerance_ms' => 34],
+                                ],
                             ],
                         ],
                     ],

@@ -1,0 +1,440 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoClipPlan",
+  "title": "Moto clip plan (moto-clip-plan-v3), schema 3.0.0: every clip states how it is moved, from which images, with which model or processor, how long the file is and which part of it the film keeps, under the execution policy its release pins",
+  "description": "The clip plan code compiles from the approved shots, the approved keyframe sets, the reference images a person chose, the settings saved for each shot, the video prompt a person approved for each shot in Phase 10, the execution policy of the release, the render registry and the file checks of config. No model writes it; PHP checks it before it is stored or read. The approved content of a shot lasts content_duration_ms; the file a model renders may be longer, and the film keeps used of it. What JSON Schema cannot say is checked by PHP: shot ids and orders are unique, total_ms is the film the shots make, a crop path stays inside its master, and every hash is the hash of its content.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "project_id", "contract", "execution_policy", "source", "total_ms", "clips"],
+  "properties": {
+    "format": { "const": "moto-clip-plan-v3" },
+    "schema": { "const": "MotoClipPlan@3.0.0" },
+    "project_id": { "$ref": "#/$defs/id" },
+    "contract": { "$ref": "#/$defs/contract" },
+    "execution_policy": { "$ref": "#/$defs/execution_policy" },
+    "source": { "$ref": "#/$defs/source" },
+    "total_ms": { "$ref": "#/$defs/positive_ms" },
+    "clips": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/clip" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "\\S" },
+    "nullable_id": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }] },
+    "sha256": { "description": "The SHA-256 of bytes or of a text, as 64 hex digits.", "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "content_hash": { "description": "The hash of a canonical JSON value or of a text, as CanonicalJson gives it: sha256: and 64 hex digits.", "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "positive_ms": { "type": "integer", "minimum": 1 },
+    "model_id": { "type": "string", "pattern": "^[a-z0-9_-]+:[A-Za-z0-9._-]+$" },
+    "motion_method": {
+      "description": "How the picture of the clip moves: ai_video, a video model moves the subject and the camera; dynamic_crop, code moves a 9:16 window over the still 16:9 master of the approved keyframe set, with no model.",
+      "enum": ["ai_video", "dynamic_crop"]
+    },
+    "input_mode": {
+      "description": "What the clip opens from: keyframe, the approved keyframe set of the shot; references, the reference images a person chose, from which the model builds the opening.",
+      "enum": ["keyframe", "references"]
+    },
+    "audio_policy": {
+      "description": "The technical audio rule of the file, apart from the sound line of the prompt: allow_silent accepts a file without an audio stream and still records whether it has one; require_audio needs a valid audio stream.",
+      "enum": ["allow_silent", "require_audio"]
+    },
+    "rectangle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "sha256", "width", "height"],
+      "properties": {
+        "artifact_id": { "$ref": "#/$defs/id" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "width": { "type": "integer", "minimum": 0 },
+        "height": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "contract": {
+      "description": "The phase-10 revision the video prompts are written to, as the resolver gave it: the prompt of the writer, its bundle, the check that read every answer, the builder of this plan and the sound policy every prompt follows.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase_id", "phase_revision", "prompt_version", "prompt_sha256", "bundle_hash", "writer", "builder", "audio"],
+      "properties": {
+        "phase_id": { "$ref": "#/$defs/id" },
+        "phase_revision": { "type": "integer", "minimum": 1 },
+        "prompt_version": { "type": "string", "pattern": "^[a-z0-9_]+/phase-10@rev[1-9][0-9]*$" },
+        "prompt_sha256": { "$ref": "#/$defs/sha256" },
+        "bundle_hash": { "$ref": "#/$defs/content_hash" },
+        "writer": { "$ref": "#/$defs/id" },
+        "builder": { "$ref": "#/$defs/id" },
+        "audio": {
+          "description": "The sound policy of the prompts: every approved video prompt holds one line of its own that starts with the prefix, describes the sounds of its shot and ends with the closing sentences, joined by one space.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["policy", "prefix", "closing"],
+          "properties": {
+            "policy": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+            "prefix": { "type": "string", "pattern": "^\\S.*:$" },
+            "closing": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^\\S(.*\\S)?$" } }
+          }
+        }
+      }
+    },
+    "offer": {
+      "description": "One model or processor the policy offers for a pair of motion method and input mode, with the evidence files of the repo that support it; a combination without evidence carries the reason it is unavailable and is never sent.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "send", "task", "processor", "resolutions", "unavailable_resolutions", "max_images", "evidence", "unavailable"],
+      "properties": {
+        "model": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/model_id" }] },
+        "send": { "oneOf": [{ "type": "null" }, { "enum": ["first_frame", "references", "crop_source"] }] },
+        "task": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z_]+$" }] },
+        "processor": { "$ref": "#/$defs/nullable_id" },
+        "resolutions": { "type": "array", "items": { "type": "string", "pattern": "^[0-9a-z]+$" } },
+        "unavailable_resolutions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["resolution", "reason"],
+            "properties": {
+              "resolution": { "type": "string", "pattern": "^[0-9a-z]+$" },
+              "reason": { "type": "string", "pattern": "\\S" }
+            }
+          }
+        },
+        "max_images": { "type": "integer", "minimum": 0 },
+        "evidence": { "type": "array", "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+\\.json$" } },
+        "unavailable": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "\\S" }] }
+      }
+    },
+    "offers_by_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "keyframe": { "type": "array", "items": { "$ref": "#/$defs/offer" } },
+        "references": { "type": "array", "items": { "$ref": "#/$defs/offer" } }
+      }
+    },
+    "execution_policy": {
+      "description": "The execution policy the release pins (moto-clip-execution-v1), as it was read when the plan was made: the page hash covers it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "content_duration_ms", "default_motion_method", "default_input_mode", "audio_policy", "offers", "dynamic_crop"],
+      "properties": {
+        "version": { "const": "moto-clip-execution-v1" },
+        "content_duration_ms": { "$ref": "#/$defs/positive_ms" },
+        "default_motion_method": { "$ref": "#/$defs/motion_method" },
+        "default_input_mode": { "$ref": "#/$defs/input_mode" },
+        "audio_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ai_video", "dynamic_crop"],
+          "properties": {
+            "ai_video": { "$ref": "#/$defs/audio_policy" },
+            "dynamic_crop": { "$ref": "#/$defs/audio_policy" }
+          }
+        },
+        "offers": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["ai_video", "dynamic_crop"],
+          "properties": {
+            "ai_video": { "$ref": "#/$defs/offers_by_input" },
+            "dynamic_crop": { "$ref": "#/$defs/offers_by_input" }
+          }
+        },
+        "dynamic_crop": {
+          "description": "The file a dynamic crop writes.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["processor", "width", "height", "fps", "frames", "sar", "codec", "pixel_format", "duration_tolerance_ms"],
+          "properties": {
+            "processor": { "const": "moto-dynamic-crop-v1" },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 },
+            "fps": { "type": "integer", "minimum": 1 },
+            "frames": { "type": "integer", "minimum": 1 },
+            "sar": { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" },
+            "codec": { "type": "string", "pattern": "^[a-z0-9]+$" },
+            "pixel_format": { "type": "string", "pattern": "^[a-z0-9]+$" },
+            "duration_tolerance_ms": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "source": {
+      "description": "The approved shot plan the clips come from, as ShotSourceService::approvedSource pins it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["planning_stage_id", "revision", "token"],
+      "properties": {
+        "planning_stage_id": { "$ref": "#/$defs/id" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "token": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "stage_id", "content_hash", "selection_version", "source_fingerprint"],
+          "properties": {
+            "version": { "const": "shots-source-token-v1" },
+            "stage_id": { "$ref": "#/$defs/id" },
+            "content_hash": { "$ref": "#/$defs/content_hash" },
+            "selection_version": { "type": "integer", "minimum": 1 },
+            "source_fingerprint": { "$ref": "#/$defs/content_hash" }
+          }
+        }
+      }
+    },
+    "settings": {
+      "description": "The saved settings of the shot the clip follows: their structure version and revision; revision 0 when the shot has none saved under this structure and takes the defaults of the policy.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "revision"],
+      "properties": {
+        "version": { "const": "moto-clip-settings-v1" },
+        "revision": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "render": {
+      "description": "How the file is asked for: mode, what the clip is made from (image_to_video with the delivery image as first frame, reference_to_video with reference images, dynamic_crop with the master); transport, the path of the request (interactions or predictLongRunning of the registry, local for the processor); task, the task the request names, null for none; model, the registry model or null for the processor; adapter, the payload version of that path; processor, the local processor or null; the frame, the resolution and duration_ms, the length of the file, the smallest the model makes that covers the content. A field is null when the choice is blocked before it is known.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "transport", "task", "model", "adapter", "processor", "aspect_ratio", "resolution", "duration_ms"],
+      "properties": {
+        "mode": { "enum": ["image_to_video", "reference_to_video", "dynamic_crop"] },
+        "transport": { "oneOf": [{ "type": "null" }, { "enum": ["interactions", "predictLongRunning", "local"] }] },
+        "task": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z_]+$" }] },
+        "model": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/model_id" }] },
+        "adapter": { "$ref": "#/$defs/nullable_id" },
+        "processor": { "$ref": "#/$defs/nullable_id" },
+        "aspect_ratio": { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" },
+        "resolution": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[0-9a-z]+$" }] },
+        "duration_ms": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/positive_ms" }] }
+      }
+    },
+    "media_policy": {
+      "description": "The checks the file of the clip must pass, read from config when the plan was made: the page hash covers them and the request freezes these very values. duration_ms is the length of the file asked for; used_start_ms and used_end_ms bound the part the film keeps. fps, frames, codec, pixel_format and sar are checked only when stated: a dynamic crop states them, a model does not.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "duration_ms", "duration_tolerance_ms", "output_size", "av_drift_ms", "used_start_ms", "used_end_ms", "audio", "fps", "frames", "codec", "pixel_format", "sar"],
+      "properties": {
+        "version": { "const": "moto-clip-media-policy-v2" },
+        "duration_ms": { "$ref": "#/$defs/positive_ms" },
+        "duration_tolerance_ms": { "type": "integer", "minimum": 0 },
+        "output_size": {
+          "description": "Width and height the file must have, or null for a model whose size is not fixed.",
+          "oneOf": [
+            { "type": "null" },
+            { "type": "array", "minItems": 2, "maxItems": 2, "items": { "type": "integer", "minimum": 1 } }
+          ]
+        },
+        "av_drift_ms": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 0 }] },
+        "used_start_ms": { "type": "integer", "minimum": 0 },
+        "used_end_ms": { "$ref": "#/$defs/positive_ms" },
+        "audio": { "$ref": "#/$defs/audio_policy" },
+        "fps": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }] },
+        "frames": { "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }] },
+        "codec": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z0-9]+$" }] },
+        "pixel_format": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[a-z0-9]+$" }] },
+        "sar": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^[1-9][0-9]*:[1-9][0-9]*$" }] }
+      }
+    },
+    "keyframe": {
+      "description": "The approved keyframe set the clip opens from and what it was made from: the set (the keyframe image), the decision that approved it, the 16:9 master the image model rendered, the 9:16 delivery image cut from it with the crop rectangle, and artifact_id and sha256 of the image this clip is made from — the delivery for an AI video, the master for a dynamic crop. A set rendered at the frame of the film has its master as delivery and no crop.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["image_id", "decision_id", "framed", "artifact_id", "sha256", "master", "delivery", "crop", "crop_hash", "source_token", "prompt"],
+      "properties": {
+        "image_id": { "$ref": "#/$defs/id" },
+        "decision_id": { "$ref": "#/$defs/id" },
+        "framed": { "type": "boolean" },
+        "artifact_id": { "$ref": "#/$defs/id" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "master": { "$ref": "#/$defs/artifact" },
+        "delivery": { "$ref": "#/$defs/artifact" },
+        "crop": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/rectangle" }] },
+        "crop_hash": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/content_hash" }] },
+        "source_token": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stage_id", "content_hash"],
+          "properties": {
+            "stage_id": { "$ref": "#/$defs/id" },
+            "content_hash": { "$ref": "#/$defs/content_hash" }
+          }
+        },
+        "prompt": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["version", "surface_rule", "sha256"],
+          "properties": {
+            "version": { "$ref": "#/$defs/id" },
+            "surface_rule": { "$ref": "#/$defs/id" },
+            "sha256": { "$ref": "#/$defs/content_hash" }
+          }
+        }
+      }
+    },
+    "image": {
+      "description": "One image as it is handed on, in the order it is handed on: send_as first_frame, the delivery image a model opens the clip on; reference, an image the model reads for how things look; crop_source, the master a dynamic crop samples.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["position", "artifact_id", "sha256", "kind", "role", "usage", "target", "send_as"],
+      "properties": {
+        "position": { "type": "integer", "minimum": 0 },
+        "artifact_id": { "$ref": "#/$defs/id" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "kind": { "enum": ["keyframe", "environment", "identity", "design", "character"] },
+        "role": { "type": "string", "pattern": "\\S" },
+        "usage": { "type": "string", "pattern": "\\S" },
+        "target": { "description": "What of the shot the image answers, as the Keyframes screen names it; null when it answers the whole motorcycle or is the keyframe." },
+        "send_as": { "enum": ["first_frame", "reference", "crop_source"] }
+      }
+    },
+    "crop_plan": {
+      "description": "The path of the window a dynamic crop moves over the master: at each time from the start of the clip, the rectangle sampled, in pixels of the master, 9:16, never smaller than the output. The first rectangle, at 0 ms, is the crop of the approved set. Between two points the window moves linearly in time and after the last point it holds. protected is the region of the subject a person confirmed, in pixels of the master, which every window of the clip holds whole; null when none was confirmed. hash is the hash of path.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "path", "protected", "hash"],
+      "properties": {
+        "version": { "const": "moto-dynamic-crop-v1" },
+        "path": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["at_ms", "x", "y", "width", "height"],
+            "properties": {
+              "at_ms": { "type": "integer", "minimum": 0 },
+              "x": { "type": "integer", "minimum": 0 },
+              "y": { "type": "integer", "minimum": 0 },
+              "width": { "type": "integer", "minimum": 1 },
+              "height": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "protected": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/rectangle" }] },
+        "hash": { "$ref": "#/$defs/content_hash" }
+      }
+    },
+    "blocked_code": {
+      "description": "Why a clip cannot be sent. A new reason needs a new schema version, so the later steps can rely on the list.",
+      "enum": [
+        "prompt_missing", "prompt_source_changed", "prompt_internal_reference", "timing_unresolved",
+        "duration_unsupported", "media_policy_missing", "settings_invalid",
+        "input_unsupported", "model_unavailable", "model_unsupported", "aspect_unsupported", "resolution_unsupported", "audio_unsupported",
+        "references_missing", "references_limit", "reference_problem", "reference_selection_changed",
+        "keyframe_missing", "keyframe_ambiguous", "keyframe_source_changed", "keyframe_link_invalid",
+        "keyframe_prompt_changed", "keyframe_unapproved", "keyframe_delivery_missing", "keyframe_artifact_missing", "keyframe_disk_refused", "keyframe_file_missing",
+        "keyframe_file_size", "keyframe_hash_mismatch", "keyframe_format", "keyframe_ratio", "keyframe_master_missing",
+        "crop_plan_missing", "crop_plan_invalid"
+      ]
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shot_id", "scene_id", "order", "execution_policy", "settings", "motion_method", "input_mode", "content_duration_ms", "render", "used", "keyframe", "images", "crop_plan", "audio_policy", "media_policy", "prompt", "blocked", "hash"],
+      "properties": {
+        "shot_id": { "type": "string", "pattern": "^SC[0-9]{2}_SH[0-9]{2}$" },
+        "scene_id": { "description": "The code of the scene of the shot plan the shot belongs to, such as SC10. It is not the id of a video_render_scenes row: the shot flow has no scene row.", "type": "string", "pattern": "^SC[0-9]{2}$" },
+        "order": { "type": "integer", "minimum": 1 },
+        "execution_policy": { "const": "moto-clip-execution-v1" },
+        "settings": { "$ref": "#/$defs/settings" },
+        "motion_method": { "$ref": "#/$defs/motion_method" },
+        "input_mode": { "$ref": "#/$defs/input_mode" },
+        "content_duration_ms": { "description": "The length of the approved content of the shot: its actions, camera and end state all happen within it.", "$ref": "#/$defs/positive_ms" },
+        "render": { "$ref": "#/$defs/render" },
+        "used": {
+          "description": "The part of the file the film keeps: the whole approved content, from the first frame of the file. What a longer file holds after it is never used.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["start_ms", "duration_ms"],
+          "properties": {
+            "start_ms": { "const": 0 },
+            "duration_ms": { "$ref": "#/$defs/positive_ms" }
+          }
+        },
+        "keyframe": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/keyframe" }] },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/image" } },
+        "crop_plan": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/crop_plan" }] },
+        "audio_policy": { "$ref": "#/$defs/audio_policy" },
+        "media_policy": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/media_policy" }] },
+        "prompt": {
+          "description": "The video prompt a person approved for the shot, word for word, with the run that wrote it, the decision that approved it and the fingerprint of the sources it was written from; null while the shot has none whose sources still hold, and always null for a dynamic crop, which needs no prompt.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["text", "version", "sha256", "stage_id", "decision_id", "source_fingerprint"],
+              "properties": {
+                "text": { "type": "string", "pattern": "\\S" },
+                "version": { "type": "string", "pattern": "^[a-z0-9_]+/phase-10@rev[1-9][0-9]*$" },
+                "sha256": { "$ref": "#/$defs/sha256" },
+                "stage_id": { "$ref": "#/$defs/id" },
+                "decision_id": { "$ref": "#/$defs/id" },
+                "source_fingerprint": { "$ref": "#/$defs/content_hash" }
+              }
+            }
+          ]
+        },
+        "blocked": {
+          "description": "Why this clip cannot be sent, or null when it can.",
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "message"],
+              "properties": {
+                "code": { "$ref": "#/$defs/blocked_code" },
+                "message": { "type": "string", "pattern": "\\S" }
+              }
+            }
+          ]
+        },
+        "hash": { "$ref": "#/$defs/content_hash" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "motion_method": { "const": "dynamic_crop" } } },
+          "then": { "properties": { "input_mode": { "const": "keyframe" }, "prompt": { "type": "null" }, "render": { "properties": { "mode": { "const": "dynamic_crop" }, "model": { "type": "null" } } } } }
+        },
+        {
+          "if": { "properties": { "motion_method": { "const": "ai_video" } } },
+          "then": { "properties": { "crop_plan": { "type": "null" }, "render": { "properties": { "mode": { "enum": ["image_to_video", "reference_to_video"] } } } } }
+        },
+        {
+          "if": { "properties": { "input_mode": { "const": "references" } } },
+          "then": { "properties": { "keyframe": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "blocked": { "type": "null" } } },
+          "then": {
+            "properties": {
+              "images": { "minItems": 1 },
+              "media_policy": { "type": "object" },
+              "render": { "properties": { "transport": { "type": "string" }, "resolution": { "type": "string" }, "duration_ms": { "type": "integer" } } }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "blocked": { "type": "null" }, "motion_method": { "const": "ai_video" } } },
+          "then": { "properties": { "prompt": { "type": "object" }, "render": { "properties": { "model": { "type": "string" } } } } }
+        },
+        {
+          "if": { "properties": { "blocked": { "type": "null" }, "input_mode": { "const": "keyframe" } } },
+          "then": { "properties": { "keyframe": { "type": "object" } } }
+        },
+        {
+          "if": { "properties": { "blocked": { "type": "null" }, "motion_method": { "const": "dynamic_crop" } } },
+          "then": { "properties": { "crop_plan": { "type": "object" }, "keyframe": { "properties": { "framed": { "const": true } } } } }
+        }
+      ]
+    }
+  }
+}

@@ -2,20 +2,21 @@
 
 namespace App\Video\Render\Video;
 
-use App\Enums\DesignImageStatus;
 use App\Models\VideoArtifact;
-use App\Models\VideoDesignImage;
-use App\Models\VideoProviderSubmissionReceipt;
 use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoShot;
-use App\Services\Video\DesignImageStore;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProviderSubmissionReceiptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderSceneRepositoryInterface;
+use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\Mp4Probe;
 use App\Video\Media\VideoModelRegistry;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\RenderDispatchService;
-use App\Video\Scene\ScenePreservationPrompt;
 use App\Video\Scene\Services\ShotIntentService;
 use App\Video\Scene\Services\ShotSelectionReconciler;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
@@ -55,6 +56,13 @@ final class SceneClipDispatchService
         private readonly FilesystemFactory $storage,
         private readonly Mp4Probe $probe,
         private readonly ShotIntentService $intents,
+        private readonly \App\Services\Video\MotoKeyframeFramingService $framing,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoDesignImageRepositoryInterface $images,
+        private readonly VideoRenderSceneRepositoryInterface $scenes,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
+        private readonly VideoProviderSubmissionReceiptRepositoryInterface $receipts,
+        private readonly VideoShotRepositoryInterface $shots,
     ) {}
 
     /**
@@ -170,7 +178,7 @@ final class SceneClipDispatchService
         $references = [];
 
         foreach ($manifest as $item) {
-            $artifact = is_array($item) ? VideoArtifact::query()->whereKey($item['artifact_id'] ?? null)->first() : null;
+            $artifact = is_array($item) ? $this->artifacts->findArtifact($item['artifact_id'] ?? null) : null;
 
             if ($artifact === null) {
                 throw new RuntimeException('Anh tham chieu "'.(is_array($item) ? ($item['label'] ?? '?') : '?').'" khong con artifact.');
@@ -267,6 +275,7 @@ final class SceneClipDispatchService
      * @param  array<string, mixed>  $controls
      * @param  array<string, mixed>  $frozen  what a caller freezes into the request beside what this service freezes, so the request hash covers it; empty adds nothing
      * @param  ?array{task: ?string, references: list<array{artifact: VideoArtifact, role: string, label: string}>}  $input  for a clip made from reference images: the images to send in their order, with $source the first of them, and the task to send or null for none; null sends $source alone as the first frame
+     * @param  ?array{task: ?string}  $opening  for a clip of an execution plan opened on $source: the task its plan names, sent through interactions as the task of the first frame, and for a long-running model $source as its image with never a last frame, whatever the registry says of last frames; null keeps the first frame of the registry as before
      */
     public function create(
         VideoShot $shot,
@@ -277,7 +286,12 @@ final class SceneClipDispatchService
         ?string $operationId = null,
         array $frozen = [],
         ?array $input = null,
+        ?array $opening = null,
     ): VideoRender {
+        if ($input !== null && $opening !== null) {
+            throw new RuntimeException('Một clip mở từ một khung hình hoặc từ ảnh tham chiếu, không cả hai — chưa có gì được gửi.');
+        }
+
         // HTTP callers must carry the ETag and operation identity they rendered
         // into the page. Direct unit tests exercise the same transaction with a
         // fresh operation instead of duplicating these transport-only values.
@@ -286,7 +300,7 @@ final class SceneClipDispatchService
                 throw new RuntimeException('Scene clip dispatch requires intent version and operation id.');
             }
 
-            $expectedIntentVersion = (int) $shot->refresh()->intent_version;
+            $expectedIntentVersion = (int) $this->shots->refreshShot($shot)->intent_version;
             $operationId = (string) Str::uuid();
         }
 
@@ -296,7 +310,8 @@ final class SceneClipDispatchService
             'model_id' => $modelId,
             'controls' => $this->canonical($controls),
             'expected_intent_version' => $expectedIntentVersion,
-        ] + ($input === null ? [] : ['input' => ['task' => $input['task'], 'references' => array_map(static fn (array $reference): string => (string) $reference['artifact']->id, array_values($input['references']))]]),
+        ] + ($input === null ? [] : ['input' => ['task' => $input['task'], 'references' => array_map(static fn (array $reference): string => (string) $reference['artifact']->id, array_values($input['references']))]])
+        + ($opening === null ? [] : ['opening' => ['task' => $opening['task']]]),
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 
         [$updated, $render, $reason] = $this->intents->dispatch(
@@ -313,6 +328,7 @@ final class SceneClipDispatchService
                 null,
                 $frozen,
                 $input,
+                $opening,
             ),
         );
 
@@ -364,6 +380,7 @@ final class SceneClipDispatchService
     /**
      * @param  array<string, mixed>  $controls
      * @param  array<string, mixed>  $frozen
+     * @param  ?array{task: ?string}  $opening
      */
     private function build(
         VideoShot $shot,
@@ -374,8 +391,9 @@ final class SceneClipDispatchService
         ?string $expectedRequestHash = null,
         array $frozen = [],
         ?array $input = null,
+        ?array $opening = null,
     ): VideoRender {
-        [$entry, $keyframe, $request] = $this->freezeRequest($shot, $source, $purpose, $modelId, $controls, $input);
+        [$entry, $keyframe, $request] = $this->freezeRequest($shot, $source, $purpose, $modelId, $controls, $input, $opening);
         $request += $frozen;
 
         $requestJson = json_encode($request, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
@@ -422,6 +440,7 @@ final class SceneClipDispatchService
 
     /**
      * @param  array<string, mixed>  $controls
+     * @param  ?array{task: ?string}  $opening
      * @return array{0: array<string, mixed>, 1: VideoRender, 2: array<string, mixed>}
      */
     private function freezeRequest(
@@ -431,6 +450,7 @@ final class SceneClipDispatchService
         string $modelId,
         array $controls,
         ?array $input = null,
+        ?array $opening = null,
     ): array {
         // Thieu ffprobe la loi cau hinh may, khong phai loi cua render: chan o day
         // thi khong o nao bi tao ra roi danh that bai vinh vien.
@@ -454,7 +474,7 @@ final class SceneClipDispatchService
                 throw new RuntimeException('Canary khung cuoi chi danh cho model predictLongRunning; '.$entry['model'].' khong nhan khung cuoi.');
             }
 
-            return $this->freezeOmniRequest($shot, $source, $entry, $controls, $input);
+            return $this->freezeOmniRequest($shot, $source, $entry, $controls, $input, $opening);
         }
 
         if ($input !== null) {
@@ -463,7 +483,7 @@ final class SceneClipDispatchService
 
         // Canary khong doc co: no ton tai de CHUNG MINH co nay co duoc bat khong.
         $attach = $purpose === self::PURPOSE_CANARY
-            || ($entry['controls']['last_frame'] ?? false) === true;
+            || ($opening === null && ($entry['controls']['last_frame'] ?? false) === true);
 
         $end = $attach ? $this->successorFrame($shot) : null;
 
@@ -481,21 +501,16 @@ final class SceneClipDispatchService
         // de hai lan render cung mot scene khong khai hai canonical khac nhau.
         $keyframe = $source->render_id === null
             ? null
-            : VideoRender::query()->whereKey($source->render_id)->first();
+            : $this->renders->findRender($source->render_id);
 
         if ($keyframe === null) {
             throw new RuntimeException('Anh da duyet khong gan voi lan render nao — khong truy duoc canonical.');
         }
 
         if ($purpose === self::PURPOSE_PRODUCTION && $shot->scene_id !== null) {
-            $stillSelected = VideoDesignImage::query()
-                ->where('render_scene_id', $shot->scene_id)
-                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-                ->where('status', DesignImageStatus::APPROVED->value)
-                ->where('selected_artifact_id', $source->id)
-                ->exists();
+            $stillSelected = $this->images->isSelectedApprovedSceneKeyframe($shot->scene_id, $source->id);
 
-            if (! $stillSelected && ! \App\Services\Video\MotoKeyframeFramingService::inUse($source, (string) $shot->scene_id)) {
+            if (! $stillSelected && ! $this->framing->inUse($source, (string) $shot->scene_id)) {
                 throw new RuntimeException(
                     'source_keyframe_changed: anh nguon khong con la keyframe duoc duyet cua scene.',
                 );
@@ -547,22 +562,19 @@ final class SceneClipDispatchService
     /**
      * @param  array<string, mixed>  $entry
      * @param  array<string, mixed>  $controls
+     * @param  ?array{task: ?string}  $opening
      * @return array{0: array<string, mixed>, 1: VideoRender, 2: array<string, mixed>}
      */
-    private function freezeOmniRequest(VideoShot $shot, VideoArtifact $source, array $entry, array $controls, ?array $input = null): array
+    private function freezeOmniRequest(VideoShot $shot, VideoArtifact $source, array $entry, array $controls, ?array $input = null, ?array $opening = null): array
     {
-        $keyframe = $source->render_id === null ? null : VideoRender::query()->whereKey($source->render_id)->first();
+        $keyframe = $source->render_id === null ? null : $this->renders->findRender($source->render_id);
 
         if ($keyframe === null) {
             throw new RuntimeException('Anh da duyet khong gan voi lan render nao — khong truy duoc canonical.');
         }
 
-        if ($input === null && $shot->scene_id !== null && ! VideoDesignImage::query()
-            ->where('render_scene_id', $shot->scene_id)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->where('selected_artifact_id', $source->id)
-            ->exists() && ! \App\Services\Video\MotoKeyframeFramingService::inUse($source, (string) $shot->scene_id)) {
+        if ($input === null && $shot->scene_id !== null && ! $this->images->isSelectedApprovedSceneKeyframe($shot->scene_id, $source->id)
+            && ! $this->framing->inUse($source, (string) $shot->scene_id)) {
             throw new RuntimeException('source_keyframe_changed: anh nguon khong con la keyframe duoc duyet cua scene.');
         }
 
@@ -592,7 +604,11 @@ final class SceneClipDispatchService
             'provider' => $entry['provider'],
             'model' => $entry['model'],
             'api_version' => $entry['api_version'],
-            'task' => $input === null ? ($entry['controls']['task'] ?? null) : $input['task'],
+            'task' => match (true) {
+                $opening !== null => $opening['task'],
+                $input === null => $entry['controls']['task'] ?? null,
+                default => $input['task'],
+            },
             'compiled_prompt' => ['prompt' => $prompt],
             'duration_seconds' => $seconds,
             'response_duration' => ($entry['controls']['duration_control'] ?? null) === 'request_field' ? $seconds.'s' : null,
@@ -657,10 +673,7 @@ final class SceneClipDispatchService
         $prefix = $purpose === self::PURPOSE_CANARY ? 'scene-clip-canary:' : 'scene-clip:';
         $base = $prefix.$shot->id.':'.$requestHash;
 
-        $existing = VideoRender::query()
-            ->where('shot_id', $shot->id)
-            ->where('idempotency_key', 'like', $base.'%')
-            ->get(['id', 'execution_status', 'idempotency_key']);
+        $existing = $this->renders->findByShotIdempotencyPrefix($shot->id, $base);
 
         if ($existing->isEmpty()) {
             return $base;
@@ -677,9 +690,7 @@ final class SceneClipDispatchService
             return (string) $live->idempotency_key;
         }
 
-        $paid = VideoProviderSubmissionReceipt::query()
-            ->whereIn('render_id', $existing->pluck('id'))
-            ->exists();
+        $paid = $this->receipts->existsForRenders($existing->pluck('id'));
 
         if ($paid) {
             throw new RuntimeException(
@@ -898,39 +909,23 @@ final class SceneClipDispatchService
             return null;
         }
 
-        $scene = VideoRenderScene::query()->whereKey($sceneId)->first();
+        $scene = $this->scenes->findScene($sceneId);
 
         if ($scene === null || (string) ($scene->scene_code ?? '') === '') {
             return null;
         }
 
-        $next = VideoRenderScene::query()
-            ->where('project_id', $scene->project_id)
-            ->where('revision', $scene->revision)
-            ->where('source_scene_code', $scene->scene_code)
-            ->where('transition_mode', ScenePreservationPrompt::CONTINUATION)
-            ->where(fn ($query) => $scene->continuity_group === null
-                ? $query->whereNull('continuity_group')
-                : $query->where('continuity_group', $scene->continuity_group))
-            ->orderBy('scene_index')
-            ->first();
+        $next = $this->scenes->findContinuationSuccessor($scene);
 
         if ($next === null) {
             return null;
         }
 
-        $keyframe = VideoDesignImage::query()
-            ->where('render_scene_id', $next->id)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->first();
+        $keyframe = $this->images->findApprovedSceneKeyframe($next->id);
 
         $artifact = $keyframe === null || $keyframe->selected_artifact_id === null
             ? null
-            : VideoArtifact::query()
-                ->whereKey($keyframe->selected_artifact_id)
-                ->where('design_image_id', $keyframe->id)
-                ->first();
+            : $this->artifacts->findArtifactOfImage($keyframe->selected_artifact_id, $keyframe->id);
 
         if ($artifact === null) {
             $name = (string) ($next->title ?? '');

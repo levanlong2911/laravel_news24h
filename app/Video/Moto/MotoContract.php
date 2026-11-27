@@ -189,9 +189,42 @@ final class MotoContract
     /** @var string the input of a video prompt of a release that plans its places as a set design dossier: the tenth input whose environment also carries the light of the plate in the picture — its sources, where the frame is bright and dark — and the state of the set for that plate, as the shot run pinned them */
     public const CLIP_PROMPT_INPUT_V11 = 'moto-clip-prompt-input-v11';
 
+    /** @var string the input of a video prompt of a release whose clips follow an execution policy (CLIP_EXECUTION): the eleventh input with the pace and the emotion of the scene as the shot run pinned it, and the group execution — how the clip is moved and from which images, the length of the content, the length of the file the model renders and the part of it the film keeps, the frame of the film and every image actually sent with its role as first frame or reference; its answer is a MotoClipPrompt 1.0.1 document */
+    public const CLIP_PROMPT_INPUT_V12 = 'moto-clip-prompt-input-v12';
+
     public const CLIP_PROMPT_FORMAT = 'moto-clip-prompt-v1';
 
     public const CLIP_PROMPT_EXECUTION = 'db-moto-phase-10-v1';
+
+    /** @var string the execution policy a release declares in policy.clip_execution: the length of the approved content, the default way of moving a clip and of choosing its opening, the audio policy of each way, the models each pair of them may offer with their evidence, and the output of a dynamic crop */
+    public const CLIP_EXECUTION = 'moto-clip-execution-v1';
+
+    /** @var string the metadata a person's content review of a clip is stored with */
+    public const CLIP_REVIEW = 'moto-clip-review-v1';
+
+    /** @var string the local processor that makes a clip by moving a 9:16 window over the approved 16:9 master of a keyframe set */
+    public const DYNAMIC_CROP_PROCESSOR = 'moto-dynamic-crop-v1';
+
+    /** @var string the clip plan of a release with an execution policy: each clip says how it is moved, from which images, with which model, how long the file is and which part of it the film keeps */
+    public const CLIP_PLAN_FORMAT_V3 = 'moto-clip-plan-v3';
+
+    /** @var string the schema of that plan */
+    public const CLIP_PLAN_SCHEMA_V3 = 'MotoClipPlan@3.0.0';
+
+    /** @var string the structure of the settings a person saves for the clip of one shot under an execution policy (project metadata moto_clip_inputs) */
+    public const CLIP_SETTINGS = 'moto-clip-settings-v1';
+
+    /** @var string a clip whose subject and camera a video model moves */
+    public const MOTION_AI_VIDEO = 'ai_video';
+
+    /** @var string a clip made by moving a window over a still image, with no model */
+    public const MOTION_DYNAMIC_CROP = 'dynamic_crop';
+
+    /** @var string a clip that may come without an audio stream; whether it has one is still recorded */
+    public const AUDIO_ALLOW_SILENT = 'allow_silent';
+
+    /** @var string a clip that must carry a valid audio stream */
+    public const AUDIO_REQUIRE = 'require_audio';
 
     public const EVIDENCE_EXECUTION = 'db-moto-phase-1-v1';
 

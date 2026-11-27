@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Video\Render;
 
 use App\Models\VideoRender;
-use App\Models\VideoRenderAttempt;
+use App\Repositories\Interfaces\VideoRenderAttemptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
 use App\Video\Concept\Support\Clock;
 use App\Video\Media\Mp4Probe;
+use App\Video\Render\Claims\RenderClaimLostException;
 use App\Video\Render\Cost\RenderCostAccountingService;
 use App\Video\Render\DTO\RenderAttemptUsage;
 use App\Video\Render\Enums\RenderAttemptStatus;
@@ -22,6 +24,8 @@ final class RenderCheckpointService
     public function __construct(
         private readonly Clock $clock,
         private readonly RenderCostAccountingService $costs,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoRenderAttemptRepositoryInterface $attempts,
         private readonly RenderStateMachine $states = new RenderStateMachine,
         private readonly ?FilesystemFactory $storage = null,
         private readonly ?Mp4Probe $probe = null,
@@ -34,11 +38,11 @@ final class RenderCheckpointService
     private function assertHoldsLease(VideoRender $render, string $claimToken): void
     {
         if (! hash_equals((string) $render->claim_token, $claimToken)) {
-            throw new RuntimeException('Complete claim token mismatch.');
+            throw new RenderClaimLostException('Complete claim token mismatch.');
         }
 
         if ($render->lease_expires_at === null || $render->lease_expires_at <= $this->clock->now()) {
-            throw new RuntimeException('Complete lease expired.');
+            throw new RenderClaimLostException('Complete lease expired.');
         }
     }
 
@@ -53,7 +57,7 @@ final class RenderCheckpointService
         // Do va bam file la viec dai: mot clip hop le co the nang toi hang tram MB.
         // Lam no BEN TRONG transaction la giu khoa hang suot ca thoi gian do, va
         // lease 120 giay co the chet truoc khi commit.
-        $probed = VideoRender::query()->whereKey($renderId)->firstOrFail();
+        $probed = $this->renders->findRenderOrFail($renderId);
 
         if ($probed->render_kind === 'video' && $probed->execution_status !== RenderStatus::SUCCEEDED) {
             $this->verifyVideoArtifact($probed, $artifactManifest);
@@ -67,7 +71,7 @@ final class RenderCheckpointService
             $artifactManifest,
             $usage,
         ): VideoRender {
-            $render = VideoRender::query()->whereKey($renderId)->lockForUpdate()->firstOrFail();
+            $render = $this->renders->lockRenderOrFail($renderId);
 
             if ($render->execution_status === RenderStatus::SUCCEEDED) {
                 if (! hash_equals((string) $render->request_hash, $requestHash)) {
@@ -97,19 +101,15 @@ final class RenderCheckpointService
             if ($render->execution_status !== RenderStatus::CHECKPOINTING) {
                 $this->states->assert($render->execution_status, RenderStatus::CHECKPOINTING);
 
-                $render->forceFill([
+                $this->renders->saveRender($render, [
                     'execution_status' => RenderStatus::CHECKPOINTING,
                     'execution_version' => $render->execution_version + 1,
-                ])->save();
+                ]);
             }
 
             $this->states->assert(RenderStatus::CHECKPOINTING, RenderStatus::SUCCEEDED);
 
-            $attempt = VideoRenderAttempt::query()
-                ->where('render_id', $render->id)
-                ->where('attempt_no', $render->attempt_count)
-                ->lockForUpdate()
-                ->firstOrFail();
+            $attempt = $this->attempts->lockCurrentAttemptOrFail($render->id, $render->attempt_count);
 
             if (
                 $attempt->provider_request_id !== null
@@ -121,7 +121,7 @@ final class RenderCheckpointService
 
             $now = $this->clock->now();
 
-            $attempt->forceFill([
+            $this->attempts->saveAttempt($attempt, [
                 'status' => RenderAttemptStatus::SUCCEEDED,
                 'provider_request_id' => $providerRequestId ?? $attempt->provider_request_id,
                 'artifact_manifest' => $artifactManifest,
@@ -131,11 +131,11 @@ final class RenderCheckpointService
                 'text_input_tokens' => $usage->textInputTokens,
                 'provider_cost_usd' => $usage->providerCostUsd,
                 'completed_at' => $now,
-            ])->save();
+            ]);
 
             $this->costs->record($render, $attempt, $usage);
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::SUCCEEDED,
                 'provider_request_id' => $providerRequestId ?? $render->provider_request_id,
                 'artifact_manifest' => $artifactManifest,
@@ -151,7 +151,7 @@ final class RenderCheckpointService
                 'next_retry_at' => null,
                 'execution_completed_at' => $now,
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
             return $render;
         }, attempts: 3);

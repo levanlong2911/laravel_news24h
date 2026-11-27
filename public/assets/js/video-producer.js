@@ -246,6 +246,8 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
     var sequence = 0;
     var sent = {};
     var drawn = {};
+    var flying = {};
+    var queue = {};
 
     if (root === null) { return; }
 
@@ -389,16 +391,74 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
         return Array.prototype.map.call(doc.querySelectorAll('[data-ajax-part]'), function (element) { return element.id; }).join(' ');
     }
 
-    function replaceParts(fresh, seq) {
+    function busy(id, form) {
+        var holder = flying[id];
+
+        if (!holder || holder === form) { return false; }
+
+        return typeof holder === 'number' || holder.isConnected !== false;
+    }
+
+    function released(id) {
+        var part = document.getElementById(id);
+        var held = queue[id] || [];
+        var next = held.shift();
+
+        while (next && next.isConnected === false) { next = held.shift(); }
+
+        delete flying[id];
+
+        if (part !== null) { part.classList.remove('vp-saving'); }
+
+        if (next) {
+            flying[id] = next;
+            vpSubmitSoon(next, 0);
+        }
+    }
+
+    function dropped(id) {
+        var part = document.getElementById(id);
+
+        delete flying[id];
+        delete queue[id];
+
+        if (part !== null) {
+            part.classList.remove('vp-saving');
+            part.classList.remove('vp-pending');
+            part.classList.add('vp-unsaved');
+        }
+    }
+
+    function landed(current, element, seq) {
+        var values = {};
+
+        if (flying[current.id] !== seq) { return; }
+
+        element.querySelectorAll('[data-ajax-fresh]').forEach(function (field) { values[field.name] = field.value; });
+        current.querySelectorAll('[data-ajax-fresh]').forEach(function (field) {
+            if (values[field.name] !== undefined) { field.value = values[field.name]; }
+        });
+
+        released(current.id);
+    }
+
+    function replaceParts(fresh, seq, conflict) {
         var replaced = [];
 
         fresh.querySelectorAll('[data-ajax-part]').forEach(function (element) {
             var current = document.getElementById(element.id);
             var stale = seq < (sent[element.id] || 0) || seq < (drawn[element.id] || 0);
 
-            if (current !== null && !stale && current.querySelector('.modal.show') === null && !current.classList.contains('vp-pending')) {
+            if (current !== null && !stale && !conflict && current.classList.contains('vp-pending')) {
+                landed(current, element, seq);
+
+                return;
+            }
+
+            if (current !== null && !stale && current.querySelector('.modal.show') === null && (conflict || !current.classList.contains('vp-pending'))) {
                 current.outerHTML = element.outerHTML;
                 drawn[element.id] = seq;
+                delete queue[element.id];
                 replaced.push(document.getElementById(element.id));
             }
         });
@@ -428,10 +488,23 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
         var trigger = triggerOf(form, event.submitter || null);
         var controls = controlsOf(form);
         var states = controls.map(function (control) { return control.disabled; });
+        var ownPart = form.closest('[data-ajax-part]');
+        var ownId = ownPart === null ? null : ownPart.id;
+        var queued = !!ownId && form.querySelector('[data-ajax-fresh]') !== null;
 
         if (whole || (exclusive && running > 0)) {
+            if (queued && flying[ownId] === form) { dropped(ownId); }
+
             unlock(trigger, controls, states);
             notify(waiting, false);
+
+            return;
+        }
+
+        if (queued && busy(ownId, form)) {
+            queue[ownId] = (queue[ownId] || []).filter(function (held) { return held !== form; }).concat([form]);
+            ownPart.classList.remove('vp-unsaved');
+            ownPart.classList.add('vp-pending');
 
             return;
         }
@@ -439,12 +512,18 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
         var place = placeOf(form, trigger);
         var target = null;
         var fragment = false;
+        var conflict = false;
         var settled = false;
-        var ownPart = form.closest('[data-ajax-part]');
-        var ownId = ownPart === null ? null : ownPart.id;
         var seq = ++sequence;
 
         if (ownId) { sent[ownId] = seq; }
+
+        if (queued) {
+            flying[ownId] = seq;
+            ownPart.classList.add('vp-saving');
+
+            if ((queue[ownId] || []).length > 0) { ownPart.classList.add('vp-pending'); }
+        }
 
         function settle() {
             if (settled) { return; }
@@ -465,9 +544,11 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
             headers: { 'Accept': 'text/html', 'X-Vp-Ajax': '1' }
         })
             .then(function (response) {
-                if (!response.ok) { throw new Error('HTTP ' + response.status); }
-
                 fragment = response.headers.get('X-Vp-Fragment') === '1';
+
+                conflict = fragment && response.status === 409;
+
+                if (!response.ok && !conflict) { throw new Error('HTTP ' + response.status); }
 
                 if (!fragment && new URL(response.url, window.location.href).pathname !== window.location.pathname) {
                     window.location.href = response.url;
@@ -486,12 +567,24 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
                 var swapped = !fragment && (exclusive || parts(fresh) !== parts(document));
                 var replaced = [];
                 var elsewhere = Math.abs(window.scrollY - place.scrollY) > 4 ? viewOf() : null;
+                var note = fresh.querySelector('[data-ajax-flash]');
+                var done = !conflict && note !== null && !!note.dataset.success && !note.dataset.error;
 
                 if (swapped) {
                     replaceWhole(fresh);
+                    flying = {};
+                    queue = {};
                 } else {
-                    replaced = replaceParts(fresh, seq);
+                    replaced = replaceParts(fresh, seq, conflict);
                     unlock(place.trigger, controls, states);
+                }
+
+                if (ownId && flying[ownId] === seq) {
+                    if (Array.prototype.some.call(fresh.querySelectorAll('[data-ajax-part]'), function (element) { return element.id === ownId; })) {
+                        released(ownId);
+                    } else {
+                        dropped(ownId);
+                    }
                 }
 
                 settle();
@@ -506,8 +599,8 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
                 if (elsewhere === null) { restore(place); } else { keep(elsewhere); }
                 if (swapped || fresh.querySelector('[data-ajax-flash]') === null || replaced.some(function (part) { return part !== null && part.hasAttribute('data-ajax-flash'); })) { flash(); }
 
-                if (swapped && onRefresh) { onRefresh(root); }
-                if (!swapped && onParts) { onParts(replaced); }
+                if (swapped && onRefresh) { onRefresh(root, form, done); }
+                if (!swapped && onParts) { onParts(replaced, form, done); }
             })
             .catch(function () {
                 var own = ownId ? document.getElementById(ownId) : null;
@@ -518,6 +611,8 @@ function vpAjaxPage(rootId, onRefresh, onParts, only) {
                     own.classList.remove('vp-saving');
                     own.classList.add('vp-unsaved');
                 }
+
+                if (ownId && flying[ownId] === seq) { released(ownId); }
 
                 release(form, place, controls, states);
             });

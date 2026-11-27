@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Video\Render;
 
-use App\Models\VideoProviderSubmissionReceipt;
 use App\Models\VideoRender;
 use App\Models\VideoRenderAttempt;
+use App\Repositories\Interfaces\VideoProviderSubmissionReceiptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderAttemptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
 use App\Video\Concept\Support\Clock;
+use App\Video\Render\Claims\RenderClaimLostException;
 use App\Video\Render\Enums\RenderAttemptStatus;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\StateMachine\RenderStateMachine;
@@ -18,6 +21,9 @@ final class VideoProviderCheckpointService
 {
     public function __construct(
         private readonly Clock $clock,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoRenderAttemptRepositoryInterface $attempts,
+        private readonly VideoProviderSubmissionReceiptRepositoryInterface $receipts,
         private readonly RenderStateMachine $states = new RenderStateMachine,
     ) {
     }
@@ -29,11 +35,11 @@ final class VideoProviderCheckpointService
     private function assertHoldsLease(VideoRender $render, string $claimToken): void
     {
         if (! hash_equals((string) $render->claim_token, $claimToken)) {
-            throw new RuntimeException('Claim token mismatch.');
+            throw new RenderClaimLostException('Claim token mismatch.');
         }
 
         if ($render->lease_expires_at === null || $render->lease_expires_at <= $this->clock->now()) {
-            throw new RuntimeException('Lease da het han — khong con quyen ghi.');
+            throw new RenderClaimLostException('Lease da het han — khong con quyen ghi.');
         }
     }
 
@@ -52,23 +58,21 @@ final class VideoProviderCheckpointService
             $providerRequestId,
             $submitResponse,
         ): VideoRender {
-            $render = VideoRender::query()->whereKey($render->id)->lockForUpdate()->firstOrFail();
+            $render = $this->renders->lockRenderOrFail($render->id);
 
             $this->assertHoldsLease($render, $claimToken);
             $this->states->assert($render->execution_status, RenderStatus::PROVIDER_RUNNING);
 
-            VideoRenderAttempt::query()
-                ->where('render_id', $render->id)
-                ->where('attempt_no', $render->attempt_count)
-                ->update([
-                    'status' => RenderAttemptStatus::SUBMITTED,
-                    'provider_job_id' => $providerJobId,
-                    'provider_request_id' => $providerRequestId,
-                    'provider_submit_response_json' => $submitResponse,
-                    'submitted_at' => $this->clock->now(),
-                ]);
+            $this->attempts->markCurrentAttemptSubmitted(
+                $render->id,
+                $render->attempt_count,
+                $providerJobId,
+                $providerRequestId,
+                $submitResponse,
+                $this->clock->now(),
+            );
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::PROVIDER_RUNNING,
                 'provider_job_id' => $providerJobId,
                 'provider_request_id' => $providerRequestId ?? $render->provider_request_id,
@@ -80,7 +84,7 @@ final class VideoProviderCheckpointService
                 'lease_expires_at' => null,
                 'provider_next_poll_at' => $this->clock->now()->modify('+30 seconds'),
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
             return $render;
         }, attempts: 3);
@@ -89,7 +93,7 @@ final class VideoProviderCheckpointService
     public function claimPoll(VideoRender $render, string $claimToken, string $workerId): VideoRender
     {
         return DB::transaction(function () use ($render, $claimToken, $workerId): VideoRender {
-            $render = VideoRender::query()->whereKey($render->id)->lockForUpdate()->firstOrFail();
+            $render = $this->renders->lockRenderOrFail($render->id);
 
             if ($render->execution_status !== RenderStatus::PROVIDER_RUNNING) {
                 throw new RuntimeException('Only provider-running renders can be polled.');
@@ -107,14 +111,14 @@ final class VideoProviderCheckpointService
 
             $now = $this->clock->now();
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::POLLING,
                 'claim_token' => $claimToken,
                 'claimed_by' => $workerId,
                 'claimed_at' => $now,
                 'lease_expires_at' => $now->modify('+2 minutes'),
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
             return $render;
         }, attempts: 3);
@@ -124,14 +128,14 @@ final class VideoProviderCheckpointService
     public function markStillRunning(VideoRender $render, string $claimToken, array $pollResponse): VideoRender
     {
         return DB::transaction(function () use ($render, $claimToken, $pollResponse): VideoRender {
-            $render = VideoRender::query()->whereKey($render->id)->lockForUpdate()->firstOrFail();
+            $render = $this->renders->lockRenderOrFail($render->id);
 
             $this->assertHoldsLease($render, $claimToken);
             $this->states->assert($render->execution_status, RenderStatus::PROVIDER_RUNNING);
 
             $now = $this->clock->now();
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::PROVIDER_RUNNING,
                 'provider_poll_count' => $render->provider_poll_count + 1,
                 'provider_last_polled_at' => $now,
@@ -143,7 +147,7 @@ final class VideoProviderCheckpointService
                 'heartbeat_at' => null,
                 'lease_expires_at' => null,
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
             return $render;
         }, attempts: 3);
@@ -157,7 +161,7 @@ final class VideoProviderCheckpointService
     public function adoptKnownJob(VideoRender $render): ?VideoRender
     {
         return DB::transaction(function () use ($render): ?VideoRender {
-            $render = VideoRender::query()->whereKey($render->id)->lockForUpdate()->firstOrFail();
+            $render = $this->renders->lockRenderOrFail($render->id);
 
             if ($render->lease_expires_at !== null && $render->lease_expires_at > $this->clock->now()) {
                 return null;
@@ -172,20 +176,13 @@ final class VideoProviderCheckpointService
             }
 
             // Mot luot moi hon dang chay thi job cu khong con la viec cua hang nay.
-            $newer = VideoRenderAttempt::query()
-                ->where('render_id', $render->id)
-                ->where('attempt_no', '>', $render->attempt_count)
-                ->exists();
+            $newer = $this->attempts->hasNewerAttempt($render->id, $render->attempt_count);
 
             if ($newer) {
                 return null;
             }
 
-            $attempt = VideoRenderAttempt::query()
-                ->where('render_id', $render->id)
-                ->where('attempt_no', $render->attempt_count)
-                ->lockForUpdate()
-                ->first();
+            $attempt = $this->attempts->lockCurrentAttempt($render->id, $render->attempt_count);
 
             // Cot tren render chi co khi CAS chinh da thanh cong. Khi no that bai,
             // bien lai append-only la nguon su that: no dinh danh dung attempt va
@@ -204,13 +201,13 @@ final class VideoProviderCheckpointService
 
             $this->states->assert($render->execution_status, RenderStatus::PROVIDER_RUNNING);
 
-            $attempt?->forceFill([
+            $this->attempts->saveAttempt($attempt, [
                 'status' => RenderAttemptStatus::SUBMITTED,
                 'provider_job_id' => $jobId,
                 'submitted_at' => $attempt->submitted_at ?? $this->clock->now(),
-            ])->save();
+            ]);
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::PROVIDER_RUNNING,
                 'provider_job_id' => $jobId,
                 'claim_token' => null,
@@ -220,7 +217,7 @@ final class VideoProviderCheckpointService
                 'lease_expires_at' => null,
                 'provider_next_poll_at' => $this->clock->now(),
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
             return $render;
         }, attempts: 3);
@@ -232,7 +229,7 @@ final class VideoProviderCheckpointService
     public function releaseStalledPoll(VideoRender $render): ?VideoRender
     {
         return DB::transaction(function () use ($render): ?VideoRender {
-            $render = VideoRender::query()->whereKey($render->id)->lockForUpdate()->firstOrFail();
+            $render = $this->renders->lockRenderOrFail($render->id);
 
             if ($render->lease_expires_at === null || $render->lease_expires_at > $this->clock->now()) {
                 return null;
@@ -243,7 +240,7 @@ final class VideoProviderCheckpointService
                 return null;
             }
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::PROVIDER_RUNNING,
                 'claim_token' => null,
                 'claimed_by' => null,
@@ -252,7 +249,7 @@ final class VideoProviderCheckpointService
                 'lease_expires_at' => null,
                 'provider_next_poll_at' => $this->clock->now(),
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
             return $render;
         }, attempts: 3);
@@ -275,10 +272,7 @@ final class VideoProviderCheckpointService
             return $render->provider_job_id;
         }
 
-        $attempt = VideoRenderAttempt::query()
-            ->where('render_id', $render->id)
-            ->where('attempt_no', $render->attempt_count)
-            ->first();
+        $attempt = $this->attempts->findCurrentAttempt($render->id, $render->attempt_count);
 
         return $attempt === null ? null : $this->jobFromReceipts($render, $attempt);
     }
@@ -296,11 +290,7 @@ final class VideoProviderCheckpointService
 
         // Generation lay tu ATTEMPT: `$render->claim_generation` da tang moi lan co
         // nguoi claim lai, nen no khong con noi ve luot da tra tien.
-        $jobs = VideoProviderSubmissionReceipt::query()
-            ->where('render_id', $render->id)
-            ->where('attempt_id', $attempt->id)
-            ->where('claim_generation', $attempt->claim_generation)
-            ->pluck('provider_job_id')
+        $jobs = $this->receipts->findJobIdsForAttempt($render->id, $attempt->id, $attempt->claim_generation)
             ->unique()
             ->values();
 
@@ -316,20 +306,20 @@ final class VideoProviderCheckpointService
     public function markArtifactWriting(VideoRender $render, string $claimToken, array $pollResponse): VideoRender
     {
         return DB::transaction(function () use ($render, $claimToken, $pollResponse): VideoRender {
-            $render = VideoRender::query()->whereKey($render->id)->lockForUpdate()->firstOrFail();
+            $render = $this->renders->lockRenderOrFail($render->id);
 
             $this->assertHoldsLease($render, $claimToken);
             $this->states->assert($render->execution_status, RenderStatus::ARTIFACT_WRITING);
 
             $now = $this->clock->now();
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::ARTIFACT_WRITING,
                 'provider_poll_count' => $render->provider_poll_count + 1,
                 'provider_last_polled_at' => $now,
                 'provider_last_poll_response_json' => $pollResponse,
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
             return $render;
         }, attempts: 3);

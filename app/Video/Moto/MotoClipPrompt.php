@@ -40,22 +40,31 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
     private const EVENT_FIELDS = ['id', 'action', 'result', 'character_ids', 'design_refs', 'operating_start', 'operating_end'];
 
     /** @var list<string> the input formats whose payload carries the composition and event progress of the shot, its scene and the events it plays */
-    private const SOURCED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V7, MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+    private const SOURCED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V7, MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11, MotoContract::CLIP_PROMPT_INPUT_V12];
 
     /** @var list<string> the input formats that read the scene of the shot from the pinned context and hold the coverage to the approved script: the eighth input and every one built on it */
-    public const LINKED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+    public const LINKED_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V8, MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11, MotoContract::CLIP_PROMPT_INPUT_V12];
 
     /** @var list<string> the input formats of a design with checkpoints, which tell the clip the checkpoint its end frame shows */
-    private const CHECKPOINT_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+    private const CHECKPOINT_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V9, MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11, MotoContract::CLIP_PROMPT_INPUT_V12];
 
     /** @var list<string> the input formats that hand on the conditions of the plate in the picture: the tenth input and every one built on it */
-    private const ENVIRONMENT_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11];
+    private const ENVIRONMENT_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V10, MotoContract::CLIP_PROMPT_INPUT_V11, MotoContract::CLIP_PROMPT_INPUT_V12];
+
+    /** @var list<string> the input formats whose conditions of the plate also carry its light and the state of its set (SET_FIELDS): the eleventh input and every one built on it */
+    private const SET_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V11, MotoContract::CLIP_PROMPT_INPUT_V12];
+
+    /** @var list<string> the input formats of a clip made under an execution policy: the twelfth input, with the pace and emotion of the scene, the group execution and the timed camera and action lines the check reads */
+    private const EXECUTION_FORMATS = [MotoContract::CLIP_PROMPT_INPUT_V12];
 
     /** @var list<string> what the eleventh input adds to the conditions of the plate in the picture, as the shot run pinned them from a set design dossier: its light — the sources, the bright and dark areas, how the subject stands against the frame — and the state of its set */
     public const SET_FIELDS = ['light', 'set_state'];
 
     /** @var array<string, string> the source id the tenth input adds: the conditions of the plate the shot stands on */
     private const ENVIRONMENT_SOURCES = ['S25' => 'environment'];
+
+    /** @var array<string, string> the source id the twelfth input adds: how the clip is made, how long its content and its file are and every image actually sent with its role */
+    private const EXECUTION_SOURCES = ['S26' => 'execution'];
 
     /** @var list<string> the conditions of a plate the tenth input hands on beside the label of its attached image, as the location dossier states them; the ambient sound is for the sound line of the video prompt alone */
     public const CONDITION_FIELDS = ['time_of_day', 'weather', 'atmosphere', 'ambient_sound'];
@@ -95,7 +104,25 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
 
     public const CONTRACT = 'moto/MotoClipPrompt@1.0.0';
 
+    /** @var string the output contract of a run of the twelfth input: the fields of 1.0.0, described for both ways of making a clip */
+    public const CONTRACT_V12 = 'moto/MotoClipPrompt@1.0.1';
+
     public const CHECK_VERSION = 'moto-clip-prompt-check-v2';
+
+    /** @var string the check of a run of the twelfth input: CHECK_VERSION with the timed camera and action lines held to the shot; a stored run of an earlier input keeps CHECK_VERSION */
+    public const CHECK_VERSION_V12 = 'moto-clip-prompt-check-v3';
+
+    /** @var string one timed line of a video prompt: Camera or Action, then [start–end] in seconds with - or – between them and an optional s, then a colon */
+    private const TIMED_LINE = '/^\s*(?:[-*•]\s*)?(camera|action)\s*\[\s*([0-9]+(?:\.[0-9]+)?)\s*s?\s*[-–—]\s*([0-9]+(?:\.[0-9]+)?)\s*s?\s*\]\s*:/iu';
+
+    /**
+     * @param  ?string  $format  the input format of a run
+     * @return string the version of the check that reads a run of that input
+     */
+    public static function checkVersionFor(?string $format): string
+    {
+        return in_array($format, self::EXECUTION_FORMATS, true) ? self::CHECK_VERSION_V12 : self::CHECK_VERSION;
+    }
 
     public const PASS = 'PASS';
 
@@ -161,7 +188,7 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
 
     public function checkVersion(): string
     {
-        return self::CHECK_VERSION;
+        return self::checkVersionFor($this->inputsVersion());
     }
 
     /** @return array{execution: string, model: string, effort: string, max_tokens: int, timeout_seconds: int, schema_heading: string, image_max_edge: int, image_max_bytes: int, image_jpeg_quality: int, estimate_output_tokens: int, max_prompt_chars: int} */
@@ -227,21 +254,27 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
 
     /**
      * @param  array<string, mixed>  $shot  the stored shot of the approved plan
-     * @param  array<string, mixed>  $pinned  the check context pinned with the shot run: its configurations and limits, and for a plan made from a location dossier the conditions of each plate (plate_conditions), which the tenth input hands on as environment. The conditions are those of the plate in the picture, so the image and its conditions never name two plates: the plate whose image is attached (environment.image names that image), whatever plate the shot plan named; with no image of the place attached to a clip made from references, the plate the shot plan names; for a clip made from a keyframe, whose plate this step is not told, none. Every value is null when that plate pinned no conditions. The eleventh input hands on the same conditions with the light of that plate and the state of its set (SET_FIELDS), as a shot run made from a set design dossier pinned them
+     * @param  array<string, mixed>  $pinned  the check context pinned with the shot run: its configurations and limits, and for a plan made from a location dossier the conditions of each plate (plate_conditions), which the tenth input hands on as environment. The conditions are those of the plate in the picture, so the image and its conditions never name two plates: the plate whose image is attached (environment.image names that image), whatever plate the shot plan named; with no image of the place attached to a clip made from references, the plate the shot plan names; for a clip made from a keyframe, under the inputs before the twelfth, whose step is not told the plate, none; under the twelfth, the plate the approved keyframe was rendered on ($opening['plate']), so the light, the state of the set and the ambient sound no picture shows still reach the writer. Every value is null when that plate pinned no conditions. The eleventh input hands on the same conditions with the light of that plate and the state of its set (SET_FIELDS), as a shot run made from a set design dossier pinned them
      * @param  array<string, mixed>  $design  the data of the design the script was written from
      * @param  array<string, mixed>  $script  the data of the approved script
-     * @param  array{mode: string, keyframe: ?array<string, mixed>, images: list<array<string, mixed>>}  $opening  how the clip is made: from the approved keyframe of the shot as the clip flow pins it, which is Image 1, or from the reference images it sends, Image 1 onwards in their order
+     * @param  array{mode: string, keyframe: ?array<string, mixed>, images: list<array<string, mixed>>, plate?: ?array{background: string, artifact_id: string, sha256: string, image_id: string}}  $opening  how the clip is made: from the approved keyframe of the shot as the clip flow pins it, which is Image 1, or from the reference images it sends, Image 1 onwards in their order; plate, read under the twelfth input alone, is the plate that keyframe stands on as its own render pinned it (MotoClipSourceService::plateOf()), null when its render sent no image of a place
      * @param  array{policy: string, prefix: string, closing: list<string>}  $sound  soundPolicy() of the clip flow
-     * @return array{payload: array<string, mixed>, context: array<string, mixed>} what the model reads to write the video prompt of the shot, from the records of the shot alone with a source id for every group, and what the check reads back
+     * @param  ?array{motion_method: string, input_mode: string, content_duration_ms: int, source_duration_ms: int, used: array{start_ms: int, duration_ms: int}, aspect_ratio: string, images: list<array{image: string, send_as: string, artifact_id: string, sha256: string}>}  $execution  under the twelfth input, how the clip is made as its settings and the execution policy decide it: the way it moves and what it opens from, the length of the content, of the file the model renders and of the part the film keeps, the frame of the film and every image actually sent with its role; the earlier inputs take none
+     * @return array{payload: array<string, mixed>, context: array<string, mixed>} what the model reads to write the video prompt of the shot, from the records of the shot alone with a source id for every group, and what the check reads back. The twelfth input is the eleventh with the pace and the emotion of the scene as the shot run pinned it, the group execution and, for the check, the times of every camera segment and action step its timed lines must give
      *
-     * @throws \RuntimeException under the eighth input, when the pinned context does not hold the scene of the shot or its coverage names an event the approved script does not have: the link is broken, so no model is called
+     * @throws \RuntimeException under the eighth input, when the pinned context does not hold the scene of the shot or its coverage names an event the approved script does not have: the link is broken, so no model is called; under the twelfth, when no execution is given
      */
-    public static function inputs(array $shot, array $pinned, array $design, array $script, array $opening, array $sound, string $fingerprint, int $maxPromptChars, ?string $format = null): array
+    public static function inputs(array $shot, array $pinned, array $design, array $script, array $opening, array $sound, string $fingerprint, int $maxPromptChars, ?string $format = null, ?array $execution = null): array
     {
         $eighth = in_array($format, self::LINKED_FORMATS, true);
         $seventh = in_array($format, self::SOURCED_FORMATS, true);
         $tenth = in_array($format, self::ENVIRONMENT_FORMATS, true);
-        $conditionFields = [...self::CONDITION_FIELDS, ...($format === MotoContract::CLIP_PROMPT_INPUT_V11 ? self::SET_FIELDS : [])];
+        $twelfth = in_array($format, self::EXECUTION_FORMATS, true);
+        $conditionFields = [...self::CONDITION_FIELDS, ...(in_array($format, self::SET_FORMATS, true) ? self::SET_FIELDS : [])];
+
+        if ($twelfth && $execution === null) {
+            throw new \RuntimeException("Shot {$shot['id']} chưa có lựa chọn thực thi clip cho đầu vào {$format} — không gọi model.");
+        }
         $keyframe = $opening['keyframe'] ?? null;
         $configurations = array_column((array) ($pinned['configurations'] ?? []), null, 'id');
         $partIds = MotoKeyframePrompt::partIds($shot, $configurations);
@@ -268,14 +301,15 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
             'identity_rules' => array_values(array_filter((array) ($design['identity_rules'] ?? []), static fn (array $rule): bool => $whole || in_array('MOTORCYCLE', (array) ($rule['scope'] ?? []), true) || array_intersect([...(array) ($rule['scope'] ?? []), ...(array) ($rule['refs'] ?? [])], $named) !== [])),
             'features' => array_values(array_map(static fn (array $feature): array => array_intersect_key($feature, array_flip(['id', 'name', 'parts', 'visible_expression', 'effect', 'modes', 'use_sequence'])), array_filter((array) ($design['features'] ?? []), static fn (array $feature): bool => $whole || array_intersect((array) ($feature['parts'] ?? []), $named) !== []))),
         ] : [];
-        $sourceMap = self::SOURCES + ($timeline ? self::TIMELINE_SOURCES : []) + ($seventh ? self::COVERAGE_SOURCES : []) + ($tenth ? self::ENVIRONMENT_SOURCES : []);
+        $sourceMap = self::SOURCES + ($timeline ? self::TIMELINE_SOURCES : []) + ($seventh ? self::COVERAGE_SOURCES : []) + ($tenth ? self::ENVIRONMENT_SOURCES : []) + ($twelfth ? self::EXECUTION_SOURCES : []);
         $sent = collect((array) ($opening['images'] ?? []))->first(static fn (mixed $image): bool => is_array($image) && ($image['kind'] ?? null) === 'environment');
         $attached = is_array($sent) && is_string($sent['target'] ?? null) && $sent['target'] !== '' ? $sent['target'] : null;
         $planned = ($shot['environment']['mode'] ?? null) === 'background' && is_string($shot['environment']['background'] ?? null) ? $shot['environment']['background'] : null;
+        $held = $twelfth && is_string($opening['plate']['background'] ?? null) && $opening['plate']['background'] !== '' ? $opening['plate']['background'] : null;
         $standing = match (true) {
             is_array($sent) => $attached,
             $keyframe === null => $planned,
-            default => null,
+            default => $held,
         };
         $plate = $standing === null ? null : ($pinned['plate_conditions'][$standing] ?? null);
         $shotFields['parts'] = array_map(static fn (array $item): array => $item + ['name' => $designParts[$item['part']]['name'] ?? null], (array) ($shot['parts'] ?? []));
@@ -327,9 +361,18 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
         ] + ($seventh ? ['scene' => is_array($scene) ? array_intersect_key($scene, array_flip(self::SCENE_FIELDS)) + [
             'shot_position' => ($at = array_search($shot['id'], array_column($siblings, 'id'), true)) === false ? null : $at + 1,
             'shot_count' => $siblings === [] ? null : count($siblings),
-        ] : null, 'events' => self::events($shot, $beats, $eighth)] : [])
+        ] + ($twelfth ? self::staging($shot, $pinned) : []) : null, 'events' => self::events($shot, $beats, $eighth)] : [])
             + ($tenth ? ['environment' => ['image' => is_array($sent) ? 'Image '.((int) $sent['position'] + 1) : null]
-                + array_map(static fn (string $field): mixed => is_array($plate) ? ($plate[$field] ?? null) : null, array_combine($conditionFields, $conditionFields))] : []);
+                + array_map(static fn (string $field): mixed => is_array($plate) ? ($plate[$field] ?? null) : null, array_combine($conditionFields, $conditionFields))] : [])
+            + ($twelfth ? ['execution' => [
+                'motion_method' => (string) $execution['motion_method'],
+                'input_mode' => (string) $execution['input_mode'],
+                'content_duration_ms' => (int) $execution['content_duration_ms'],
+                'source_duration_ms' => (int) $execution['source_duration_ms'],
+                'used' => ['start_ms' => (int) $execution['used']['start_ms'], 'duration_ms' => (int) $execution['used']['duration_ms']],
+                'frame' => ['aspect_ratio' => (string) $execution['aspect_ratio']],
+                'images' => array_values(array_map(static fn (array $image): array => array_intersect_key($image, array_flip(['image', 'send_as', 'artifact_id', 'sha256'])), (array) $execution['images'])),
+            ]] : []);
 
         foreach ($eighth ? $sourceMap : [] as $path) {
             if (! \Illuminate\Support\Arr::has($payload, $path)) {
@@ -380,7 +423,29 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
                 'internal_ids' => $internal,
                 'sound_policy' => $sound,
                 'max_prompt_chars' => $maxPromptChars,
-            ],
+            ] + ($twelfth ? [
+                'input_format' => $format,
+                'timing_lines' => [
+                    'camera' => array_values(array_map(static fn (array $segment): array => [(int) ($segment['start_ms'] ?? 0), (int) ($segment['end_ms'] ?? 0)], array_filter((array) ($shot['camera']['path'] ?? []), 'is_array'))),
+                    'action' => array_values(array_map(static fn (array $step): array => [(int) ($step['start_ms'] ?? 0), (int) ($step['end_ms'] ?? 0)], array_filter((array) ($shot['action_timeline'] ?? []), 'is_array'))),
+                ],
+            ] : []),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $shot  the stored shot
+     * @param  array<string, mixed>  $pinned  the check context pinned with the shot run, whose input holds the scenes as the shot step was handed them
+     * @return array{pace: ?string, emotion: ?array{start: ?string, end: ?string}} the pace of the scene of the shot and the emotion it opens and ends on, word for word as the shot run pinned them; null for what that run does not hold
+     */
+    private static function staging(array $shot, array $pinned): array
+    {
+        $scene = collect((array) ($pinned['input']['scenes'] ?? []))->first(static fn (mixed $row): bool => is_array($row) && ($row['id'] ?? null) === ($shot['scene'] ?? null));
+        $emotion = is_array($scene) && is_array($scene['emotion'] ?? null) ? $scene['emotion'] : null;
+
+        return [
+            'pace' => is_array($scene) && is_string($scene['pace'] ?? null) ? $scene['pace'] : null,
+            'emotion' => $emotion === null ? null : ['start' => is_string($emotion['start'] ?? null) ? $emotion['start'] : null, 'end' => is_string($emotion['end'] ?? null) ? $emotion['end'] : null],
         ];
     }
 
@@ -432,22 +497,24 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
 
     public function check(?array $response, array $context, array $schema): array
     {
+        $version = self::checkVersionFor(is_string($context['input_format'] ?? null) ? $context['input_format'] : null);
+
         if ($response === null) {
-            return self::result(self::UNSCORED, null, 'Phản hồi không đọc được JSON.');
+            return self::result(self::UNSCORED, null, 'Phản hồi không đọc được JSON.', version: $version);
         }
 
         if (($response['format'] ?? null) !== MotoContract::CLIP_PROMPT_FORMAT) {
-            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.MotoContract::CLIP_PROMPT_FORMAT.'.');
+            return self::result(self::UNSCORED, null, 'Phản hồi không theo định dạng '.MotoContract::CLIP_PROMPT_FORMAT.'.', version: $version);
         }
 
         $status = is_string($response['status'] ?? null) ? $response['status'] : null;
 
         if ($schema !== []) {
-            return self::result(self::FAIL, $status, null, array_map(static fn (array $violation): string => trim($violation['path'].' '.$violation['message']), $schema));
+            return self::result(self::FAIL, $status, null, array_map(static fn (array $violation): string => trim($violation['path'].' '.$violation['message']), $schema), version: $version);
         }
 
         if ($status === 'fail') {
-            return self::result(self::FAIL, $status, 'Model trả status fail: '.implode('; ', (array) ($response['flags'] ?? [])));
+            return self::result(self::FAIL, $status, 'Model trả status fail: '.implode('; ', (array) ($response['flags'] ?? [])), version: $version);
         }
 
         $issues = [];
@@ -486,6 +553,10 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
             if (mb_strlen($prompt) > (int) $context['max_prompt_chars']) {
                 $issues[] = Finding::requirement('MotoClipPrompt.check.4', 'Prompt dài '.mb_strlen($prompt).' ký tự, vượt giới hạn '.$context['max_prompt_chars'].'.');
             }
+
+            if (is_array($context['timing_lines'] ?? null)) {
+                $issues = [...$issues, ...Finding::each(MotoCheckRules::USE, 'MotoClipPrompt.timingProblems', self::timingProblems($prompt, $context['timing_lines']))];
+            }
         }
 
         $warnings = [
@@ -493,7 +564,65 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
             ...array_map(static fn (array $conflict): string => 'Mâu thuẫn ('.implode(' / ', (array) $conflict['source_refs']).'): '.$conflict['reason'], (array) $response['conflicts']),
         ];
 
-        return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings);
+        return self::result($issues === [] ? self::PASS : self::FAIL, $status, null, [], $issues, $warnings, $version);
+    }
+
+    /**
+     * @param  array{camera: list<array{0: int, 1: int}>, action: list<array{0: int, 1: int}>}  $expected  the start and end of every camera segment and every action step of the shot, in their order, in milliseconds
+     * @return list<string> where the timed lines of the prompt differ from the shot: the lines "Camera [a–b s]:" and "Action [a–b s]:" are read apart, each group held to its own spans by number, order and times turned into whole milliseconds; "1", "1.0" and "1.000", "-" and "–", and an s after either number read alike. Only the times are read, never the words of a line
+     */
+    public static function timingProblems(string $prompt, array $expected): array
+    {
+        $found = ['camera' => [], 'action' => []];
+
+        foreach (preg_split('/\R/u', $prompt) ?: [] as $line) {
+            if (preg_match(self::TIMED_LINE, $line, $match) === 1) {
+                $start = self::milliseconds($match[2]);
+                $end = self::milliseconds($match[3]);
+                $found[strtolower($match[1])][] = $start === null || $end === null ? null : [$start, $end];
+            }
+        }
+
+        $problems = [];
+
+        foreach (['camera' => ['Camera', 'đoạn camera'], 'action' => ['Action', 'bước hành động']] as $group => [$label, $unit]) {
+            $wanted = array_values(array_map(static fn (array $span): array => [(int) $span[0], (int) $span[1]], (array) ($expected[$group] ?? [])));
+            $written = $found[$group];
+
+            if (count($written) !== count($wanted)) {
+                $problems[] = 'Prompt có '.count($written).' dòng "'.$label.' [a–b s]:", shot có '.count($wanted).' '.$unit.' ('.implode(', ', array_map(self::span(...), $wanted)).') — mỗi '.$unit.' một dòng, đúng thứ tự.';
+
+                continue;
+            }
+
+            foreach ($wanted as $index => $span) {
+                if ($written[$index] !== $span) {
+                    $problems[] = 'Dòng "'.$label.'" thứ '.($index + 1).' ghi '.($written[$index] === null ? 'mốc không quy được về millisecond nguyên' : self::span($written[$index])).', shot cho '.self::span($span).'.';
+                }
+            }
+        }
+
+        return $problems;
+    }
+
+    /** @return ?int seconds written with a dot, such as 1, 1.0 or 1.25, as whole milliseconds; null when they hold a part of a millisecond */
+    private static function milliseconds(string $seconds): ?int
+    {
+        [$whole, $fraction] = array_pad(explode('.', $seconds, 2), 2, '');
+        $fraction = rtrim($fraction, '0');
+
+        return strlen($fraction) > 3 ? null : (int) $whole * 1000 + (int) str_pad($fraction, 3, '0');
+    }
+
+    /** @param  array{0: int, 1: int}  $span */
+    private static function span(array $span): string
+    {
+        return self::secondsOf($span[0]).'–'.self::secondsOf($span[1]).' s';
+    }
+
+    private static function secondsOf(int $ms): string
+    {
+        return rtrim(rtrim(number_format($ms / 1000, 3, '.', ''), '0'), '.');
     }
 
     /** @return array{video_prompt: string, prompt_sha256: string} the prompt as the model wrote it, word for word, with its hash */
@@ -510,8 +639,10 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
      */
     public function contextProblem(array $context, string $contract): ?string
     {
-        if (! str_starts_with($contract, self::CONTRACT.'#')) {
-            return "hợp đồng đầu ra là {$contract}; code kiểm Phase 10 cho ".self::CONTRACT.'.';
+        $expected = in_array($context['input_format'] ?? null, self::EXECUTION_FORMATS, true) ? self::CONTRACT_V12 : self::CONTRACT;
+
+        if (! str_starts_with($contract, $expected.'#')) {
+            return "hợp đồng đầu ra là {$contract}; code kiểm Phase 10 cho {$expected}.";
         }
 
         return ($context['shot_id'] ?? '') === '' ? 'không có shot để viết prompt.' : null;
@@ -562,12 +693,13 @@ final class MotoClipPrompt implements CheckedWorkflow, ReleaseBound, StructureCh
      * @param  list<string>  $schema
      * @param  list<string>  $issues
      * @param  list<string>  $warnings
+     * @param  string  $version  the version of the check that read the run, checkVersionFor() of its input
      * @return array{version: string, format: string, verdict: string, status: ?string, error: ?string, schema: list<string>, issues: list<string>, warnings: list<string>, judge: string}
      */
-    private static function result(string $verdict, ?string $status, ?string $error, array $schema = [], array $issues = [], array $warnings = []): array
+    private static function result(string $verdict, ?string $status, ?string $error, array $schema = [], array $issues = [], array $warnings = [], string $version = self::CHECK_VERSION): array
     {
         return [
-            'version' => self::CHECK_VERSION,
+            'version' => $version,
             'format' => MotoContract::CLIP_PROMPT_FORMAT,
             'verdict' => $verdict,
             'status' => $status,

@@ -2,14 +2,19 @@
 
 namespace App\Video\Render\Video;
 
-use App\Models\VideoProviderSubmissionReceipt;
 use App\Models\VideoRender;
-use App\Models\VideoRenderAttempt;
+use App\Repositories\Interfaces\VideoProviderSubmissionReceiptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderAttemptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
+use App\Repositories\Interfaces\VideoShotRepositoryInterface;
+use App\Video\Media\FfmpegRunner;
 use App\Video\Media\GeminiOmniVideoClient;
 use App\Video\Media\GeminiVeoVideoClient;
 use App\Video\Media\Mp4Probe;
 use App\Video\Concept\Support\Clock;
 use App\Video\Media\VideoModelRegistry;
+use App\Video\Moto\MotoClipPlanBuilder;
+use App\Video\Moto\MotoContract;
 use App\Video\Render\Attempts\RenderAttemptService;
 use App\Video\Render\Claims\RenderClaimService;
 use App\Video\Render\Claims\RenderLeaseService;
@@ -37,6 +42,18 @@ final class VideoRenderExecutionService
 {
     public const WORKER = 'laravel:direct';
 
+    /** @var string the evidence a file checked against a media policy moto-clip-media-policy-v2 keeps with its render: what was measured, the decode of the whole file and the verdict */
+    public const MEDIA_CHECK_VERSION = 'moto-clip-media-check-v1';
+
+    /** @var string the proof of a file checked that way: ffprobe measured it, ffmpeg decoded all of it and its bytes were hashed */
+    public const PROOF_DECODED = 'ffprobe_decode_sha256';
+
+    /** @var list<string> the arguments ffmpeg decodes a whole file with, the file going after -i; any error it prints fails the file */
+    private const DECODE = ['-v', 'error', '-nostdin', '-i', '{file}', '-f', 'null', '-'];
+
+    /** @var list<RenderFailureClass> the failures of a poll request that say nothing of the job: the provider was unreachable, rate limited or answered with a server error while the operation was not finished, so the job may still be running and the poll is asked again later */
+    private const POLL_RETRY_LATER = [RenderFailureClass::TRANSIENT_NETWORK, RenderFailureClass::RATE_LIMIT, RenderFailureClass::PROVIDER_5XX];
+
     public function __construct(
         private readonly RenderClaimService $claims,
         private readonly RenderAttemptService $attempts,
@@ -51,11 +68,20 @@ final class VideoRenderExecutionService
         private readonly FilesystemFactory $storage,
         private readonly RenderLeaseService $lease,
         private readonly Clock $clock,
+        private readonly FfmpegRunner $ffmpeg,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoRenderAttemptRepositoryInterface $renderAttempts,
+        private readonly VideoProviderSubmissionReceiptRepositoryInterface $receipts,
+        private readonly VideoShotRepositoryInterface $videoShots,
     ) {}
 
-    /** @return array{0: bool, 1: string} [$ok, $reason] */
+    /** @return array{0: bool, 1: string} [$ok, $reason]; a row of a local processor (MotoClipPlanBuilder::LOCAL) is never claimed or sent here: local_processor */
     public function submit(string $renderId): array
     {
+        if ($this->renders->findProviderOf($renderId) === MotoClipPlanBuilder::LOCAL) {
+            return [false, 'local_processor'];
+        }
+
         // Thieu binary la loi may, khong duoc dot mot attempt vi no.
         if (! $this->probe->available()) {
             return [false, 'ffprobe_missing'];
@@ -67,7 +93,7 @@ final class VideoRenderExecutionService
             return [false, 'not_claimable'];
         }
 
-        $render = VideoRender::query()->whereKey($renderId)->firstOrFail();
+        $render = $this->renders->findRenderOrFail($renderId);
         $spec = json_decode($claim->renderRequestJson, true);
 
         if (! is_array($spec)) {
@@ -325,10 +351,14 @@ final class VideoRenderExecutionService
         );
     }
 
-    /** @return array{0: bool, 1: string} [$ok, $reason] */
+    /** @return array{0: bool, 1: string} [$ok, $reason]; a row of a local processor has no provider job to ask for: not_running */
     public function poll(string $renderId): array
     {
-        $render = VideoRender::query()->whereKey($renderId)->firstOrFail();
+        $render = $this->renders->findRenderOrFail($renderId);
+
+        if ($render->provider === MotoClipPlanBuilder::LOCAL) {
+            return [false, 'not_running'];
+        }
 
         if ($render->execution_status !== RenderStatus::PROVIDER_RUNNING) {
             // Job da gui thanh cong nhung checkpoint hong thi render ket o submitting
@@ -355,7 +385,7 @@ final class VideoRenderExecutionService
             ? $this->omni->poll($this->target($spec), (string) $render->provider_job_id)
             : $this->veo->poll($this->target($spec), (string) $render->provider_job_id);
 
-        if (! $poll['ok'] && $poll['failure'] === RenderFailureClass::TRANSIENT_NETWORK) {
+        if (! $poll['ok'] && ! $poll['done'] && in_array($poll['failure'], self::POLL_RETRY_LATER, true)) {
             $this->provider->markStillRunning($render, $token, $poll['response']);
 
             return [false, 'poll_retry_later'];
@@ -434,16 +464,14 @@ final class VideoRenderExecutionService
             return false;
         }
 
-        $written = VideoRender::query()
-            ->whereKey($render->id)
-            ->where('claim_token', $claimToken)
-            ->where('claimed_by', self::WORKER)
-            ->where('lease_expires_at', '>', $this->clock->now())
-            ->where('execution_status', RenderStatus::SUBMITTING->value)
-            ->update([
-                'provider_job_id' => (string) $result['job_id'],
-                'provider_submit_response_json' => json_encode($result['response'], JSON_UNESCAPED_UNICODE),
-            ]);
+        $written = $this->renders->recordSubmittedJobIfLeaseHeld(
+            $render->id,
+            $claimToken,
+            self::WORKER,
+            $this->clock->now(),
+            (string) $result['job_id'],
+            json_encode($result['response'], JSON_UNESCAPED_UNICODE),
+        );
 
         if ($written === 1) {
             return true;
@@ -452,15 +480,13 @@ final class VideoRenderExecutionService
         // Mat quyen ghi trang thai — nhung bien lai o tren da ghi roi, nen job khong
         // mat. Attempt van duoc va them mot lan neu no con la cua minh, de nguoi doc
         // hang thay ngay ma khong phai tra cuu bien lai.
-        VideoRenderAttempt::query()
-            ->where('render_id', $render->id)
-            ->where('attempt_no', $render->attempt_count)
-            ->where('claim_token', $claimToken)
-            ->whereNull('provider_job_id')
-            ->update([
-                'provider_job_id' => (string) $result['job_id'],
-                'provider_submit_response_json' => json_encode($result['response'], JSON_UNESCAPED_UNICODE),
-            ]);
+        $this->renderAttempts->recordJobOnOwnAttemptIfMissing(
+            $render->id,
+            $render->attempt_count,
+            $claimToken,
+            (string) $result['job_id'],
+            json_encode($result['response'], JSON_UNESCAPED_UNICODE),
+        );
 
         Log::warning('Veo submit thanh cong nhung mat quyen ghi trang thai', [
             'render_id' => $render->id,
@@ -482,12 +508,7 @@ final class VideoRenderExecutionService
     {
         // Bien lai phai gan vao dung luot da tra tien, nen attempt phai khop ca
         // claim_token lan generation — khong duoc lay bua attempt cung so thu tu.
-        $attempt = VideoRenderAttempt::query()
-            ->where('render_id', $render->id)
-            ->where('attempt_no', $render->attempt_count)
-            ->where('claim_token', $claimToken)
-            ->where('claim_generation', $render->claim_generation)
-            ->first();
+        $attempt = $this->renderAttempts->findAttemptForClaim($render->id, $render->attempt_count, $claimToken, $render->claim_generation);
 
         if ($attempt === null) {
             return false;
@@ -497,7 +518,7 @@ final class VideoRenderExecutionService
 
         // `insertOrIgnore` nuot MOI loi chu khong rieng trung khoa, nen khong duoc
         // coi no la da ghi: phai doc lai moi biet bien lai co that hay khong.
-        VideoProviderSubmissionReceipt::query()->insertOrIgnore([
+        $this->receipts->insertReceiptOrIgnore([
             'id' => (string) Str::uuid(),
             'render_id' => $render->id,
             'attempt_id' => $attempt->id,
@@ -514,10 +535,7 @@ final class VideoRenderExecutionService
             'updated_at' => $this->clock->now(),
         ]);
 
-        $receipt = VideoProviderSubmissionReceipt::query()
-            ->where('attempt_id', $attempt->id)
-            ->where('provider_job_id', $jobId)
-            ->first();
+        $receipt = $this->receipts->findReceiptForAttemptJob($attempt->id, $jobId);
 
         if ($receipt === null) {
             return false;
@@ -568,6 +586,10 @@ final class VideoRenderExecutionService
             return [false, 'lease_lost_before_artifact'];
         }
 
+        if (($this->mediaPolicy($spec)['version'] ?? null) === MotoClipPlanBuilder::POLICY_VERSION_V2) {
+            return $this->storeCheckedFile($render, $token, $spec, $file, $path);
+        }
+
         $probed = $this->probe->inspect((string) $file['local_path']);
         @unlink((string) $file['local_path']);
 
@@ -607,21 +629,16 @@ final class VideoRenderExecutionService
                 sprintf('duration lech: file %dms, yeu cau %dms', (int) $probed['duration_ms'], $expectedMs));
         }
 
-        $written = VideoRender::query()
-            ->whereKey($render->id)
-            ->where('claim_token', $token)
-            ->where('claimed_by', self::WORKER)
-            ->where('lease_expires_at', '>', $this->clock->now())
-            ->update([
-                'artifact_path' => $path,
-                'artifact_dir' => $dir,
-                'bytes' => $file['bytes'],
-                'duration_ms' => $probed['duration_ms'],
-                'width' => $probed['width'],
-                'height' => $probed['height'],
-                'proof_method' => 'ffprobe_sha256',
-                'proof_verified' => true,
-            ]);
+        $written = $this->renders->recordArtifactIfLeaseHeld($render->id, $token, self::WORKER, $this->clock->now(), [
+            'artifact_path' => $path,
+            'artifact_dir' => $dir,
+            'bytes' => $file['bytes'],
+            'duration_ms' => $probed['duration_ms'],
+            'width' => $probed['width'],
+            'height' => $probed['height'],
+            'proof_method' => 'ffprobe_sha256',
+            'proof_verified' => true,
+        ]);
 
         if ($written !== 1) {
             $this->storage->disk((string) config('video.veo.disk'))->delete($path);
@@ -629,7 +646,7 @@ final class VideoRenderExecutionService
             return [false, 'lease_lost_before_artifact'];
         }
 
-        $render = $render->refresh();
+        $render = $this->renders->refreshRender($render);
 
         $this->checkpoint->complete(
             renderId: $render->id,
@@ -657,13 +674,239 @@ final class VideoRenderExecutionService
             usage: new RenderAttemptUsage(null, null, null, null, null),
         );
 
-        $render = $render->refresh();
+        $render = $this->renders->refreshRender($render);
+        $shot = $this->videoShots->loadShotOfRender($render);
 
-        if ($render->shot !== null) {
-            $this->shots->markVideoReady($render->shot, $render, (string) ($spec['motion_spec_hash'] ?? ''));
+        if ($shot !== null) {
+            $this->shots->markVideoReady($shot, $render, (string) ($spec['motion_spec_hash'] ?? ''));
         }
 
         return [true, 'succeeded'];
+    }
+
+    /**
+     * The file of a render whose request froze a media policy moto-clip-media-policy-v2 is measured, decoded whole and judged by that policy alone. A file that fails stays on its disk, its evidence and why written to the render, which fails and is never selectable; a file that passes is checkpointed with its evidence and handed to the shot, which takes it as the clip in use only when the request allows it. A local processor calls this the same way once it wrote its file.
+     *
+     * @param  VideoRender  $render  the render this worker (WORKER) holds by $token, in a state that may go on to checkpointing or failed (artifact_writing)
+     * @param  array<string, mixed>  $spec  its frozen request
+     * @param  array{sha256: string, bytes: int, mime: string, local_path: string}  $file  the file as written to the video disk at $path, and a local copy of it, which this removes
+     * @param  string  $path  where the file is on the video disk: video/{render id}/clip.mp4
+     * @return array{0: bool, 1: string} [$ok, $reason]
+     */
+    public function storeCheckedFile(VideoRender $render, string $token, array $spec, array $file, string $path): array
+    {
+        $check = $this->checkClipFile((string) $file['local_path'], (array) $spec['media_policy'], ['path' => $path, 'sha256' => (string) $file['sha256'], 'bytes' => (int) $file['bytes'], 'mime' => (string) $file['mime']]);
+        @unlink((string) $file['local_path']);
+        $disk = $this->storage->disk((string) config('video.veo.disk'));
+        $measured = $check['measured'];
+        $entry = [
+            'kind' => 'generated_video',
+            'path' => $path,
+            'sha256' => (string) $file['sha256'],
+            'bytes' => (int) $file['bytes'],
+            'mime' => (string) $file['mime'],
+            'duration_ms' => $measured['duration_ms'],
+            'width' => $measured['width'],
+            'height' => $measured['height'],
+            'audio_count' => $measured['audio_streams'],
+            'has_audio' => $measured['has_audio'],
+            'media_check' => $check,
+        ];
+        $manifest = ['render_id' => (string) $render->id, 'request_hash' => (string) $render->request_hash, 'canonical_hash' => $render->canonical_hash, 'artifacts' => [$entry]];
+
+        if (! $this->renew($render->id, $token)) {
+            $disk->delete($path);
+
+            return [false, 'lease_lost_before_artifact'];
+        }
+
+        if (! $check['passed']) {
+            $this->renders->recordArtifactIfLeaseHeld($render->id, $token, self::WORKER, $this->clock->now(), [
+                'artifact_manifest' => json_encode($manifest, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            ]);
+
+            return $this->failOrLose($render->id, $token, RenderFailureClass::ARTIFACT_INTEGRITY, (string) $check['code'],
+                $check['reason'].' — file đã trả phí giữ lại ở '.$path.' (sha256 '.$file['sha256'].') để đối soát, không được chọn.');
+        }
+
+        $written = $this->renders->recordArtifactIfLeaseHeld($render->id, $token, self::WORKER, $this->clock->now(), [
+            'artifact_path' => $path,
+            'artifact_dir' => dirname($path),
+            'bytes' => (int) $file['bytes'],
+            'duration_ms' => $measured['duration_ms'],
+            'width' => $measured['width'],
+            'height' => $measured['height'],
+            'proof_method' => self::PROOF_DECODED,
+            'proof_verified' => true,
+        ]);
+
+        if ($written !== 1) {
+            $disk->delete($path);
+
+            return [false, 'lease_lost_before_artifact'];
+        }
+
+        $render = $this->renders->refreshRender($render);
+        $this->checkpoint->complete(
+            renderId: $render->id,
+            claimToken: $token,
+            requestHash: (string) $render->request_hash,
+            providerRequestId: $render->provider_request_id,
+            artifactManifest: $manifest,
+            usage: new RenderAttemptUsage(null, null, null, null, null),
+        );
+        $render = $this->renders->refreshRender($render);
+        $shot = $this->videoShots->loadShotOfRender($render);
+
+        if ($shot !== null) {
+            $this->shots->markVideoReady($shot, $render, (string) ($spec['motion_spec_hash'] ?? ''));
+        }
+
+        return [true, 'succeeded'];
+    }
+
+    /**
+     * @param  string  $localFile  a local copy of the file
+     * @param  array<string, mixed>  $policy  the media policy moto-clip-media-policy-v2 the request froze
+     * @param  array{path: string, sha256: string, bytes: int, mime: string}  $file  the file as stored
+     * @return array{version: string, passed: bool, code: ?string, reason: ?string, policy: array<string, mixed>, file: array<string, mixed>, measured: array<string, mixed>, decode: array{command: string, ok: bool, exit_code: ?int, errors: ?string}} the evidence of the file: what ffprobe measured, whether ffmpeg decoded all of it without an error, and why it fails the policy (probe_failed, decode_failed or output_contract_mismatch) or null when it passes
+     */
+    public function checkClipFile(string $localFile, array $policy, array $file): array
+    {
+        $probed = $this->probe->inspect($localFile);
+        $decode = $probed['ok'] ? $this->decode($localFile) : ['command' => self::decodeCommand(), 'ok' => false, 'exit_code' => null, 'errors' => 'không giải mã vì ffprobe không đọc được file'];
+        $measured = self::measured($probed);
+        $problem = $probed['ok'] && $decode['ok'] ? self::mediaProblem($measured, $policy) : null;
+        [$code, $reason] = match (true) {
+            ! $probed['ok'] => ['probe_failed', 'không đọc được file video: '.$probed['error']],
+            ! $decode['ok'] => ['decode_failed', 'giải mã toàn bộ file báo lỗi: '.$decode['errors']],
+            $problem !== null => ['output_contract_mismatch', $problem],
+            default => [null, null],
+        };
+
+        return ['version' => self::MEDIA_CHECK_VERSION, 'passed' => $code === null, 'code' => $code, 'reason' => $reason, 'policy' => $policy, 'file' => $file, 'measured' => $measured, 'decode' => $decode];
+    }
+
+    /**
+     * @param  array<string, mixed>  $measured  measured() of a file
+     * @param  array<string, mixed>  $policy  a media policy moto-clip-media-policy-v2
+     * @return ?string why the file fails the policy: not one video stream with a readable length, a display rotation that cannot be read, another size as the file is shown once its rotation is applied, a length of file off the one asked for beyond the tolerance, a part kept that is not inside the file, more than one audio stream, under require_audio no readable audio stream, a stream that does not say when it starts or a sound that starts or ends off the picture beyond the drift, or the frame rate, frames, codec, pixel format or pixel shape the policy declares; null when it passes
+     */
+    public static function mediaProblem(array $measured, array $policy): ?string
+    {
+        $wanted = (int) $policy['duration_ms'];
+        $tolerance = (int) $policy['duration_tolerance_ms'];
+        $video = $measured['video_duration_ms'];
+        $size = is_array($policy['output_size'] ?? null) ? array_map('intval', array_values($policy['output_size'])) : null;
+        $turn = self::quarterTurns($measured['rotation'] ?? null);
+        $shown = $turn === null ? null : ($turn % 2 === 1 ? [$measured['height'], $measured['width']] : [$measured['width'], $measured['height']]);
+        [$start, $end] = [(int) $policy['used_start_ms'], (int) $policy['used_end_ms']];
+        $audio = $policy['audio'] ?? null;
+        $require = $audio === MotoContract::AUDIO_REQUIRE;
+        $drift = $policy['av_drift_ms'] ?? null;
+        $declared = static fn (string $key): bool => ($policy[$key] ?? null) !== null;
+
+        return match (true) {
+            ! in_array($audio, MotoClipPlanBuilder::AUDIO_POLICIES, true) => 'chính sách âm thanh '.json_encode($audio).' không phải chính sách code biết',
+            $measured['video_streams'] !== 1 || $video === null => sprintf('cần đúng một luồng hình có thời lượng đọc được, file có %d luồng hình', $measured['video_streams']),
+            $shown === null => sprintf('không đọc được hướng hiển thị của luồng hình (rotation %s)', json_encode($measured['rotation'] ?? null, JSON_UNESCAPED_UNICODE)),
+            $size !== null && $shown !== $size && $turn === 0 => sprintf('kích thước %dx%d, yêu cầu %dx%d', (int) $measured['width'], (int) $measured['height'], $size[0], $size[1]),
+            $size !== null && $shown !== $size => sprintf('kích thước hiển thị %dx%d (file %dx%d, xoay %d°), yêu cầu %dx%d', (int) $shown[0], (int) $shown[1], (int) $measured['width'], (int) $measured['height'], $turn * 90, $size[0], $size[1]),
+            abs($video - $wanted) > $tolerance => sprintf('luồng hình dài %d ms, yêu cầu file %d ms (±%d ms)', $video, $wanted, $tolerance),
+            abs((int) $measured['duration_ms'] - $wanted) > $tolerance => sprintf('file dài %d ms, yêu cầu %d ms (±%d ms)', (int) $measured['duration_ms'], $wanted, $tolerance),
+            $start < 0 || $end <= $start || min($video, (int) $measured['duration_ms']) < $end => sprintf('file dài %d ms, phần phim giữ %d–%d ms không nằm trọn trong file', min($video, (int) $measured['duration_ms']), $start, $end),
+            $measured['audio_streams'] > 1 => sprintf('file có %d luồng tiếng, cần nhiều nhất một', $measured['audio_streams']),
+            $require && ($measured['audio_streams'] !== 1 || $measured['audio_duration_ms'] === null) => sprintf('chính sách require_audio cần đúng một luồng tiếng đọc được, file có %d luồng tiếng', $measured['audio_streams']),
+            $require && ! is_int($drift) => 'chính sách require_audio không khai giới hạn lệch hình/tiếng (av_drift_ms)',
+            $require && ! is_int($measured['av_drift_ms'] ?? null) => 'chính sách require_audio cần thời điểm bắt đầu của luồng hình và luồng tiếng, file không khai đủ',
+            $require && abs($measured['av_drift_ms']) > $drift => sprintf('luồng tiếng %d–%d ms, luồng hình %d–%d ms, lệch quá %d ms', (int) $measured['audio_start_ms'], (int) $measured['audio_start_ms'] + (int) $measured['audio_duration_ms'], (int) $measured['video_start_ms'], (int) $measured['video_start_ms'] + $video, $drift),
+            $declared('fps') && (! self::rateIs($measured['fps'], (int) $policy['fps']) || ! self::rateIs($measured['avg_frame_rate'], (int) $policy['fps'])) => sprintf('nhịp khung %s (trung bình %s), yêu cầu %d fps', (string) ($measured['fps'] ?? '?'), (string) ($measured['avg_frame_rate'] ?? '?'), (int) $policy['fps']),
+            $declared('frames') && $measured['frames'] !== (int) $policy['frames'] => sprintf('file có %s frame, yêu cầu %d', $measured['frames'] === null ? 'không rõ' : (string) $measured['frames'], (int) $policy['frames']),
+            $declared('codec') && $measured['codec'] !== $policy['codec'] => sprintf('codec %s, yêu cầu %s', (string) ($measured['codec'] ?? '?'), (string) $policy['codec']),
+            $declared('pixel_format') && $measured['pixel_format'] !== $policy['pixel_format'] => sprintf('pixel format %s, yêu cầu %s', (string) ($measured['pixel_format'] ?? '?'), (string) $policy['pixel_format']),
+            $declared('sar') && $measured['sar'] !== $policy['sar'] => sprintf('SAR %s, yêu cầu %s', (string) ($measured['sar'] ?? '?'), (string) $policy['sar']),
+            default => null,
+        };
+    }
+
+    /**
+     * @param  array<string, mixed>  $probed  Mp4Probe::inspect()
+     * @return array{duration_ms: ?int, video_duration_ms: ?int, audio_duration_ms: ?int, video_start_ms: ?int, audio_start_ms: ?int, av_start_offset_ms: ?int, av_end_offset_ms: ?int, av_drift_ms: ?int, width: ?int, height: ?int, video_streams: int, audio_streams: int, other_streams: int, has_audio: bool, fps: ?string, avg_frame_rate: ?string, frames: ?int, codec: ?string, pixel_format: ?string, sar: ?string, rotation: ?string, audio_codec: ?string} what ffprobe read of the file, the start and the length of each stream in whole milliseconds; how far the sound starts and ends after the picture (negative when before), and av_drift_ms, the larger of the two, null when a stream gives no start or no length
+     */
+    private static function measured(array $probed): array
+    {
+        $video = (array) ($probed['video'] ?? []);
+        $audio = (array) ($probed['audio'] ?? []);
+        $ms = static fn (mixed $seconds): ?int => is_numeric($seconds) ? (int) round((float) $seconds * 1000) : null;
+        $picture = $ms($video['duration'] ?? null);
+        $sound = $ms($audio['duration'] ?? null);
+        $pictureAt = $ms($video['start_time'] ?? null);
+        $soundAt = $ms($audio['start_time'] ?? null);
+        $timed = $picture !== null && $sound !== null && $pictureAt !== null && $soundAt !== null;
+        $opens = $timed ? $soundAt - $pictureAt : null;
+        $closes = $timed ? ($soundAt + $sound) - ($pictureAt + $picture) : null;
+
+        return [
+            'duration_ms' => $probed['duration_ms'],
+            'video_duration_ms' => $picture,
+            'audio_duration_ms' => $sound,
+            'video_start_ms' => $pictureAt,
+            'audio_start_ms' => $soundAt,
+            'av_start_offset_ms' => $opens,
+            'av_end_offset_ms' => $closes,
+            'av_drift_ms' => $timed ? (abs($opens) >= abs($closes) ? $opens : $closes) : null,
+            'width' => $probed['width'],
+            'height' => $probed['height'],
+            'video_streams' => (int) $probed['video_count'],
+            'audio_streams' => (int) $probed['audio_count'],
+            'other_streams' => (int) $probed['other_count'],
+            'has_audio' => (int) $probed['audio_count'] > 0,
+            'fps' => $video['r_frame_rate'] ?? null,
+            'avg_frame_rate' => $video['avg_frame_rate'] ?? null,
+            'frames' => $video['nb_frames'] ?? null,
+            'codec' => $video['codec_name'] ?? null,
+            'pixel_format' => $video['pix_fmt'] ?? null,
+            'sar' => $video['sample_aspect_ratio'] ?? null,
+            'rotation' => $video['rotation'] ?? null,
+            'audio_codec' => $audio['codec_name'] ?? null,
+        ];
+    }
+
+    /**
+     * @param  ?string  $rotation  the display rotation of the video stream as Mp4Probe read it, null when the file states none
+     * @return ?int how many quarter turns the picture is shown by, 0 to 3: 0 when the file states no rotation; null when what it states is not a whole number of quarter turns in degrees, such as a display matrix written out, which this check does not interpret
+     */
+    private static function quarterTurns(?string $rotation): ?int
+    {
+        if ($rotation === null) {
+            return 0;
+        }
+
+        if (! is_numeric($rotation) || fmod((float) $rotation, 90.0) !== 0.0) {
+            return null;
+        }
+
+        return (((int) round((float) $rotation / 90)) % 4 + 4) % 4;
+    }
+
+    /** @return array{command: string, ok: bool, exit_code: ?int, errors: ?string} whether ffmpeg decoded every frame of the file it picks with no error printed */
+    private function decode(string $file): array
+    {
+        $result = $this->ffmpeg->run(array_map(static fn (string $arg): string => $arg === '{file}' ? $file : $arg, self::DECODE));
+        $errors = trim($result->stderr);
+
+        return ['command' => self::decodeCommand(), 'ok' => $result->successful && $errors === '', 'exit_code' => $result->exitCode, 'errors' => $errors === '' ? ($result->successful ? null : 'ffmpeg thoát mã '.var_export($result->exitCode, true)) : Str::limit($errors, 2000)];
+    }
+
+    private static function decodeCommand(): string
+    {
+        return 'ffmpeg '.implode(' ', self::DECODE);
+    }
+
+    /** @return bool whether a frame rate ffprobe wrote as num/den is exactly that many frames a second */
+    private static function rateIs(?string $rate, int $fps): bool
+    {
+        return is_string($rate) && preg_match('#^([0-9]+)/([1-9][0-9]*)$#', $rate, $parts) === 1 && (int) $parts[1] === $fps * (int) $parts[2];
     }
 
     /**

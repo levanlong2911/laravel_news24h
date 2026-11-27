@@ -6,17 +6,21 @@ namespace App\Video\Render\Attempts;
 
 use App\Models\VideoRender;
 use App\Models\VideoRenderAttempt;
+use App\Repositories\Interfaces\VideoRenderAttemptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
 use App\Video\Concept\Support\Clock;
+use App\Video\Render\Claims\RenderClaimLostException;
 use App\Video\Render\Enums\RenderAttemptStatus;
 use App\Video\Render\Enums\RenderFailureClass;
 use App\Video\Render\Enums\RenderStatus;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 final class RenderAttemptService
 {
     public function __construct(
         private readonly Clock $clock,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoRenderAttemptRepositoryInterface $attempts,
     ) {
     }
 
@@ -36,17 +40,17 @@ final class RenderAttemptService
             [$render, $attempt] = $this->lockCurrent($renderId, $claimToken);
             $now = $this->clock->now();
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::SUBMITTED,
                 'provider_request_id' => $providerRequestId,
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
-            $attempt->forceFill([
+            $this->attempts->saveAttempt($attempt, [
                 'status' => RenderAttemptStatus::SUBMITTED,
                 'provider_request_id' => $providerRequestId,
                 'submitted_at' => $now,
-            ])->save();
+            ]);
         });
     }
 
@@ -56,7 +60,7 @@ final class RenderAttemptService
             [$render, $attempt] = $this->lockCurrent($renderId, $claimToken);
             $now = $this->clock->now();
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => RenderStatus::PROVIDER_UNKNOWN,
                 'failure_class' => RenderFailureClass::AMBIGUOUS_PROVIDER_OUTCOME,
                 'failure_code' => $code,
@@ -66,15 +70,15 @@ final class RenderAttemptService
                 'lease_expires_at' => null,
                 'heartbeat_at' => null,
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
-            $attempt->forceFill([
+            $this->attempts->saveAttempt($attempt, [
                 'status' => RenderAttemptStatus::AMBIGUOUS,
                 'failure_class' => RenderFailureClass::AMBIGUOUS_PROVIDER_OUTCOME,
                 'error_code' => $code,
                 'error_message' => $message,
                 'completed_at' => $now,
-            ])->save();
+            ]);
         });
     }
 
@@ -87,14 +91,14 @@ final class RenderAttemptService
         DB::transaction(function () use ($renderId, $claimToken, $renderStatus, $attemptStatus): void {
             [$render, $attempt] = $this->lockCurrent($renderId, $claimToken);
 
-            $render->forceFill([
+            $this->renders->saveRender($render, [
                 'execution_status' => $renderStatus,
                 'execution_version' => $render->execution_version + 1,
-            ])->save();
+            ]);
 
-            $attempt->forceFill([
+            $this->attempts->saveAttempt($attempt, [
                 'status' => $attemptStatus,
-            ])->save();
+            ]);
         });
     }
 
@@ -103,24 +107,20 @@ final class RenderAttemptService
      */
     private function lockCurrent(string $renderId, string $claimToken): array
     {
-        $render = VideoRender::query()->whereKey($renderId)->lockForUpdate()->firstOrFail();
+        $render = $this->renders->lockRenderOrFail($renderId);
 
         if (! hash_equals((string) $render->claim_token, $claimToken)) {
-            throw new RuntimeException('Claim token mismatch.');
+            throw new RenderClaimLostException('Claim token mismatch.');
         }
 
         // Doi trang thai attempt cung la mot quyen ghi: lease chet la mat quyen do.
         $now = $this->clock->now();
 
         if ($render->lease_expires_at === null || $render->lease_expires_at->lessThanOrEqualTo($now)) {
-            throw new RuntimeException('Render claim lease expired.');
+            throw new RenderClaimLostException('Render claim lease expired.');
         }
 
-        $attempt = VideoRenderAttempt::query()
-            ->where('render_id', $render->id)
-            ->where('attempt_no', $render->attempt_count)
-            ->lockForUpdate()
-            ->firstOrFail();
+        $attempt = $this->attempts->lockCurrentAttemptOrFail($render->id, $render->attempt_count);
 
         return [$render, $attempt];
     }

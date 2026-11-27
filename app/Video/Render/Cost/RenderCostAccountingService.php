@@ -7,11 +7,20 @@ namespace App\Video\Render\Cost;
 use App\Models\VideoCostEntry;
 use App\Models\VideoRender;
 use App\Models\VideoRenderAttempt;
+use App\Repositories\Interfaces\VideoCostEntryRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderAttemptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
 use App\Video\Render\DTO\RenderAttemptUsage;
 use RuntimeException;
 
 final class RenderCostAccountingService
 {
+    public function __construct(
+        private readonly VideoCostEntryRepositoryInterface $costs,
+        private readonly VideoRenderAttemptRepositoryInterface $attempts,
+        private readonly VideoRenderRepositoryInterface $renders,
+    ) {}
+
     public function record(
         VideoRender $render,
         VideoRenderAttempt $attempt,
@@ -19,15 +28,13 @@ final class RenderCostAccountingService
     ): ?VideoCostEntry {
         $key = sprintf('render-attempt:%s:provider-usage', $attempt->id);
 
-        $existing = VideoCostEntry::query()
-            ->where('cost_idempotency_key', $key)
-            ->first();
+        $existing = $this->costs->findCostByIdempotencyKey($key);
 
         if ($existing !== null) {
             if ($attempt->cost_entry_id !== $existing->id) {
-                $attempt->forceFill([
+                $this->attempts->saveAttempt($attempt, [
                     'cost_entry_id' => $existing->id,
-                ])->save();
+                ]);
             }
 
             return $existing;
@@ -38,10 +45,11 @@ final class RenderCostAccountingService
         }
 
         $stage = $render->render_kind === 'video' ? 'video_render' : 'image_render';
+        $owners = $this->renders->costOwnerIds($render);
 
-        $entry = VideoCostEntry::query()->create([
-            'project_id' => $this->projectIdFor($render),
-            'session_id' => $render->video_session_id ?? $render->shot?->session_id,
+        $entry = $this->costs->createCostEntry([
+            'project_id' => $this->projectIdFor($render, $owners['project_id']),
+            'session_id' => $owners['session_id'],
             'entity_type' => 'render_attempt',
             'entity_id' => $attempt->id,
             'stage' => $stage,
@@ -61,9 +69,9 @@ final class RenderCostAccountingService
             ],
         ]);
 
-        $attempt->forceFill([
+        $this->attempts->saveAttempt($attempt, [
             'cost_entry_id' => $entry->id,
-        ])->save();
+        ]);
 
         return $entry;
     }
@@ -71,13 +79,13 @@ final class RenderCostAccountingService
     /**
      * Clip khong co design image — no gan vao shot. Lay nham duong dan thi dong
      * tien ghi project_id null va bien mat khoi tong chi phi cua project.
+     *
+     * @param  VideoRender  $render
+     * @param  mixed  $projectId  the project costOwnerIds() read for the render
+     * @return ?string
      */
-    private function projectIdFor(VideoRender $render): ?string
+    private function projectIdFor(VideoRender $render, mixed $projectId): ?string
     {
-        $projectId = $render->designImage?->project_id
-            ?? $render->shot?->session?->project_id
-            ?? $render->session?->project_id;
-
         if ($projectId === null && $render->render_kind === 'video') {
             throw new RuntimeException('Video render '.$render->id.' khong suy duoc project — khong ghi ledger.');
         }

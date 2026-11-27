@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Video\Render;
 
 use App\Models\VideoRender;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
 use App\Video\Render\Enums\RenderStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -12,6 +13,8 @@ use RuntimeException;
 
 final class RenderDispatchService
 {
+    public function __construct(private readonly VideoRenderRepositoryInterface $renders) {}
+
     public function create(
         ?string $sessionId,
         string $assetId,
@@ -73,19 +76,7 @@ final class RenderDispatchService
             // Bang co unique rieng cho tung lan: (video_session_id, idempotency_key)
             // va (design_image_id, idempotency_key). Cau tra phai khop dung cap
             // rang buoc dang chi phoi, khong thi no doc mot lan roi dam vao lan kia.
-            $existing = VideoRender::query()
-                ->where(fn ($query) => $sessionId === null
-                    ? $query->whereNull('video_session_id')
-                    : $query->where('video_session_id', $sessionId))
-                ->where(fn ($query) => $designImageId === null
-                    ? $query->whereNull('design_image_id')
-                    : $query->where('design_image_id', $designImageId))
-                ->where(fn ($query) => $shotId === null
-                    ? $query->whereNull('shot_id')
-                    : $query->where('shot_id', $shotId))
-                ->where('idempotency_key', $idempotencyKey)
-                ->lockForUpdate()
-                ->first();
+            $existing = $this->renders->lockByIdempotencyKey($sessionId, $designImageId, $shotId, $idempotencyKey);
 
             if ($existing !== null) {
                 if (! hash_equals((string) $existing->request_hash, $requestHash)) {
@@ -102,22 +93,16 @@ final class RenderDispatchService
             // Unique (shot_id, attempt_no) va (design_image_id, attempt_no) deu ton tai,
             // nen so thu tu phai dem theo DUNG chu so huu cua hang. De nguyen 1 thi
             // lan render thu hai cua cung mot shot khong bao gio vao duoc bang.
-            $owner = match (true) {
-                $designImageId !== null => ['design_image_id', $designImageId],
-                $shotId !== null => ['shot_id', $shotId],
-                default => null,
+            $attemptNo = match (true) {
+                $designImageId !== null => $this->renders->maxAttemptNoForDesignImage($designImageId) + 1,
+                $shotId !== null => $this->renders->maxAttemptNoForShot($shotId) + 1,
+                default => 1,
             };
-
-            $attemptNo = $owner === null
-                ? 1
-                : ((int) VideoRender::query()->where($owner[0], $owner[1])->max('attempt_no')) + 1;
 
             // `id` khong nam trong $fillable, ma `verifyManifest()` lai doi
             // `manifest.render_id === $render->id`. De model tu sinh uuid thi hai
             // ben khong bao gio khop, va cu va cham do xay ra SAU khi da tra tien.
-            $render = new VideoRender();
-
-            $render->forceFill([
+            return $this->renders->insertRender([
                 'id' => $renderId ?? (string) Str::uuid(),
                 'video_session_id' => $sessionId,
                 'design_image_id' => $designImageId,
@@ -145,9 +130,7 @@ final class RenderDispatchService
                 'sent_prompt' => $sentPrompt,
                 'prompt_sha256' => $legacyPromptHash,
                 'request_sha256' => $requestHash,
-            ])->save();
-
-            return $render;
+            ]);
         }, attempts: 3);
     }
 }

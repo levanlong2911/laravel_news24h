@@ -4,25 +4,32 @@ declare(strict_types=1);
 
 namespace App\Video\Scene\Services;
 
-use App\Enums\DesignImageStatus;
 use App\Enums\VideoPlanningStageStatus;
-use App\Models\VideoDesignImage;
-use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoShot;
-use App\Services\Video\DesignImageStore;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderSceneRepositoryInterface;
 use App\Services\Video\ScreenplayApprovalService;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\Video\SceneClipDispatchService;
-use App\Video\Scene\ScenePreservationPrompt;
 use App\Video\Screenplay\ScreenplayContentHash;
 
 final class ShotSelectionReconciler
 {
     private const RULE_VERSION = 'shot-selection-v1';
 
-    public function __construct(private readonly ScreenplayApprovalService $approvals) {}
+    public function __construct(
+        private readonly ScreenplayApprovalService $approvals,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoRenderSceneRepositoryInterface $scenes,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoDesignImageRepositoryInterface $images,
+    ) {}
 
     /**
      * @return array{status: 'valid'|'stale'|'needs_confirmation', reasons: list<string>, fingerprint: string}
@@ -31,7 +38,7 @@ final class ShotSelectionReconciler
     {
         $render ??= $shot->video_render_id === null
             ? null
-            : VideoRender::query()->whereKey($shot->video_render_id)->first();
+            : $this->renders->findRender($shot->video_render_id);
         $reasons = [];
         $needsConfirmation = false;
         $evidence = [
@@ -83,7 +90,7 @@ final class ShotSelectionReconciler
 
         $scene = $shot->scene_id === null
             ? null
-            : VideoRenderScene::query()->whereKey($shot->scene_id)->first();
+            : $this->scenes->findScene($shot->scene_id);
 
         [$selectedProduction, $productionEvidence] = $this->selectedProduction($scene);
         $evidence['production'] = $productionEvidence;
@@ -192,9 +199,9 @@ final class ShotSelectionReconciler
             return [false, ['scene' => null]];
         }
 
-        $project = VideoProject::query()->whereKey($scene->project_id)->first();
-        $plan = $project?->selectedScenePlanStage()->first();
-        $screenplay = $project?->selectedScreenplayStage()->first();
+        $project = $this->projects->findProjectOfScene($scene);
+        $plan = $project === null ? null : $this->stages->findStageWithSnapshot($project->selected_scene_plan_stage_id);
+        $screenplay = $project === null ? null : $this->stages->findStageWithSnapshot($project->selected_screenplay_stage_id);
         $planOutput = is_array($plan?->output_json) ? $plan->output_json : [];
         $screenplayOutput = is_array($screenplay?->output_json) ? $screenplay->output_json : [];
         $approval = $screenplay === null ? null : $this->approvals->matchingApproval($screenplay);
@@ -256,11 +263,7 @@ final class ShotSelectionReconciler
             return null;
         }
 
-        $image = VideoDesignImage::query()
-            ->where('render_scene_id', $sceneId)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->first();
+        $image = $this->images->findApprovedSceneKeyframe($sceneId);
 
         return $image?->selected_artifact_id === null ? null : (string) $image->selected_artifact_id;
     }
@@ -268,16 +271,7 @@ final class ShotSelectionReconciler
     /** @return array{required: bool, artifact_id: ?string, scene_id: ?string} */
     private function requiredEndArtifact(VideoRenderScene $scene): array
     {
-        $next = VideoRenderScene::query()
-            ->where('project_id', $scene->project_id)
-            ->where('revision', $scene->revision)
-            ->where('source_scene_code', $scene->scene_code)
-            ->where('transition_mode', ScenePreservationPrompt::CONTINUATION)
-            ->where(fn ($query) => $scene->continuity_group === null
-                ? $query->whereNull('continuity_group')
-                : $query->where('continuity_group', $scene->continuity_group))
-            ->orderBy('scene_index')
-            ->first();
+        $next = $this->scenes->findContinuationSuccessor($scene);
 
         return [
             'required' => $next !== null,

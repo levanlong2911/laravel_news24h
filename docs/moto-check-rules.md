@@ -17,7 +17,7 @@ Sinh tự động từ các lời gọi `Finding::blocking|requirement|note|each
 | Quyết định | Số mã luật |
 |---|---|
 | RULE — giữ chặn | 26 |
-| Điều kiện để dùng ở bước sau | 296 |
+| Điều kiện để dùng ở bước sau | 297 |
 | Ghi chú nội dung — không chặn | 76 (2 mã `MotoLocationsCheck.usability.1`–`.2` không chặn cả bộ nhưng giữ lại từng ảnh nền bị ảnh hưởng) |
 
 Kiểm bằng `tests/Unit/MotoCheckRulesTest.php`: quét tĩnh mọi câu thông báo của checker (kể cả hàm phụ `return [...]`) phải nằm trong lời gọi `Finding`; mỗi mã một quyết định; chạy checker thật trên câu trả lời đã lưu và các biến thể đổi ID → `unclassified` rỗng, chỉ sai `project_id` mới FAIL; check và dữ liệu dẫn xuất không chứa object.
@@ -428,3 +428,4 @@ Nhánh moto của `SourceCheck` không chấm điểm và không so trích dẫn
 | Phase 10 | `MotoClipPrompt.soundPolicy.legacy` | `app/Video/Moto/MotoClipPrompt.php:403` | `check` | Lượt này viết theo chính sách âm thanh cũ, trước dòng "Sound design:" — viết lại prompt video. | Ghi chú nội dung — không chặn | lượt viết theo chính sách âm thanh cũ | — (không chặn) | MotoCheckRulesTest (quét tĩnh + chạy thật); MotoCheckRulesTest::the_shape_of_the_sound_line… |
 | Phase 10 | `MotoClipPrompt.check.3` | `app/Video/Moto/MotoClipPrompt.php:407` | `check` | Prompt có mã nội bộ …, … — model video không biết mã này; viết lại bằng tên mô tả. | Ghi chú nội dung — không chặn | câu chữ của prompt video | — (không chặn) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
 | Phase 10 | `MotoClipPrompt.check.4` | `app/Video/Moto/MotoClipPrompt.php:411` | `check` | Prompt dài … ký tự, vượt giới hạn …max_prompt_chars…. | Điều kiện để dùng ở bước sau | vượt giới hạn của model | `MotoClipPrompt::usable` (gửi model video) | MotoCheckRulesTest (quét tĩnh + chạy thật) |
+| Phase 10 | `MotoClipPrompt.timingProblems` | `app/Video/Moto/MotoClipPrompt.php:557` | `check` | (mỗi thông báo hàm trả về) | Điều kiện để dùng ở bước sau | mốc giờ của các dòng `Camera [a–b s]:` và `Action [a–b s]:` (số dòng, thứ tự, mốc quy về millisecond nguyên) khác các đoạn camera và bước hành động của shot; chỉ lượt đầu vào `moto-clip-prompt-input-v12` (bản kiểm `moto-clip-prompt-check-v3`), không đọc câu chữ | `MotoClipPrompt::usable` (duyệt, gửi model video) | MotoClipExecutionTest |

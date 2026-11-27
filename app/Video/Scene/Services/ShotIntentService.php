@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace App\Video\Scene\Services;
 
-use App\Models\VideoProject;
 use App\Models\VideoRender;
-use App\Models\VideoRenderScene;
-use App\Models\VideoReviewDecision;
-use App\Models\VideoSession;
-use App\Models\VideoSessionEvent;
 use App\Models\VideoShot;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderSceneRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
+use App\Repositories\Interfaces\VideoSessionEventRepositoryInterface;
+use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
+use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\Video\SceneClipDispatchService;
 use App\Video\Scene\ScenePreservationPrompt;
@@ -21,13 +23,28 @@ use RuntimeException;
 
 final class ShotIntentService
 {
-    public function __construct(private readonly ShotSelectionReconciler $reconciler) {}
+    /** @var string the key of a frozen request that says how a finished render may become the clip in use */
+    public const SELECTION_KEY = 'selection_policy';
+
+    /** @var string a render that is only a candidate when it finishes: it never takes the place of the clip in use, which changes only when a person approves another render or revokes it */
+    public const SELECTION_REVIEW = 'review_before_use';
+
+    public function __construct(
+        private readonly ShotSelectionReconciler $reconciler,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoSessionRepositoryInterface $sessions,
+        private readonly VideoShotRepositoryInterface $shots,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoRenderSceneRepositoryInterface $scenes,
+        private readonly VideoSessionEventRepositoryInterface $events,
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
+    ) {}
 
     /** @param array<string, mixed> $values */
     public function replaceInputs(VideoShot $shot, array $values): VideoShot
     {
         return DB::transaction(function () use ($shot, $values): VideoShot {
-            $locked = VideoShot::query()->whereKey($shot->id)->lockForUpdate()->firstOrFail();
+            $locked = $this->shots->lockShotOrFail($shot->id);
             $changed = false;
 
             foreach ($values as $field => $value) {
@@ -41,13 +58,13 @@ final class ShotIntentService
                 return $locked;
             }
 
-            $locked->forceFill($values + [
+            $this->shots->saveShot($locked, $values + [
                 'intent_version' => (int) $locked->intent_version + 1,
                 'current_render_id' => null,
                 'auto_select_version' => null,
-            ])->save();
+            ]);
 
-            return $locked->refresh();
+            return $this->shots->refreshShot($locked);
         }, attempts: 3);
     }
 
@@ -71,9 +88,7 @@ final class ShotIntentService
             return [null, null, 'shot_dispatch_operation_invalid'];
         }
 
-        $projectId = VideoSession::query()
-            ->whereKey($shot->session_id)
-            ->value('project_id');
+        $projectId = $this->sessions->findProjectIdOfSession($shot->session_id);
 
         if (! is_string($projectId) || $projectId === '') {
             return [null, null, 'shot_dispatch_incompatible'];
@@ -87,14 +102,12 @@ final class ShotIntentService
             $createRender,
             $projectId,
         ): array {
-            VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
-            $locked = VideoShot::query()->whereKey($shot->id)->lockForUpdate()->firstOrFail();
+            $this->projects->lockProject($projectId);
+            $locked = $this->shots->lockShotOrFail($shot->id);
 
             $sceneProjectId = $locked->scene_id === null
                 ? $projectId
-                : VideoRenderScene::query()
-                    ->whereKey($locked->scene_id)
-                    ->value('project_id');
+                : $this->scenes->findProjectIdOfScene($locked->scene_id);
 
             if ((string) $sceneProjectId !== $projectId) {
                 return [null, null, 'shot_dispatch_incompatible'];
@@ -102,10 +115,7 @@ final class ShotIntentService
 
             // Replay precedes the ETag check: a committed operation necessarily
             // made its caller's expected version old.
-            $replayed = VideoSessionEvent::query()
-                ->where('session_id', $locked->session_id)
-                ->where('operation_id', $operationId)
-                ->first();
+            $replayed = $this->events->findOperationForSession($locked->session_id, $operationId);
 
             if ($replayed !== null) {
                 if (! hash_equals(
@@ -117,11 +127,7 @@ final class ShotIntentService
 
                 $renderId = $replayed->operation_result_json['render_id'] ?? null;
                 $render = is_string($renderId)
-                    ? VideoRender::query()
-                        ->whereKey($renderId)
-                        ->where('shot_id', $locked->id)
-                        ->where('execution_purpose', SceneClipDispatchService::PURPOSE_PRODUCTION)
-                        ->first()
+                    ? $this->renders->findProductionRenderOfShot($renderId, $locked->id)
                     : null;
 
                 return $render === null
@@ -136,13 +142,14 @@ final class ShotIntentService
             $render = $createRender($locked);
             $this->assertProductionOwner($locked, $render);
             $next = $expectedIntentVersion + 1;
+            $review = self::reviewBeforeUse($render);
             $locked->forceFill([
                 'current_render_id' => $render->id,
                 'intent_version' => $next,
-                'auto_select_version' => $next,
+                'auto_select_version' => $review ? null : $next,
             ]);
 
-            if ($render->execution_status === RenderStatus::SUCCEEDED) {
+            if (! $review && $render->execution_status === RenderStatus::SUCCEEDED) {
                 $verdict = $this->reconciler->verdict($locked, $render);
 
                 if ($verdict['status'] === 'valid') {
@@ -152,8 +159,8 @@ final class ShotIntentService
                 }
             }
 
-            $locked->save();
-            VideoSessionEvent::create([
+            $this->shots->saveShot($locked);
+            $this->events->createEvent([
                 'session_id' => $locked->session_id,
                 'event_type' => 'shot_render_dispatched',
                 'entity_type' => 'shot',
@@ -171,14 +178,14 @@ final class ShotIntentService
                 ],
             ]);
 
-            return [$locked->refresh(), $render, 'dispatched'];
+            return [$this->shots->refreshShot($locked), $render, 'dispatched'];
         }, attempts: 3);
     }
 
     public function invalidateForKeyframe(string $sceneId): void
     {
         DB::transaction(function () use ($sceneId): void {
-            $scene = VideoRenderScene::query()->whereKey($sceneId)->first();
+            $scene = $this->scenes->findScene($sceneId);
 
             if ($scene === null) {
                 return;
@@ -188,31 +195,21 @@ final class ShotIntentService
 
             if ($scene->transition_mode === ScenePreservationPrompt::CONTINUATION
                 && $scene->source_scene_code !== null) {
-                $predecessor = VideoRenderScene::query()
-                    ->where('project_id', $scene->project_id)
-                    ->where('revision', $scene->revision)
-                    ->where('scene_code', $scene->source_scene_code)
-                    ->where(fn ($query) => $scene->continuity_group === null
-                        ? $query->whereNull('continuity_group')
-                        : $query->where('continuity_group', $scene->continuity_group))
-                    ->first();
+                $predecessor = $this->scenes->findContinuationPredecessor($scene);
 
                 if ($predecessor !== null) {
                     $sceneIds[] = (string) $predecessor->id;
                 }
             }
 
-            $shots = VideoShot::query()
-                ->whereIn('scene_id', $sceneIds)
-                ->lockForUpdate()
-                ->get();
+            $shots = $this->shots->lockShotsOfScenes($sceneIds);
 
             foreach ($shots as $shot) {
-                $shot->forceFill([
+                $this->shots->saveShot($shot, [
                     'intent_version' => (int) $shot->intent_version + 1,
                     'current_render_id' => null,
                     'auto_select_version' => null,
-                ])->save();
+                ]);
             }
         }, attempts: 3);
     }
@@ -220,8 +217,8 @@ final class ShotIntentService
     public function complete(VideoShot $shot, VideoRender $render, string $motionSpecHash): VideoShot
     {
         return DB::transaction(function () use ($shot, $render, $motionSpecHash): VideoShot {
-            $locked = VideoShot::query()->whereKey($shot->id)->lockForUpdate()->firstOrFail();
-            $render = VideoRender::query()->whereKey($render->id)->firstOrFail();
+            $locked = $this->shots->lockShotOrFail($shot->id);
+            $render = $this->renders->findRenderOrFail($render->id);
             $this->assertProductionOwner($locked, $render);
 
             if ($render->execution_status !== RenderStatus::SUCCEEDED) {
@@ -234,7 +231,8 @@ final class ShotIntentService
                 throw new RuntimeException('Video render motion snapshot does not match its completion.');
             }
 
-            if ((string) $locked->current_render_id === (string) $render->id
+            if (! self::reviewBeforeUse($render)
+                && (string) $locked->current_render_id === (string) $render->id
                 && $locked->auto_select_version !== null
                 && (int) $locked->auto_select_version === (int) $locked->intent_version) {
                 $verdict = $this->reconciler->verdict($locked, $render);
@@ -244,10 +242,10 @@ final class ShotIntentService
                 } else {
                     $locked->auto_select_version = null;
                 }
-                $locked->save();
+                $this->shots->saveShot($locked);
             }
 
-            return $locked->refresh();
+            return $this->shots->refreshShot($locked);
         }, attempts: 3);
     }
 
@@ -263,9 +261,7 @@ final class ShotIntentService
             return [null, 'shot_selection_operation_invalid'];
         }
 
-        $projectId = VideoRenderScene::query()
-            ->whereKey($shot->scene_id)
-            ->value('project_id');
+        $projectId = $this->scenes->findProjectIdOfScene($shot->scene_id);
 
         if (! is_string($projectId) || $projectId === '') {
             return [null, 'shot_selection_incompatible'];
@@ -274,12 +270,12 @@ final class ShotIntentService
         return DB::transaction(function () use (
             $shot, $render, $expectedIntentVersion, $operationId, $reviewerId, $projectId
         ): array {
-            VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
-            $locked = VideoShot::query()->whereKey($shot->id)->lockForUpdate()->firstOrFail();
-            $render = VideoRender::query()->whereKey($render->id)->firstOrFail();
+            $this->projects->lockProject($projectId);
+            $locked = $this->shots->lockShotOrFail($shot->id);
+            $render = $this->renders->findRenderOrFail($render->id);
             $this->assertProductionOwner($locked, $render);
 
-            $scene = VideoRenderScene::query()->whereKey($locked->scene_id)->first();
+            $scene = $this->scenes->findScene($locked->scene_id);
 
             if ((string) $scene?->project_id !== $projectId) {
                 return [null, 'shot_selection_incompatible'];
@@ -289,10 +285,7 @@ final class ShotIntentService
                 'render_id' => (string) $render->id,
                 'expected_intent_version' => $expectedIntentVersion,
             ], JSON_THROW_ON_ERROR));
-            $replayed = VideoSessionEvent::query()
-                ->where('session_id', $locked->session_id)
-                ->where('operation_id', $operationId)
-                ->first();
+            $replayed = $this->events->findOperationForSession($locked->session_id, $operationId);
 
             if ($replayed !== null) {
                 return hash_equals(
@@ -312,15 +305,15 @@ final class ShotIntentService
             }
 
             $next = $expectedIntentVersion + 1;
-            $locked->forceFill([
+            $this->shots->saveShot($locked, [
                 'video_render_id' => $render->id,
                 'intent_version' => $next,
                 'auto_select_version' => null,
                 'motion_spec_hash' => $this->motionHashFrom($render),
                 'scene_status' => 'video_ready',
-            ])->save();
+            ]);
 
-            $event = VideoSessionEvent::create([
+            $event = $this->events->createEvent([
                 'session_id' => $locked->session_id,
                 'event_type' => 'shot_render_selected',
                 'entity_type' => 'shot',
@@ -338,11 +331,8 @@ final class ShotIntentService
                 ],
             ]);
 
-            $revision = 1 + (int) VideoReviewDecision::query()
-                ->where('entity_type', 'shot')
-                ->where('entity_id', $locked->id)
-                ->max('revision');
-            VideoReviewDecision::create([
+            $revision = 1 + $this->decisions->maxRevisionFor('shot', $locked->id);
+            $this->decisions->createDecision([
                 'project_id' => $projectId,
                 'session_id' => $locked->session_id,
                 'entity_type' => 'shot',
@@ -359,7 +349,7 @@ final class ShotIntentService
                 ],
             ]);
 
-            return [$locked->refresh(), 'selected'];
+            return [$this->shots->refreshShot($locked), 'selected'];
         }, attempts: 3);
     }
 
@@ -382,6 +372,14 @@ final class ShotIntentService
             'scene_status' => 'video_ready',
             'auto_select_version' => null,
         ]);
+    }
+
+    /** @return bool whether the request of the render froze SELECTION_REVIEW, so finishing it only makes a candidate; a request that froze no policy keeps the auto-selection of its flow */
+    public static function reviewBeforeUse(VideoRender $render): bool
+    {
+        $request = json_decode((string) $render->render_request_json, true);
+
+        return is_array($request) && ($request[self::SELECTION_KEY] ?? null) === self::SELECTION_REVIEW;
     }
 
     private function motionHashFrom(VideoRender $render): string

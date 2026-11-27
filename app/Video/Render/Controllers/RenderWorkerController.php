@@ -6,6 +6,7 @@ namespace App\Video\Render\Controllers;
 
 use App\Models\VideoRender;
 use App\Video\Render\Attempts\RenderAttemptService;
+use App\Video\Render\Claims\RenderClaimLostException;
 use App\Video\Render\Claims\RenderClaimService;
 use App\Video\Render\Claims\RenderLeaseService;
 use App\Video\Render\DTO\RenderAttemptUsage;
@@ -50,9 +51,7 @@ final class RenderWorkerController
             'worker_id' => ['required', 'string', 'max:190'],
         ]);
 
-        $leases->heartbeat($render->id, $data['claim_token'], $data['worker_id']);
-
-        return response()->json(['ok' => true]);
+        return $this->held(fn () => $leases->heartbeat($render->id, $data['claim_token'], $data['worker_id']));
     }
 
     public function checkpoint(Request $request, VideoRender $render, RenderAttemptService $attempts): JsonResponse
@@ -62,13 +61,9 @@ final class RenderWorkerController
             'stage' => ['required', 'string', 'in:preparing,submitting'],
         ]);
 
-        if ($data['stage'] === 'preparing') {
-            $attempts->markPreparing($render->id, $data['claim_token']);
-        } else {
-            $attempts->markSubmitting($render->id, $data['claim_token']);
-        }
-
-        return response()->json(['ok' => true]);
+        return $this->held(fn () => $data['stage'] === 'preparing'
+            ? $attempts->markPreparing($render->id, $data['claim_token'])
+            : $attempts->markSubmitting($render->id, $data['claim_token']));
     }
 
     public function submitted(Request $request, VideoRender $render, RenderAttemptService $attempts): JsonResponse
@@ -78,9 +73,7 @@ final class RenderWorkerController
             'provider_request_id' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $attempts->markSubmitted($render->id, $data['claim_token'], $data['provider_request_id'] ?? null);
-
-        return response()->json(['ok' => true]);
+        return $this->held(fn () => $attempts->markSubmitted($render->id, $data['claim_token'], $data['provider_request_id'] ?? null));
     }
 
     public function complete(Request $request, VideoRender $render, RenderCheckpointService $service): JsonResponse
@@ -93,16 +86,14 @@ final class RenderWorkerController
             'usage' => ['required', 'array'],
         ]);
 
-        $service->complete(
+        return $this->held(fn () => $service->complete(
             renderId: $render->id,
             claimToken: $data['claim_token'],
             requestHash: $data['request_hash'],
             providerRequestId: $data['provider_request_id'] ?? null,
             artifactManifest: $data['artifact_manifest'],
             usage: RenderAttemptUsage::fromArray($data['usage']),
-        );
-
-        return response()->json(['ok' => true]);
+        ));
     }
 
     public function retry(Request $request, VideoRender $render, RenderRetryService $service): JsonResponse
@@ -115,16 +106,14 @@ final class RenderWorkerController
             'retry_after_seconds' => ['required', 'numeric', 'min:0', 'max:3600'],
         ]);
 
-        $service->schedule(
+        return $this->held(fn () => $service->schedule(
             renderId: $render->id,
             claimToken: $data['claim_token'],
             failureClass: RenderFailureClass::from($data['failure_class']),
             errorCode: $data['error_code'],
             message: $data['message'],
             retryAfterSeconds: (float) $data['retry_after_seconds'],
-        );
-
-        return response()->json(['ok' => true]);
+        ));
     }
 
     public function ambiguous(Request $request, VideoRender $render, RenderAttemptService $attempts): JsonResponse
@@ -135,9 +124,7 @@ final class RenderWorkerController
             'message' => ['required', 'string', 'max:5000'],
         ]);
 
-        $attempts->markAmbiguous($render->id, $data['claim_token'], $data['error_code'], $data['message']);
-
-        return response()->json(['ok' => true]);
+        return $this->held(fn () => $attempts->markAmbiguous($render->id, $data['claim_token'], $data['error_code'], $data['message']));
     }
 
     public function fail(Request $request, VideoRender $render, RenderFailureService $service): JsonResponse
@@ -149,15 +136,13 @@ final class RenderWorkerController
             'message' => ['required', 'string', 'max:5000'],
         ]);
 
-        $service->fail(
+        return $this->held(fn () => $service->fail(
             renderId: $render->id,
             claimToken: $data['claim_token'],
             failureClass: RenderFailureClass::from($data['failure_class']),
             errorCode: $data['error_code'],
             message: $data['message'],
-        );
-
-        return response()->json(['ok' => true]);
+        ));
     }
 
     public function recoverArtifacts(
@@ -186,6 +171,21 @@ final class RenderWorkerController
             'claim_generation' => $claim->claimGeneration,
             'lease_expires_at' => $claim->leaseExpiresAt->format(DATE_ATOM),
         ]);
+    }
+
+    /**
+     * @param  \Closure(): mixed  $write  a write the worker makes under its claim
+     * @return JsonResponse ok once the write is done; 409 with the reason when the worker no longer holds the claim (token replaced, render owned by another worker, lease run out), so it stops instead of reading a server error
+     */
+    private function held(\Closure $write): JsonResponse
+    {
+        try {
+            $write();
+        } catch (RenderClaimLostException $lost) {
+            return response()->json(['ok' => false, 'reason' => 'claim_lost', 'message' => $lost->getMessage()], 409);
+        }
+
+        return response()->json(['ok' => true]);
     }
 }
 

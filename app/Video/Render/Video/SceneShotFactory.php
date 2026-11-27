@@ -2,10 +2,12 @@
 
 namespace App\Video\Render\Video;
 
-use App\Models\VideoProject;
 use App\Models\VideoRenderScene;
 use App\Models\VideoSession;
 use App\Models\VideoShot;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
+use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Video\Scene\Services\ShotIntentService;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -24,7 +26,12 @@ final class SceneShotFactory
 {
     public const KIND = 'motion';
 
-    public function __construct(private readonly ShotIntentService $intents) {}
+    public function __construct(
+        private readonly ShotIntentService $intents,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoSessionRepositoryInterface $sessions,
+        private readonly VideoShotRepositoryInterface $shots,
+    ) {}
 
     /** @param array<string, mixed> $plan hang scene trong ke hoach dang hien */
     public function forScene(VideoRenderScene $scene, array $plan): VideoShot
@@ -39,17 +46,11 @@ final class SceneShotFactory
             // The session table has no project-level unique key. Serialize the
             // first session and shot creation so concurrent clicks cannot create
             // two independent owners for the same production shot.
-            VideoProject::query()->whereKey($scene->project_id)->lockForUpdate()->firstOrFail();
+            $this->projects->lockProject($scene->project_id);
             $session = $this->sessionFor((string) $scene->project_id);
             $code = (string) ($plan['shot_code'] ?? $scene->scene_code ?? $scene->id);
 
-            $shot = VideoShot::query()
-                ->where('session_id', $session->id)
-                ->where('plan_revision', (int) $scene->revision)
-                ->where('shot_code', $code)
-                ->where('kind', self::KIND)
-                ->lockForUpdate()
-                ->first();
+            $shot = $this->shots->lockShotOfSession($session->id, (int) $scene->revision, $code, self::KIND);
 
             if ($shot !== null) {
                 return $this->intents->replaceInputs($shot, [
@@ -64,7 +65,7 @@ final class SceneShotFactory
                 ]);
             }
 
-            return VideoShot::create([
+            return $this->shots->createShot([
                 'session_id' => $session->id,
                 'scene_id' => $scene->id,
                 'beat' => mb_substr($code, 0, 40),
@@ -89,12 +90,9 @@ final class SceneShotFactory
      */
     public function sessionFor(string $projectId): VideoSession
     {
-        $session = VideoSession::query()
-            ->where('project_id', $projectId)
-            ->orderBy('created_at')
-            ->first();
+        $session = $this->sessions->findFirstSessionForProject($projectId);
 
-        return $session ?? VideoSession::create([
+        return $session ?? $this->sessions->createSession([
             'project_id' => $projectId,
             'code' => 'clips-'.substr($projectId, 0, 8).'-'.substr(bin2hex(random_bytes(4)), 0, 8),
         ]);

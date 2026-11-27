@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace App\Video\Render\Claims;
 
 use App\Models\VideoRender;
-use App\Models\VideoRenderAttempt;
+use App\Repositories\Interfaces\VideoRenderAttemptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
 use App\Video\Concept\Support\Clock;
 use App\Video\Render\DTO\RenderClaim;
 use App\Video\Render\Enums\RenderAttemptStatus;
 use App\Video\Render\Enums\RenderStatus;
 use App\Video\Render\StateMachine\RenderStateMachine;
 use DateInterval;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -22,6 +22,8 @@ final class RenderClaimService
     public function __construct(
         private readonly RenderStateMachine $states,
         private readonly Clock $clock,
+        private readonly VideoRenderRepositoryInterface $renders,
+        private readonly VideoRenderAttemptRepositoryInterface $attempts,
         private readonly int $leaseSeconds = 120,
     ) {
         if ($this->leaseSeconds < 30) {
@@ -29,13 +31,11 @@ final class RenderClaimService
         }
     }
 
+    /** @return ?RenderClaim the oldest row an external worker may take; a row of a processor on this machine (provider MotoClipPlanBuilder::LOCAL) waits for its own job and is claimed only by id, never here */
     public function claimNext(string $workerId): ?RenderClaim
     {
         return DB::transaction(function () use ($workerId): ?RenderClaim {
-            $render = $this->claimable()
-                ->orderBy('created_at')
-                ->lockForUpdate()
-                ->first();
+            $render = $this->renders->lockNextClaimableForExternalWorker($this->clock->now());
 
             return $render === null ? null : $this->claimRow($render, $workerId);
         }, attempts: 3);
@@ -49,32 +49,10 @@ final class RenderClaimService
     public function claimById(string $renderId, string $workerId): ?RenderClaim
     {
         return DB::transaction(function () use ($renderId, $workerId): ?RenderClaim {
-            $render = $this->claimable()
-                ->whereKey($renderId)
-                ->lockForUpdate()
-                ->first();
+            $render = $this->renders->lockClaimableById($renderId, $this->clock->now());
 
             return $render === null ? null : $this->claimRow($render, $workerId);
         }, attempts: 3);
-    }
-
-    private function claimable(): Builder
-    {
-        $now = $this->clock->now();
-
-        return VideoRender::query()
-            ->where(function ($query) use ($now): void {
-                $query
-                    ->where('execution_status', RenderStatus::QUEUED->value)
-                    ->orWhere(function ($retry) use ($now): void {
-                        $retry
-                            ->where('execution_status', RenderStatus::RETRY_WAIT->value)
-                            ->where('next_retry_at', '<=', $now);
-                    });
-            })
-            ->whereNotNull('request_hash')
-            ->whereNotNull('render_request_json')
-            ->where('attempt_count', '<', DB::raw('max_attempts'));
     }
 
     private function claimRow(VideoRender $render, string $workerId): RenderClaim
@@ -88,7 +66,7 @@ final class RenderClaimService
         $claimGeneration = $render->claim_generation + 1;
         $leaseExpiresAt = $now->add(new DateInterval('PT'.$this->leaseSeconds.'S'));
 
-        $render->forceFill([
+        $this->renders->saveRender($render, [
             'execution_status' => RenderStatus::CLAIMED,
             'claim_token' => $claimToken,
             'claim_generation' => $claimGeneration,
@@ -100,9 +78,9 @@ final class RenderClaimService
             'next_retry_at' => null,
             'execution_started_at' => $render->execution_started_at ?? $now,
             'execution_version' => $render->execution_version + 1,
-        ])->save();
+        ]);
 
-        VideoRenderAttempt::query()->create([
+        $this->attempts->createAttempt([
             'render_id' => $render->id,
             'attempt_no' => $attemptNo,
             'status' => RenderAttemptStatus::CREATED,

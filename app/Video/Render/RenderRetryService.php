@@ -7,12 +7,12 @@ namespace App\Video\Render;
 use App\Models\VideoRender;
 use App\Models\VideoRenderAttempt;
 use App\Video\Concept\Support\Clock;
+use App\Video\Render\Claims\RenderClaimLostException;
 use App\Video\Render\Enums\RenderAttemptStatus;
 use App\Video\Render\Enums\RenderFailureClass;
 use App\Video\Render\Enums\RenderStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
-use RuntimeException;
 
 final class RenderRetryService
 {
@@ -40,7 +40,13 @@ final class RenderRetryService
             $render = VideoRender::query()->whereKey($renderId)->lockForUpdate()->firstOrFail();
 
             if (! hash_equals((string) $render->claim_token, $claimToken)) {
-                throw new RuntimeException('Claim token mismatch.');
+                throw new RenderClaimLostException('Claim token mismatch.');
+            }
+
+            $now = $this->clock->now();
+
+            if ($render->lease_expires_at === null || $render->lease_expires_at->lessThanOrEqualTo($now)) {
+                throw new RenderClaimLostException('Render claim lease expired.');
             }
 
             $attempt = VideoRenderAttempt::query()
@@ -48,8 +54,6 @@ final class RenderRetryService
                 ->where('attempt_no', $render->attempt_count)
                 ->lockForUpdate()
                 ->firstOrFail();
-
-            $now = $this->clock->now();
 
             if ($render->attempt_count >= $render->max_attempts) {
                 $attempt->forceFill([

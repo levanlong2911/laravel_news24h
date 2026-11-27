@@ -5,11 +5,18 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
-use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Llm\LlmClient;
+use App\Video\Moto\MotoClipPlanBuilder;
 use App\Video\Moto\MotoClipPrompt;
 use App\Video\Moto\MotoContract;
+use App\Video\Script\ScriptEvaluation;
+use App\Video\Superyacht\Spec\PhaseResolver;
 use RuntimeException;
 
 final class ClipPromptWriterService extends ShotPromptWriterService
@@ -35,7 +42,7 @@ final class ClipPromptWriterService extends ShotPromptWriterService
 
     protected const ADAPTER = MotoClipPrompt::class;
 
-    protected const TEXT_KEY = 'video_prompt';
+    public const TEXT_KEY = 'video_prompt';
 
     /** @var array<string, array{source: array<string, mixed>, keyframes: array<string, array<string, mixed>>, inputs: ?array<string, array<string, mixed>>}> by project, the shot plan, keyframes and reference inputs a screen has already read, so a stored run is verified from them and not read again */
     private array $given = [];
@@ -50,8 +57,16 @@ final class ClipPromptWriterService extends ShotPromptWriterService
         PlanningStageStore $stageStore,
         LlmClient $llm,
         private readonly MotoClipSourceService $clips,
+        PromptSelectionReader $selections,
+        VideoProjectRepositoryInterface $projects,
+        VideoPlanningStageRepositoryInterface $stages,
+        VideoReviewDecisionRepositoryInterface $decisions,
+        VideoArtifactRepositoryInterface $artifacts,
+        AiPhaseRepositoryInterface $phases,
+        PhaseResolver $resolver,
+        ScriptEvaluation $evaluation,
     ) {
-        parent::__construct($stageStore, $llm);
+        parent::__construct($stageStore, $llm, $selections, $projects, $stages, $decisions, $artifacts, $phases, $resolver, $evaluation);
     }
 
     /**
@@ -90,7 +105,7 @@ final class ClipPromptWriterService extends ShotPromptWriterService
     /**
      * @param  array<string, mixed>  $source  MotoClipSourceService::source()
      * @param  array<string, array<string, mixed>>  $keyframes  MotoClipSourceService::keyframes() of that source
-     * @return array<string, array{prompt: ?array<string, mixed>, blocked: ?array{code: string, message: string}}> for every shot of the plan by id, the approved video prompt the clip plan pins, or why it has none it can send: none approved, or one whose sources changed since it was written; reading it calls no model
+     * @return array<string, array{prompt: ?array<string, mixed>, blocked: ?array{code: string, message: string}, input_format?: string}> for every shot of the plan by id, the approved video prompt the clip plan pins, or why it has none it can send: none approved, or one whose sources changed since it was written; beside a prompt it can send, the input format the run that wrote it pinned (input_format), which names the check that accepted it; reading it calls no model
      */
     public function current(string $projectId, array $source, array $keyframes, ?array $inputs = null): array
     {
@@ -110,7 +125,7 @@ final class ClipPromptWriterService extends ShotPromptWriterService
      */
     private function held(string $projectId, array $source): array
     {
-        $selected = static::selected($projectId, (string) $source['stage_id']);
+        $selected = $this->selected($projectId, (string) $source['stage_id']);
         $result = [];
 
         foreach ((array) $source['plan']['shots'] as $row) {
@@ -123,7 +138,7 @@ final class ClipPromptWriterService extends ShotPromptWriterService
                 continue;
             }
 
-            $stage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->find($entry['stage_id']);
+            $stage = $this->stages->findStageForProject($projectId, $entry['stage_id']);
 
             try {
                 $held = $stage !== null && hash_equals($this->storedPackage($projectId, $stage)['fingerprint'], (string) ($stage->input_json['source_fingerprint'] ?? ''));
@@ -146,7 +161,7 @@ final class ClipPromptWriterService extends ShotPromptWriterService
                 'stage_id' => $entry['stage_id'],
                 'decision_id' => $entry['decision_id'],
                 'source_fingerprint' => $entry['fingerprint'],
-            ], 'blocked' => null];
+            ], 'blocked' => null, 'input_format' => (string) ($stage->input_json['source']['inputs'] ?? '')];
         }
 
         return $result;
@@ -209,15 +224,14 @@ final class ClipPromptWriterService extends ShotPromptWriterService
     /** @return array{0: ?string, 1: ?VideoPlanningStage} the id of the scene plan the shot plan pinned, null when it pinned none, and that scene plan, null when it is gone, did not succeed or is of another project */
     private function pinnedSceneStage(string $projectId, string $shotStageId): array
     {
-        $shotStage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->find($shotStageId, ['id', 'input_json']);
+        $shotStage = $this->stages->findStageForProject($projectId, $shotStageId);
         $sceneStageId = PlanningStageStore::metadataOf(is_array($shotStage?->input_json) ? $shotStage->input_json : null)['source']['scenes']['stage_id'] ?? null;
 
         if (! is_string($sceneStageId) || $sceneStageId === '') {
             return [null, null];
         }
 
-        return [$sceneStageId, VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::SCENES->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->find($sceneStageId)];
+        return [$sceneStageId, $this->stages->findSucceededStageOfKind($projectId, $sceneStageId, PlanningStageName::SCENES)];
     }
 
     /**
@@ -285,6 +299,8 @@ final class ClipPromptWriterService extends ShotPromptWriterService
         $shot = collect((array) $source['plan']['shots'])->firstWhere('id', $shotId) ?? throw new RuntimeException("Shot {$shotId} không có trong kế hoạch shot đã duyệt.");
         $inputs ??= $this->clips->inputs($projectId, $source, (array) $clipFlow['settings']);
         $input = (array) ($inputs[$shotId] ?? []);
+        $twelfth = $flow['adapter']->inputsVersion() === MotoContract::CLIP_PROMPT_INPUT_V12;
+        $choice = $twelfth ? $this->executionChoice($projectId, $shotId, $source, $input) : null;
         $references = ($input['mode'] ?? null) === MotoClipSourceService::REFERENCES;
         $keyframe = null;
 
@@ -300,9 +316,14 @@ final class ClipPromptWriterService extends ShotPromptWriterService
             if (! is_array($keyframe)) {
                 throw new RuntimeException((string) ($frame['blocked']['message'] ?? "Shot {$shotId} chưa có keyframe đã duyệt ở màn Keyframes."));
             }
+
+            if ($twelfth && ! is_string($frame['set']['decision_id'] ?? null)) {
+                throw new RuntimeException("Bộ keyframe của shot {$shotId} chưa có quyết định duyệt nào còn hiệu lực — không viết prompt video.");
+            }
         }
 
         $images = $references ? array_values((array) $input['images']) : [];
+        $plate = $twelfth && ! $references && is_array($frame['plate'] ?? null) ? $frame['plate'] : null;
         $audio = MotoClipPrompt::soundPolicy((array) ($clipFlow['settings']['audio'] ?? []));
 
         if ($audio === null) {
@@ -314,7 +335,17 @@ final class ClipPromptWriterService extends ShotPromptWriterService
             : [['position' => 0, 'artifact_id' => (string) $keyframe['artifact_id'], 'sha256' => (string) $keyframe['sha256'], 'image_code' => 'keyframe '.$shotId]];
         $order = array_map(static fn (array $row): array => ['id' => (string) $row['id'], 'scene' => (string) ($row['scene'] ?? '')], array_values((array) $source['plan']['shots']));
         $context = in_array($flow['adapter']->inputsVersion(), MotoClipPrompt::LINKED_FORMATS, true) ? $this->withScene($projectId, $source, $shot) : (array) $source['context'];
-        $payload = MotoClipPrompt::inputs($shot, ['shot_order' => $order] + $context,$pins['design'], $pins['script'], ['mode' => $references ? MotoClipSourceService::REFERENCES : MotoClipSourceService::KEYFRAME, 'keyframe' => $keyframe, 'images' => $images], $audio, '', (int) $settings['max_prompt_chars'], $flow['adapter']->inputsVersion());
+        $sent = array_map(static fn (array $image): array => ['image' => 'Image '.((int) $image['position'] + 1), 'send_as' => $references ? 'reference' : 'first_frame', 'artifact_id' => (string) $image['artifact_id'], 'sha256' => (string) $image['sha256']], $sources);
+        $execution = $choice === null ? null : [
+            'motion_method' => MotoContract::MOTION_AI_VIDEO,
+            'input_mode' => $references ? MotoClipSourceService::REFERENCES : MotoClipSourceService::KEYFRAME,
+            'content_duration_ms' => (int) $choice['policy']['content_duration_ms'],
+            'source_duration_ms' => (int) $choice['render']['duration_ms'],
+            'used' => ['start_ms' => 0, 'duration_ms' => (int) $choice['policy']['content_duration_ms']],
+            'aspect_ratio' => (string) ($source['context']['aspect_ratio'] ?? ''),
+            'images' => $sent,
+        ];
+        $payload = MotoClipPrompt::inputs($shot, ['shot_order' => $order] + $context,$pins['design'], $pins['script'], ['mode' => $references ? MotoClipSourceService::REFERENCES : MotoClipSourceService::KEYFRAME, 'keyframe' => $keyframe, 'images' => $images, 'plate' => $plate], $audio, '', (int) $settings['max_prompt_chars'], $flow['adapter']->inputsVersion(), $execution);
         $pin = [
             'inputs' => (string) $payload['payload']['input_format'],
             'phase' => ['id' => (string) $pins['phase']->id, 'prompt_sha256' => (string) $pins['phase']->content_sha256],
@@ -326,8 +357,37 @@ final class ClipPromptWriterService extends ShotPromptWriterService
             'keyframe' => $keyframe === null ? null : ['image_id' => (string) $keyframe['image_id'], 'artifact_id' => (string) $keyframe['artifact_id'], 'sha256' => (string) $keyframe['sha256']],
             'images' => array_map(static fn (array $image): array => ['position' => (int) $image['position'], 'artifact_id' => (string) $image['artifact_id'], 'sha256' => (string) $image['sha256'], 'kind' => (string) $image['kind'], 'target' => $image['target'] ?? null], $images),
             'audio' => $audio,
-        ];
+        ] + ($choice === null ? [] : ['execution' => $payload['payload']['execution'], 'plate' => $plate]);
 
         return ['sources' => $sources] + $this->runOf($projectId, (string) $source['stage_id'], $shotId, $flow, $pins, $payload, $pin);
+    }
+
+    /**
+     * @param  array<string, mixed>  $source  MotoClipSourceService::source()
+     * @param  array<string, mixed>  $input  MotoClipSourceService::inputs() of the shot, with its settings
+     * @return array{policy: array<string, mixed>, render: array<string, mixed>} the execution policy of the release and how the clip of the shot is sent as its settings choose it (MotoClipPlanBuilder::capability()): a video prompt of the twelfth input is written for what the writer is told of that choice — the group execution of its payload: the way of moving, the input, the length of the content, of the file and of the part kept, the frame and the images sent — and its fingerprint pins exactly that group. The model and the resolution are no part of it, so choosing another that renders a file of the same length keeps an approved prompt
+     *
+     * @throws RuntimeException when the release declares no execution policy, the settings cannot be read, the clip is a dynamic crop, which needs no video prompt, or the choice cannot be sent
+     */
+    private function executionChoice(string $projectId, string $shotId, array $source, array $input): array
+    {
+        $policy = $this->clips->execution($projectId) ?? throw new RuntimeException('Bản phát hành của dự án không khai chính sách thực thi clip mà đầu vào '.MotoContract::CLIP_PROMPT_INPUT_V12.' cần — không gọi model.');
+        $settings = (array) ($input['settings'] ?? []);
+
+        if (is_string($settings['problem'] ?? null)) {
+            throw new RuntimeException("Shot {$shotId}: {$settings['problem']}");
+        }
+
+        if (($settings['motion_method'] ?? $policy['default_motion_method']) === MotoContract::MOTION_DYNAMIC_CROP) {
+            throw new RuntimeException("Shot {$shotId} làm bằng Dynamic Crop từ ảnh master của bộ keyframe — không cần prompt video.");
+        }
+
+        $capability = MotoClipPlanBuilder::capability($policy, $settings, $this->clips->executionModels($policy), (string) ($source['context']['aspect_ratio'] ?? ''), 'Shot '.$shotId);
+
+        if ($capability['blocked'] !== null) {
+            throw new RuntimeException((string) $capability['blocked']['message']);
+        }
+
+        return ['policy' => $policy, 'render' => $capability['render']];
     }
 }

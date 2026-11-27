@@ -7,6 +7,8 @@ namespace App\Services\Video;
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Inspiration\PhaseOneEvidence;
 use App\Video\Media\VideoModelRegistry;
 use App\Video\Moto\MotoClipPlanBuilder;
@@ -29,17 +31,20 @@ final class MotoClipPlanService
         private readonly VideoModelRegistry $registry,
         private readonly PlanningStageStore $stages,
         private readonly ClipPromptWriterService $writer,
+        private readonly PhaseResolver $resolver,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $planningStages,
     ) {}
 
     /**
-     * @return array{audio: array{policy: string, prefix: string, closing: list<string>}, contract: array<string, mixed>, schemas: list<array<string, mixed>>} the current phase-10 revision as the resolver gives it for the project, the sound policy its prompts follow and the schema of the clip plan it pins
+     * @return array{audio: array{policy: string, prefix: string, closing: list<string>}, contract: array<string, mixed>, schemas: list<array<string, mixed>>, execution: ?array<string, mixed>} the current phase-10 revision as the resolver gives it for the project, the sound policy its prompts follow, the schema of the clip plan it pins and the execution policy of the release, null for a release whose plan is of an earlier format
      *
-     * @throws RuntimeException when the contract is not ready, the current revision is not the video prompt writer this code reads, or the sound policy is not configured
+     * @throws RuntimeException when the contract is not ready, the current revision is not the video prompt writer this code reads, the sound policy is not configured, or the plan schema the revision pins and the execution policy of the release do not go together
      */
     public function contract(string $projectId): array
     {
         $flow = $this->sources->workflowFor($projectId);
-        $resolved = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($projectId, $flow['action']);
+        $resolved = $this->resolver->forProject($projectId, $flow['action']);
 
         if (! $resolved->ready()) {
             throw new RuntimeException('Hợp đồng Phase 10 chưa sẵn sàng: '.implode('; ', $resolved->mismatches()).'.');
@@ -48,7 +53,7 @@ final class MotoClipPlanService
         $manifest = $resolved->manifest();
         $text = (string) (collect($resolved->parts())->firstWhere('code', $manifest['phase']['code'])['content'] ?? '');
 
-        $project = \App\Models\VideoProject::query()->find($projectId);
+        $project = $this->projects->findProject($projectId);
         $inputFormat = $project === null ? MotoContract::CLIP_PROMPT_INPUT : \App\Video\Moto\MotoClipPrompt::inputFormatFor($project);
 
         if (! str_contains($text, MotoContract::CLIP_PROMPT_FORMAT) || ! str_contains($text, 'Input format: `'.$inputFormat.'`')) {
@@ -61,6 +66,18 @@ final class MotoClipPlanService
             throw new RuntimeException('Chính sách âm thanh của luồng clip chưa cấu hình đúng (video.clips.workflows.*.audio: policy, prefix, closing).');
         }
 
+        $schemas = array_values(array_filter($resolved->outputSchemas(), static fn (array $schema): bool => str_starts_with((string) $schema['label'], 'moto/MotoClipPlan@')));
+        $execution = $this->sources->execution($projectId);
+        $pinned = in_array('moto/'.MotoContract::CLIP_PLAN_SCHEMA_V3, array_column($schemas, 'label'), true);
+
+        if ($execution !== null && ! $pinned) {
+            throw new RuntimeException('Bản phát hành khai chính sách thực thi clip nhưng Phase 10 revision '.$manifest['phase']['revision'].' ghim '.implode(', ', array_column($schemas, 'label')).' — cần revision ghim '.MotoContract::CLIP_PLAN_SCHEMA_V3.'.');
+        }
+
+        if ($execution === null && $pinned) {
+            throw new RuntimeException('Phase 10 revision '.$manifest['phase']['revision'].' ghim '.MotoContract::CLIP_PLAN_SCHEMA_V3.' nhưng bản phát hành không khai chính sách thực thi clip (policy.clip_execution).');
+        }
+
         return [
             'audio' => $audio,
             'contract' => [
@@ -69,15 +86,16 @@ final class MotoClipPlanService
                 'prompt_version' => $flow['workflow'].'/'.$manifest['phase']['code'].'@rev'.$manifest['phase']['revision'],
                 'prompt_sha256' => (string) $manifest['phase']['sha256'],
                 'bundle_hash' => $resolved->bundleHash(),
-                'writer' => MotoClipPrompt::CHECK_VERSION,
-                'builder' => MotoClipPlanBuilder::VERSION,
+                'writer' => MotoClipPrompt::checkVersionFor($inputFormat),
+                'builder' => $execution === null ? MotoClipPlanBuilder::VERSION : MotoClipPlanBuilder::VERSION_EXECUTION,
                 'audio' => $audio,
             ],
-            'schemas' => array_values(array_filter($resolved->outputSchemas(), static fn (array $schema): bool => str_starts_with((string) $schema['label'], 'moto/MotoClipPlan@'))),
+            'schemas' => $schemas,
+            'execution' => $execution,
         ];
     }
 
-    /** @return array<string, array<string, mixed>> the file checks by way of calling a model, read from config now; a plan pins them per clip so the page hash covers them and a later change of config shows as a page to reload */
+    /** @return array<string, array<string, mixed>> the file checks by way of calling a model, read from config now; a plan pins them per clip so the page hash covers them and a later change of config shows as a page to reload. reference is how an image sent through interactions is made smaller before it is sent, which the hash of an execution plan covers; output_sizes of long_running are the frame sizes a long-running model was measured to write, which only a plan of an execution policy pins */
     private static function media(): array
     {
         return [
@@ -85,17 +103,25 @@ final class MotoClipPlanService
                 'duration_tolerance_ms' => (int) config('video.omni.target.duration_tolerance_ms'),
                 'av_drift_ms' => (int) config('video.omni.target.av_drift_tolerance_ms'),
                 'output_sizes' => (array) config('video.omni.output_sizes'),
+                'reference' => (array) config('video.omni.reference'),
             ],
             'long_running' => [
                 'duration_tolerance_ms' => (int) config('video.veo.duration_tolerance_ms'),
                 'av_drift_ms' => (int) config('video.omni.target.av_drift_tolerance_ms'),
+                'output_sizes' => (array) config('video.veo.output_sizes'),
             ],
         ];
     }
 
-    /** @return list<array<string, mixed>> the models the project's clip flow may send, as the registry describes them; none when the registry cannot be read */
+    /** @return list<array<string, mixed>> the models the project's clip flow may send, as the registry describes them: under an execution policy the ones the policy offers, else the ones the flow allows; none when the registry cannot be read */
     public function models(string $projectId): array
     {
+        $execution = $this->sources->execution($projectId);
+
+        if ($execution !== null) {
+            return $this->sources->executionModels($execution);
+        }
+
         $allowed = (array) ($this->sources->workflowFor($projectId)['settings']['models'] ?? []);
 
         try {
@@ -108,7 +134,7 @@ final class MotoClipPlanService
     }
 
     /**
-     * @return array{source: array<string, mixed>, plan: array<string, mixed>, hash: string, keyframes: array<string, array<string, mixed>>, models: list<array<string, mixed>>, audio: array{policy: string, prefix: string, closing: list<string>}} the plan the sources build now, as the schema of the contract accepts it
+     * @return array{source: array<string, mixed>, plan: array<string, mixed>, hash: string, keyframes: array<string, array<string, mixed>>, models: list<array<string, mixed>>, audio: array{policy: string, prefix: string, closing: list<string>}, options: ?list<array<string, mixed>>} the plan the sources build now, as the schema of the contract accepts it; under an execution policy also every offer of the policy a screen can show (MotoClipPlanBuilder::options()), null otherwise
      *
      * @throws RuntimeException when the contract or the shot plan cannot be used, or the plan breaks its schema
      */
@@ -122,14 +148,15 @@ final class MotoClipPlanService
         $inputs = $this->sources->inputs($projectId, $source, $settings, $frames);
         $prompts = $this->writer->current($projectId, $source, $keyframes, $inputs);
         $models = $this->models($projectId);
-        $plan = MotoClipPlanBuilder::plan($projectId, $contract['contract'], $prompts, $source, $keyframes, $models, self::media(), $inputs);
+        $plan = MotoClipPlanBuilder::plan($projectId, $contract['contract'], $prompts, $source, $keyframes, $models, self::media(), $inputs, $contract['execution']);
         $errors = PhaseOneEvidence::schemaErrors(json_decode((string) json_encode($plan, JSON_THROW_ON_ERROR)), $contract['schemas']);
 
         if ($errors !== []) {
-            throw new RuntimeException('Kế hoạch clip không đạt schema '.MotoClipPlanBuilder::SCHEMA.': '.implode('; ', array_slice($errors, 0, 3)).'.');
+            throw new RuntimeException('Kế hoạch clip không đạt schema '.$plan['schema'].': '.implode('; ', array_slice($errors, 0, 3)).'.');
         }
 
-        return ['source' => $source, 'plan' => $plan, 'hash' => CanonicalJson::hash(['plan' => $plan]), 'keyframes' => $keyframes, 'inputs' => $inputs, 'prompts' => $prompts, 'models' => $models, 'audio' => $contract['audio']];
+        return ['source' => $source, 'plan' => $plan, 'hash' => CanonicalJson::hash(['plan' => $plan]), 'keyframes' => $keyframes, 'inputs' => $inputs, 'prompts' => $prompts, 'models' => $models, 'audio' => $contract['audio'],
+            'options' => $contract['execution'] === null ? null : MotoClipPlanBuilder::options($contract['execution'], $models, (string) ($source['context']['aspect_ratio'] ?? ''))];
     }
 
     /**
@@ -141,7 +168,7 @@ final class MotoClipPlanService
     public function save(string $projectId, array $preview): VideoPlanningStage
     {
         [$stage, $token, $reason] = $this->stages->claimProjectStage($projectId, PlanningStageName::CLIP_PLAN,
-            ['execution' => MotoClipPlanBuilder::VERSION, 'fingerprint' => $preview['hash']], false);
+            ['execution' => (string) $preview['plan']['contract']['builder'], 'fingerprint' => $preview['hash']], false);
 
         if ($token !== null) {
             $saved = ['plan' => $preview['plan'], 'hash' => $preview['hash']];
@@ -153,6 +180,6 @@ final class MotoClipPlanService
             throw new RuntimeException('Kế hoạch clip đang được xử lý: '.$reason);
         }
 
-        return $stage->fresh();
+        return $this->planningStages->freshStage($stage);
     }
 }
