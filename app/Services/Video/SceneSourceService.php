@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
-use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Moto\MotoScenes;
 use App\Video\Scenes\SceneWorkflow;
 use App\Video\Script\ScriptEvaluation;
@@ -30,10 +32,17 @@ final class SceneSourceService
 
     public const RENDER_NOT_READY = 'Kế hoạch shot đã duyệt — keyframe làm ở màn Keyframes; render clip và phim cuối còn khoá.';
 
+    public function __construct(
+        private readonly ScriptEvaluation $evaluation,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
+    ) {}
+
     /** @return array{workflow: string, action: string, adapter: SceneWorkflow, category_id: string, category_slug: string} */
     public function workflowFor(string $projectId): array
     {
-        $project = VideoProject::query()->with('article.category')->find($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        $project = $this->projects->findProjectWithCategory($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — Phase 6 không áp dụng.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
         $entry = $workflow === '' ? null : (config('video.scenes.workflows')[$workflow] ?? null);
@@ -76,7 +85,7 @@ final class SceneSourceService
             return null;
         }
 
-        if (! is_array(VideoProject::query()->find($projectId)?->metadata_json[ShotSourceService::SELECTION_KEY] ?? null)) {
+        if (! is_array($this->projects->findProject($projectId)?->metadata_json[ShotSourceService::SELECTION_KEY] ?? null)) {
             return self::SHOT_PLAN_MISSING;
         }
 
@@ -85,19 +94,13 @@ final class SceneSourceService
 
     public function sceneStage(string $projectId, string $stageId): ?VideoPlanningStage
     {
-        return VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCENES->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereNull('input_json->orphan_of_stage_id')
-            ->first();
+        return $this->stages->findSucceededSourceStage($projectId, $stageId, PlanningStageName::SCENES);
     }
 
     /** @return ?array{stage_id: string, content_hash: string, approval_id: string, version: int, approved_at: string} */
     public function selection(string $projectId): ?array
     {
-        $selection = VideoProject::query()->find($projectId)?->metadata_json[self::SELECTION_KEY] ?? null;
+        $selection = $this->projects->findProject($projectId)?->metadata_json[self::SELECTION_KEY] ?? null;
 
         return is_array($selection) ? $selection : null;
     }
@@ -280,8 +283,7 @@ final class SceneSourceService
         $flow = $this->workflowFor($projectId);
         $selection = $this->selection($projectId) ?? throw new RuntimeException('Dự án chưa có bản chia scene đã duyệt.');
         $stage = $this->sceneStage($projectId, (string) ($selection['stage_id'] ?? '')) ?? throw new RuntimeException('Bản chia scene đã duyệt không còn hoặc không thuộc dự án.');
-        $decision = VideoReviewDecision::query()->whereKey($selection['approval_id'] ?? null)->where('project_id', $projectId)
-            ->where('entity_type', self::ENTITY_TYPE)->where('entity_id', $stage->id)->where('decision', 'approved')->first();
+        $decision = $this->decisions->findApprovalFor($projectId, $selection['approval_id'] ?? null, self::ENTITY_TYPE, $stage->id);
 
         if ($decision === null) {
             throw new RuntimeException('Quyết định duyệt bản chia scene không hợp lệ.');
@@ -337,7 +339,7 @@ final class SceneSourceService
         }
 
         try {
-            $evaluation = ScriptEvaluation::of((string) $stage->raw_response, $meta['manifest'], $meta['context'], $meta['source'], $adapter);
+            $evaluation = $this->evaluation->of((string) $stage->raw_response, $meta['manifest'], $meta['context'], $meta['source'], $adapter);
         } catch (RuntimeException $e) {
             return [[], 'Không kiểm lại được bản chia scene theo hợp đồng của nó: '.$e->getMessage()];
         }
