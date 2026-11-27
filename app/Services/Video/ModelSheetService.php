@@ -81,7 +81,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
     /** @var array<string, array<string, mixed>> panel thiet ke trong mot request (doc nhieu lan) */
     private array $designPanels = [];
 
-    /** @var ?array{panel?: array<string, array<string, mixed>>, sheet?: array<string, array<int, array<string, string>>>} what one chain of source checks has read; null outside such a chain */
+    /** @var ?array{panel?: array<string, array<string, mixed>>, sheet?: array<string, array<int, array<string, string>>>, source?: array<string, array{0: VideoPlanningStage, 1: string}>} what one chain of source checks has read, each by project; null outside such a chain */
     private static ?array $chain = null;
 
     public static function execution(?string $workflow = null): string
@@ -469,7 +469,7 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      * @template T
      *
      * @param  \Closure(): T  $read  a chain of source checks that writes nothing
-     * @return T what the chain returns; while it runs every instance reads the design panel and the approved sheet of a project once, and nothing is kept once it ends
+     * @return T what the chain returns; while it runs every instance reads the design panel, the approved design and the approved sheet of a project once, and nothing is kept once it ends, also when it throws. A chain is one run of reads: what is decided after a write or under a lock taken later is read in a chain of its own
      */
     public static function readOnce(\Closure $read): mixed
     {
@@ -961,9 +961,22 @@ final class ModelSheetService implements QueuedImageService, QueuedStageService
      * prompt/hop dong phase-3 cho luot thiet ke moi khong lam master, QA, canonical da duyet cua ban
      * cu het hieu luc; chi mot luot thiet ke moi thanh cong moi thay nguon.
      *
+     * Trong mot chuoi readOnce() ban nguon cua mot du an chi doc mot lan; ngoai chuoi thi lan goi nao cung doc lai.
+     *
      * @return array{0: VideoPlanningStage, 1: string}
      */
     public function approvedSource(string $projectId): array
+    {
+        if (self::$chain === null) {
+            return $this->readApprovedSource($projectId);
+        }
+
+        // A read that throws stores nothing, so the next call of the chain reads again.
+        return self::$chain['source'][$projectId] ??= $this->readApprovedSource($projectId);
+    }
+
+    /** @return array{0: VideoPlanningStage, 1: string} */
+    private function readApprovedSource(string $projectId): array
     {
         try {
             [$stage, , $canonicalHash] = $this->context($projectId);

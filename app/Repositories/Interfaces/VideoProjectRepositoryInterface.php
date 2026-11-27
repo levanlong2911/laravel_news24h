@@ -43,6 +43,13 @@ interface VideoProjectRepositoryInterface extends RepositoryInterface
 
     /**
      * @param  string  $projectId
+     * @param  list<string>  $relations  the relations to eager load, each with the columns it needs (such as 'article:id,category_id')
+     * @return ?VideoProject the full project row with only those relations loaded, null when it does not exist
+     */
+    public function findProjectWith(string $projectId, array $relations): ?VideoProject;
+
+    /**
+     * @param  string  $projectId
      * @return VideoProject the full project row with article and article.category eager loaded
      *
      * @throws \Illuminate\Database\Eloquent\ModelNotFoundException when it does not exist

@@ -120,6 +120,14 @@ interface VideoPlanningStageRepositoryInterface extends RepositoryInterface
 
     /**
      * @param  string  $projectId
+     * @param  string  $stageId
+     * @param  PlanningStageName  $stage
+     * @return ?VideoPlanningStage findSucceededSourceStage() without the request snapshot column, for a reader that never needs it (the snapshot is read by id through PlanningStageStore::snapshotOf)
+     */
+    public function findSucceededSourceStageWithoutSnapshot(string $projectId, string $stageId, PlanningStageName $stage): ?VideoPlanningStage;
+
+    /**
+     * @param  string  $projectId
      * @param  PlanningStageName  $stage
      * @param  array<int, string>|Collection<int, string>  $stageIds  an empty list still runs the query
      * @return Collection<int, VideoPlanningStage> the succeeded stages of the project and step with these ids, without request_snapshot

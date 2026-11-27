@@ -111,6 +111,18 @@ class VideoPlanningStageRepository extends BaseRepository implements VideoPlanni
             ->first();
     }
 
+    public function findSucceededSourceStageWithoutSnapshot(string $projectId, string $stageId, PlanningStageName $stage): ?VideoPlanningStage
+    {
+        return $this->model->newQuery()
+            ->withoutSnapshot()
+            ->whereKey($stageId)
+            ->where('project_id', $projectId)
+            ->where('stage', $stage->value)
+            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
+            ->whereNull('input_json->orphan_of_stage_id')
+            ->first();
+    }
+
     public function findSucceededStagesOfKind(string $projectId, PlanningStageName $stage, array|Collection $stageIds): Collection
     {
         return $this->model->newQuery()->withoutSnapshot()->where('project_id', $projectId)

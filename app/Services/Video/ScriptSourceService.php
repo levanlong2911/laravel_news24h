@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
+use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
@@ -28,6 +29,9 @@ final class ScriptSourceService
 
     public const TOKEN_VERSION = 'script-source-token-v1';
 
+    /** @var list<string> the relations a script step reads of a project, each with the keys that join it and the columns the step uses: the category of its article, never the article text */
+    public const WORKFLOW_RELATIONS = ['article:id,category_id', 'article.category:id,slug'];
+
     /** @var array<string, array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string}> one adapter per project, so what it read while building a page is not read again */
     private array $workflows = [];
 
@@ -47,7 +51,8 @@ final class ScriptSourceService
     /** @return array{workflow: string, action: string, adapter: ScriptWorkflow, category_id: string, category_slug: string} */
     private function readWorkflow(string $projectId): array
     {
-        $project = $this->projects->findProjectWithCategory($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        // The workflow is named by the category of the article, and the adapter reads the release from the project: the text of the article is not read.
+        $project = $this->projects->findProjectWith($projectId, self::WORKFLOW_RELATIONS) ?? throw new RuntimeException('Không tìm thấy dự án.');
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — bước Kịch bản không áp dụng.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
         $entry = $workflow === '' ? null : (config('video.script.workflows')[$workflow] ?? null);
@@ -189,9 +194,11 @@ final class ScriptSourceService
     /**
      * @return array{stage_id: string, document: array<string, mixed>, answer: array<string, mixed>, derived: array<string, mixed>, validation: ?array<string, mixed>, token: array{version: string, stage_id: string, content_hash: string, selection_version: int, source_fingerprint: string, projection_hash?: string}} document is what the later steps read — the answer with the refs the run projected, when it projected any; answer is the document as the model wrote it
      *
+     * @param  ?VideoPlanningStage  $read  a run the page of the step has just read whole, in the same run of reads: when it is the selected run it is not read a second time. Only a page that writes nothing passes it; every step that acts on the script, and the approval, leave it out and the run is read here
+     *
      * @throws RuntimeException when there is no usable approved script
      */
-    public function approvedSource(string $projectId): array
+    public function approvedSource(string $projectId, ?VideoPlanningStage $read = null): array
     {
         $flow = $this->workflowFor($projectId);
         $project = $this->projects->findProjectOrFail($projectId);
@@ -201,7 +208,8 @@ final class ScriptSourceService
             throw new RuntimeException('Dự án chưa có kịch bản đã duyệt và chọn.');
         }
 
-        $stage = $this->scriptStage($projectId, $selection['stage_id']) ?? throw new RuntimeException('Bản kịch bản đang chọn không còn hoặc không thuộc dự án.');
+        $stage = (self::isScriptRun($read, $projectId, $selection['stage_id']) ? $read : $this->scriptStage($projectId, $selection['stage_id']))
+            ?? throw new RuntimeException('Bản kịch bản đang chọn không còn hoặc không thuộc dự án.');
         $decision = $this->decisions->findDecisionFor($projectId, $selection['approval_id'] ?? null, self::ENTITY_TYPE, $stage->id);
         $latest = $this->decisions->findLatestForEntity(self::ENTITY_TYPE, $stage->id);
 
@@ -260,16 +268,6 @@ final class ScriptSourceService
         ];
     }
 
-    /** @param array<string, mixed> $token a token a consumer pinned earlier */
-    public function tokenIsCurrent(string $projectId, array $token): bool
-    {
-        try {
-            return $this->approvedSource($projectId)['token'] == $token;
-        } catch (RuntimeException) {
-            return false;
-        }
-    }
-
     /** @return ?array{stage_id: string, content_hash: string, approval_id: string, version: int, selected_at: string} */
     public function selection(string $projectId): ?array
     {
@@ -290,9 +288,27 @@ final class ScriptSourceService
         return $this->evaluate($stage, $flow['adapter']);
     }
 
+    /**
+     * @return bool whether a run already read is the run scriptStage() would return for that id: that very run of the project, a succeeded script that is no attempt recorded apart, read with its input, its answer and its output. Anything else — another run, another project, a row read in part — is not taken, and the run is read
+     */
+    private static function isScriptRun(?VideoPlanningStage $stage, string $projectId, string $stageId): bool
+    {
+        if ($stage === null || array_diff(['input_json', 'raw_response', 'output_json'], array_keys($stage->getAttributes())) !== []) {
+            return false;
+        }
+
+        return (string) $stage->id === $stageId
+            && (string) $stage->project_id === $projectId
+            && $stage->stage === PlanningStageName::SCRIPT->value
+            && $stage->status === VideoPlanningStageStatus::SUCCEEDED->value
+            && is_array($stage->input_json)
+            && ! array_key_exists('orphan_of_stage_id', $stage->input_json);
+    }
+
+    /** @return ?VideoPlanningStage a succeeded script run of the project with its input, answer and output; the request it was queued with is not read, a worker alone sends that */
     public function scriptStage(string $projectId, string $stageId): ?VideoPlanningStage
     {
-        return $this->stages->findSucceededSourceStage($projectId, $stageId, PlanningStageName::SCRIPT);
+        return $this->stages->findSucceededSourceStageWithoutSnapshot($projectId, $stageId, PlanningStageName::SCRIPT);
     }
 
     /** @return array{0: array<string, mixed>, 1: ?string} */

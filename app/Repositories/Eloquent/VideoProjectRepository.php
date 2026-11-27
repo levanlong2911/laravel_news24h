@@ -141,6 +141,11 @@ class VideoProjectRepository extends BaseRepository implements VideoProjectRepos
         return $this->model->newQuery()->with('article.category')->find($projectId);
     }
 
+    public function findProjectWith(string $projectId, array $relations): ?VideoProject
+    {
+        return $this->model->newQuery()->with($relations)->find($projectId);
+    }
+
     public function findProjectWithCategoryOrFail(string $projectId): VideoProject
     {
         return $this->model->newQuery()->with('article.category')->findOrFail($projectId);

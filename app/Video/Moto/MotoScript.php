@@ -143,9 +143,9 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
     public function inputs(VideoProject $project, array $brief, array $history, string $prompt): array
     {
         $projectId = (string) $project->id;
-        $sheet = $this->sheets->approvedSheet($projectId, true);
+        // One chain of source reads: the approved sheet is found from the approved design, which is then read once for its hash.
+        [$sheet, $designHash] = ModelSheetService::readOnce(fn (): array => [$this->sheets->approvedSheet($projectId, true), $this->sheets->approvedSource($projectId)[1]]);
         [$design, $data, $rawSha256] = $this->pinnedDesign($projectId, $sheet);
-        [, $designHash] = $this->sheets->approvedSource($projectId);
 
         $designFormat = match (true) {
             $this->checkpointed => MotoContract::DESIGN_FORMAT_V3,
@@ -205,28 +205,31 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
 
     public function sourceProblem(string $projectId, array $source): ?string
     {
-        try {
-            $sheet = $this->sheets->approvedSheet($projectId, true);
-        } catch (RuntimeException $e) {
-            return $e->getMessage();
-        }
+        // One chain of source reads, begun and ended inside this check: a caller that holds a lock gets what is stored at that moment.
+        return ModelSheetService::readOnce(function () use ($projectId, $source): ?string {
+            try {
+                $sheet = $this->sheets->approvedSheet($projectId, true);
+            } catch (RuntimeException $e) {
+                return $e->getMessage();
+            }
 
-        if ($sheet['design_stage_id'] !== ($source['design_stage_id'] ?? null)) {
-            return 'Bản thiết kế nguồn đã đổi so với lúc viết kịch bản này.';
-        }
+            if ($sheet['design_stage_id'] !== ($source['design_stage_id'] ?? null)) {
+                return 'Bản thiết kế nguồn đã đổi so với lúc viết kịch bản này.';
+            }
 
-        try {
-            [, , $rawSha256] = $this->pinnedDesign($projectId, $sheet);
-            [, $designHash] = $this->sheets->approvedSource($projectId);
-        } catch (RuntimeException $e) {
-            return $e->getMessage();
-        }
+            try {
+                [, , $rawSha256] = $this->pinnedDesign($projectId, $sheet);
+                [, $designHash] = $this->sheets->approvedSource($projectId);
+            } catch (RuntimeException $e) {
+                return $e->getMessage();
+            }
 
-        if (! hash_equals((string) ($source['design_raw_sha256'] ?? ''), $rawSha256) || $designHash !== ($source['design_hash'] ?? null)) {
-            return 'Bản thiết kế nguồn đã ghim không còn nguyên vẹn.';
-        }
+            if (! hash_equals((string) ($source['design_raw_sha256'] ?? ''), $rawSha256) || $designHash !== ($source['design_hash'] ?? null)) {
+                return 'Bản thiết kế nguồn đã ghim không còn nguyên vẹn.';
+            }
 
-        return null;
+            return null;
+        });
     }
 
     public function check(?array $response, array $context, array $schema): array
@@ -363,7 +366,8 @@ final class MotoScript implements ProjectsScriptDocument, ReleaseBound, ScriptWo
 
     private function stage(string $projectId, mixed $stageId, PlanningStageName $name, string $label): VideoPlanningStage
     {
-        $stage = is_string($stageId) && $stageId !== '' ? $this->stages->findSucceededStageOfKindWithSnapshot($projectId, $stageId, $name) : null;
+        // The answer, input and output of the run are read; the request it was queued with is not.
+        $stage = is_string($stageId) && $stageId !== '' ? $this->stages->findSucceededStageOfKind($projectId, $stageId, $name) : null;
 
         return $stage ?? throw new RuntimeException("Không tìm thấy {$label} đã chạy thành công cho dự án này.");
     }

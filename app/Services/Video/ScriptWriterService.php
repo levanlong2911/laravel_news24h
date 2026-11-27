@@ -18,6 +18,7 @@ use App\Video\Script\ProjectsScriptDocument;
 use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -467,6 +468,40 @@ final class ScriptWriterService implements QueuedStageService
     /** @return array<string, mixed> */
     public function panel(string $projectId, ?string $viewStageId = null): array
     {
+        // The page only reads: its source checks share one chain, so the approved design and sheet are read once for the whole panel.
+        return ModelSheetService::readOnce(fn (): array => $this->readPanel($projectId, $viewStageId));
+    }
+
+    /**
+     * @return Collection<int, VideoPlanningStage> the script runs of a project, newest first, each with only what the list of runs and the state of the latest one show. The verdict, the model status and the revised run are taken from the stored JSON as JSON text, so a key that is missing, a null, a number and a boolean reach the page as what they are; the answer, the input and the output of a run are not read
+     */
+    private function listedRuns(string $projectId): Collection
+    {
+        $meta = PlanningStageStore::METADATA_KEY;
+
+        return VideoPlanningStage::query()
+            ->where('project_id', $projectId)
+            ->where('stage', PlanningStageName::SCRIPT->value)
+            ->whereNull('input_json->orphan_of_stage_id')
+            ->orderByDesc('planning_revision')
+            ->select(['id', 'planning_revision', 'status', 'cost_usd', 'claim_token', 'lease_expires_at', 'error_message', 'started_at'])
+            ->selectRaw("JSON_EXTRACT(output_json, '$.check.verdict') as listed_verdict")
+            ->selectRaw("JSON_EXTRACT(output_json, '$.check.status') as listed_model_status")
+            ->selectRaw("JSON_EXTRACT(input_json, '$.\"{$meta}\".revision.of.revision') as listed_revision_of")
+            ->get();
+    }
+
+    /** @return mixed the value of a JSON text a listed run carries; null for a key the run does not have */
+    private static function listed(VideoPlanningStage $stage, string $key): mixed
+    {
+        $json = $stage->getAttribute($key);
+
+        return is_string($json) ? json_decode($json, true) : null;
+    }
+
+    /** @return array<string, mixed> */
+    private function readPanel(string $projectId, ?string $viewStageId): array
+    {
         $run = null;
         $runError = null;
         $supported = true;
@@ -486,20 +521,27 @@ final class ScriptWriterService implements QueuedStageService
             }
         }
 
-        $stages = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::SCRIPT->value)
-            ->whereNull('input_json->orphan_of_stage_id')->orderByDesc('planning_revision')->get();
+        $stages = $this->listedRuns($projectId);
         $latest = $stages->first();
-        $served = $run === null ? null : $this->stageStore->latestSucceededForInput($projectId, PlanningStageName::SCRIPT, $run['input']);
+        $served = $run !== null && $this->stageStore->hasSucceededForProject($projectId, PlanningStageName::SCRIPT, $run['input']);
         $selection = $this->sources->selection($projectId);
         $succeeded = $stages->where('status', VideoPlanningStageStatus::SUCCEEDED->value);
+        // The run the page shows is chosen from the list as before: the one asked for, else the selected one, else the newest that succeeded.
         $shown = ($viewStageId === null ? null : $succeeded->firstWhere('id', $viewStageId))
             ?? ($selection === null ? null : $succeeded->firstWhere('id', $selection['stage_id']))
             ?? $succeeded->first();
+        // Only that run is read whole, and the latest one when it has not succeeded: its task and progress are kept in its input.
+        $open = $latest !== null && $latest->status !== VideoPlanningStageStatus::SUCCEEDED->value;
+        $whole = array_values(array_unique(array_filter([$shown?->id, $open ? $latest->id : null])));
+        $rows = $whole === [] ? collect() : VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->whereKey($whole)->get()->keyBy('id');
+        $shown = $shown === null ? null : $rows->get($shown->id);
+        $latest = $open ? ($rows->get($latest->id) ?? $latest) : $latest;
         $selected = null;
 
         if ($selection !== null) {
             try {
-                $selected = $this->sources->approvedSource($projectId);
+                // The page writes nothing: when the run it shows is the selected one, the row read for the page is the row the source check reads.
+                $selected = $this->sources->approvedSource($projectId, $shown);
             } catch (RuntimeException $e) {
                 $selected = ['error' => $e->getMessage()];
             }
@@ -524,8 +566,8 @@ final class ScriptWriterService implements QueuedStageService
 
         return [
             'run_error' => $runError,
-            'can_run' => $run !== null && $served === null,
-            'can_rewrite' => $run !== null && $served !== null,
+            'can_run' => $run !== null && ! $served,
+            'can_rewrite' => $run !== null && $served,
             'prompt' => $run === null ? null : 'Prompt '.$run['phase']->phase_code.' revision '.$run['phase']->revision,
             'model' => $settings === null ? null : $settings['model'].' (effort '.$settings['effort'].')',
             'max_tokens' => $settings['max_tokens'] ?? null,
@@ -543,10 +585,10 @@ final class ScriptWriterService implements QueuedStageService
                 'id' => (string) $stage->id,
                 'revision' => (int) $stage->planning_revision,
                 'status' => $stage->status,
-                'verdict' => $stage->output_json['check']['verdict'] ?? null,
-                'model_status' => $stage->output_json['check']['status'] ?? null,
+                'verdict' => self::listed($stage, 'listed_verdict'),
+                'model_status' => self::listed($stage, 'listed_model_status'),
                 'selected' => $selection !== null && $selection['stage_id'] === (string) $stage->id,
-                'revision_of' => PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['revision']['of']['revision'] ?? null,
+                'revision_of' => self::listed($stage, 'listed_revision_of'),
                 'cost_usd' => $stage->cost_usd === null ? null : (float) $stage->cost_usd,
             ])->values()->all(),
             'selection' => $selection,
@@ -563,7 +605,9 @@ final class ScriptWriterService implements QueuedStageService
                 'content_hash' => $integrity === null ? ($evaluation['content_hash'] ?? null) : null,
                 'check' => $check,
                 'stored_check' => array_intersect_key((array) ($shown->output_json['check'] ?? []), array_flip(['verdict', 'version', 'technical_schema'])),
-                'document' => $integrity === null ? ($evaluation['document'] ?? null) : null,
+                // The panel lays a script out field by field, so only an answer that holds its structure and says ok is laid out;
+                // one that failed its schema, or says no script could be written (`data` is {}), shows its check and nothing more.
+                'document' => $check !== null && $check['schema'] === [] && $check['status'] === 'ok' ? ($evaluation['document'] ?? null) : null,
                 'approvable' => $check !== null && MotoCheckRules::usable($check) && $check['status'] === 'ok' && $sourceProblem === null,
                 'tokens' => ['in' => (int) $shown->tokens_in, 'out' => (int) $shown->tokens_out],
                 'cost_usd' => $shown->cost_usd === null ? null : (float) $shown->cost_usd,
@@ -595,7 +639,7 @@ final class ScriptWriterService implements QueuedStageService
         }
 
         $settings = $adapter->settings();
-        $project = VideoProject::query()->with('article.category')->findOrFail($projectId);
+        $project = VideoProject::query()->with(ScriptSourceService::WORKFLOW_RELATIONS)->findOrFail($projectId);
         $settings['brief'] = self::brief($project, $settings);
 
         if ($settings['history_enabled']) {

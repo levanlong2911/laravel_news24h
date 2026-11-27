@@ -67,9 +67,9 @@ final class SuperyachtScript implements ScriptWorkflow
     public function inputs(VideoProject $project, array $brief, array $history, string $prompt): array
     {
         $projectId = (string) $project->id;
-        $sheet = $this->sheets->approvedSheet($projectId, true);
+        // One chain of source reads: the approved sheet is found from the approved design, which is then read once for its hash.
+        [$sheet, $canonicalHash] = ModelSheetService::readOnce(fn (): array => [$this->sheets->approvedSheet($projectId, true), $this->sheets->approvedSource($projectId)[1]]);
         [$design, $data, $rawSha256] = $this->pinnedDesign($projectId, $sheet);
-        [, $canonicalHash] = $this->sheets->approvedSource($projectId);
 
         if ((JsonAnswer::object((string) $design->raw_response)['format'] ?? null) !== YachtDesignCheck::FORMAT) {
             throw new RuntimeException('Bản thiết kế đã duyệt theo định dạng cũ '.YachtDesignCheck::LEGACY_FORMAT.': kịch bản và bối cảnh đã có của nó vẫn giữ nguyên để xem và dùng tiếp, nhưng không viết kịch bản mới từ nó. Tạo thiết kế mới ('.YachtDesignCheck::FORMAT.') và duyệt model sheet của nó để viết kịch bản.');
@@ -147,39 +147,42 @@ final class SuperyachtScript implements ScriptWorkflow
 
     public function sourceProblem(string $projectId, array $source): ?string
     {
-        try {
-            $sheet = $this->sheets->approvedSheet($projectId, true);
-        } catch (RuntimeException $e) {
-            return $e->getMessage();
-        }
+        // One chain of source reads, begun and ended inside this check: a caller that holds a lock gets what is stored at that moment.
+        return ModelSheetService::readOnce(function () use ($projectId, $source): ?string {
+            try {
+                $sheet = $this->sheets->approvedSheet($projectId, true);
+            } catch (RuntimeException $e) {
+                return $e->getMessage();
+            }
 
-        $now = [
-            'design_stage_id' => $sheet['design_stage_id'],
-            'review_stage_id' => $sheet['review_stage_id'],
-            'master_artifact_sha256' => $sheet['master_artifact_sha256'],
-        ];
-        $pinned = [
-            'design_stage_id' => $source['design_stage_id'] ?? null,
-            'review_stage_id' => $source['model_sheet']['review_stage_id'] ?? null,
-            'master_artifact_sha256' => $source['model_sheet']['master_artifact_sha256'] ?? null,
-        ];
+            $now = [
+                'design_stage_id' => $sheet['design_stage_id'],
+                'review_stage_id' => $sheet['review_stage_id'],
+                'master_artifact_sha256' => $sheet['master_artifact_sha256'],
+            ];
+            $pinned = [
+                'design_stage_id' => $source['design_stage_id'] ?? null,
+                'review_stage_id' => $source['model_sheet']['review_stage_id'] ?? null,
+                'master_artifact_sha256' => $source['model_sheet']['master_artifact_sha256'] ?? null,
+            ];
 
-        if ($now !== $pinned) {
-            return 'Model sheet đã duyệt hoặc bản thiết kế nguồn đã đổi so với lúc viết kịch bản này.';
-        }
+            if ($now !== $pinned) {
+                return 'Model sheet đã duyệt hoặc bản thiết kế nguồn đã đổi so với lúc viết kịch bản này.';
+            }
 
-        try {
-            [, , $rawSha256] = $this->pinnedDesign($projectId, $sheet);
-            [, $canonicalHash] = $this->sheets->approvedSource($projectId);
-        } catch (RuntimeException $e) {
-            return $e->getMessage();
-        }
+            try {
+                [, , $rawSha256] = $this->pinnedDesign($projectId, $sheet);
+                [, $canonicalHash] = $this->sheets->approvedSource($projectId);
+            } catch (RuntimeException $e) {
+                return $e->getMessage();
+            }
 
-        if (! hash_equals((string) ($source['design_raw_sha256'] ?? ''), $rawSha256) || $canonicalHash !== ($source['canonical_hash'] ?? null)) {
-            return 'Bản thiết kế nguồn đã ghim không còn nguyên vẹn.';
-        }
+            if (! hash_equals((string) ($source['design_raw_sha256'] ?? ''), $rawSha256) || $canonicalHash !== ($source['canonical_hash'] ?? null)) {
+                return 'Bản thiết kế nguồn đã ghim không còn nguyên vẹn.';
+            }
 
-        return null;
+            return null;
+        });
     }
 
     public function schemaViolations(object $decoded, ResolvedPhase $bundle, string $projectId): array
@@ -227,7 +230,8 @@ final class SuperyachtScript implements ScriptWorkflow
 
     private function stage(string $projectId, mixed $stageId, PlanningStageName $name, string $label): VideoPlanningStage
     {
-        $stage = is_string($stageId) && $stageId !== '' ? VideoPlanningStage::query()->whereKey($stageId)->where('project_id', $projectId)
+        // The answer, input and output of the run are read; the request it was queued with is not.
+        $stage = is_string($stageId) && $stageId !== '' ? VideoPlanningStage::query()->withoutSnapshot()->whereKey($stageId)->where('project_id', $projectId)
             ->where('stage', $name->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first() : null;
 
         return $stage ?? throw new RuntimeException("Không tìm thấy {$label} đã chạy thành công cho dự án này.");
