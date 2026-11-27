@@ -236,6 +236,14 @@ Route::group(
                 Route::get('/final-composition/{final}/file', [FinalCompositionController::class, 'file'])->name('video-projects.final-file');
                 Route::get('/final-composition/{final}/status', [FinalCompositionController::class, 'status'])->name('video-projects.final-status');
                 Route::post('/final-composition/{final}/approve', [FinalCompositionController::class, 'approve'])->name('video-projects.final-approve');
+                // QC cua mot ban final, tren chinh man Final Composition: do lai file, review noi dung, neu va xu ly finding, yeu cau sua. Chi co o du an ma ban phat hanh khai action QC.
+                Route::post('/final-composition/{final}/qc', [FinalCompositionController::class, 'qc'])->name('video-projects.final-qc');
+                Route::post('/final-composition/{final}/qc/review', [FinalCompositionController::class, 'qcReview'])->name('video-projects.final-qc-review');
+                Route::post('/final-composition/{final}/qc/finding', [FinalCompositionController::class, 'qcFinding'])->name('video-projects.final-qc-finding');
+                Route::post('/final-composition/{final}/qc/finding/{finding}', [FinalCompositionController::class, 'qcSettle'])->where('finding', 'FD[0-9]{3}')->name('video-projects.final-qc-settle');
+                Route::post('/final-composition/{final}/request-changes', [FinalCompositionController::class, 'requestChanges'])->name('video-projects.final-request-changes');
+                // Cac dau ra da luu cua mot ban final, tai ve duoi dang JSON: danh sach quyet dinh dung, timeline, bao cao QC, quyet dinh duyet. Chi doc.
+                Route::get('/final-composition/{final}/document/{kind}', [FinalCompositionController::class, 'document'])->whereIn('kind', ['edit-decisions', 'timeline', 'qc-report', 'approval'])->name('video-projects.final-document');
             });
 
             // luồng du thuyền cũ (v6.3): reference cũ, environment

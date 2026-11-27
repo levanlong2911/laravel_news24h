@@ -13,6 +13,8 @@ use App\Video\FinalComposition\CompositionDecor;
 use App\Video\FinalComposition\CompositionExecutor;
 use App\Video\FinalComposition\CompositionRun;
 use App\Video\FinalComposition\Deadline;
+use App\Video\Moto\Film\MotoFilmEditPlan;
+use App\Video\Moto\Film\MotoFilmScope;
 use App\Video\Queue\VideoQueues;
 use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Contracts\Filesystem\Factory as FilesystemFactory;
@@ -44,24 +46,33 @@ final class MotoFilmRenderService
 
     public const RELOAD = 'Kế hoạch phim đã đổi so với trang đang mở — tải lại trang để xem bản mới trước khi dựng.';
 
+    public const RELOAD_EDIT = 'Phương án dựng đã đổi so với trang đang mở — tải lại trang để xem phương án mới trước khi dựng.';
+
     public function __construct(
-        private readonly MotoFilmPlanService $plans,
+        private readonly MotoFilmPlans $plans,
         private readonly MotoClipSelectionService $selection,
         private readonly FilesystemFactory $storage,
     ) {}
 
     /**
+     * @param  string  $purpose  MotoFilmScope::FINAL for a film that holds every shot of the approved shot plan and may be approved for release; MotoFilmScope::PREVIEW for a film of the clips approved so far, which may leave shots out and is never approved
+     * @param  ?string  $expectedEditHash  the hash of the edit plan the page shows for that purpose; a project that cuts from an edit plan is cut only from the one the page showed, and asking for the film confirms it
      * @return array{0: VideoFinal, 1: string} the final this request queued for the worker (queued), the one it cut itself because the video queue of the machine is off (composed), or the one an earlier send of the same operation made (replayed)
      *
-     * @throws RuntimeException when the queue or the tools are not ready, the page is stale, the plan is blocked, or a film of the project is still being cut
+     * @throws RuntimeException when the queue or the tools are not ready, the page is stale, the plan is blocked, a final is asked of a plan that leaves shots out, or a film of the project is still being cut
      */
-    public function request(string $projectId, string $expectedHash, string $operationId, ?string $requesterId): array
+    public function request(string $projectId, string $expectedHash, string $operationId, ?string $requesterId, string $purpose = MotoFilmScope::FINAL, ?string $expectedEditHash = null): array
     {
         if (! Str::isUuid($operationId)) {
             throw new RuntimeException('Mã thao tác dựng không hợp lệ — tải lại trang.');
         }
 
-        $payloadHash = hash('sha256', json_encode([$projectId, $expectedHash], JSON_THROW_ON_ERROR));
+        if (! in_array($purpose, MotoFilmScope::PURPOSES, true)) {
+            throw new RuntimeException('Mục đích dựng không hợp lệ — tải lại trang.');
+        }
+
+        // The purpose is part of what an operation asked for: the same operation sent again for the other purpose is another request. A final keeps the payload it always had, so an operation recorded before purposes existed is still found.
+        $payloadHash = hash('sha256', json_encode($purpose === MotoFilmScope::FINAL ? [$projectId, $expectedHash] : [$projectId, $expectedHash, $purpose], JSON_THROW_ON_ERROR));
         $replayed = $this->replayed($projectId, $operationId, $payloadHash);
 
         if ($replayed !== null) {
@@ -82,7 +93,7 @@ final class MotoFilmRenderService
         }
 
         $queued = VideoQueues::enabled();
-        [$final, $reason] = DB::transaction(function () use ($projectId, $expectedHash, $operationId, $payloadHash, $requesterId, $queued): array {
+        [$final, $reason] = DB::transaction(function () use ($projectId, $expectedHash, $operationId, $payloadHash, $requesterId, $queued, $purpose, $expectedEditHash): array {
             // Lock first, read after, as an approval does: the plan frozen below is the one in force when the request is written, read from the revisions held.
             $preview = $this->plans->lockedPreview($projectId);
             $replayed = $this->replayed($projectId, $operationId, $payloadHash);
@@ -99,6 +110,33 @@ final class MotoFilmRenderService
                 throw new RuntimeException(self::RELOAD);
             }
 
+            // A final holds every shot of the approved shot plan: a shot with no usable clip is never left out of it. Decided here, from the plan read under the lock, before anything is taken in.
+            $scope = (array) ($preview['scope'] ?? []);
+            $short = $purpose === MotoFilmScope::FINAL ? MotoFilmScope::finalProblem($scope) : null;
+
+            if ($short !== null) {
+                throw new RuntimeException($short);
+            }
+
+            // A project that cuts from an edit plan is cut from the plan the page showed for this purpose, and from no other: the request confirms that very plan, by its hash.
+            $edit = $preview['edit'] ?? null;
+
+            if ($edit !== null) {
+                $shown = $edit['plans'][$purpose] ?? null;
+
+                if ($shown === null) {
+                    throw new RuntimeException($edit['refusals'][$purpose] ?? 'Chưa có phương án dựng cho mục đích này.');
+                }
+
+                if ($shown['problems'] !== []) {
+                    throw new RuntimeException('Phương án dựng không biên dịch được: '.$shown['problems'][0]['message']);
+                }
+
+                if ($expectedEditHash === null || ! hash_equals((string) $shown['hash'], $expectedEditHash)) {
+                    throw new RuntimeException(self::RELOAD_EDIT);
+                }
+            }
+
             $plan = $preview['plan'];
             $sessionId = $this->session($projectId, $plan);
             VideoSession::query()->whereKey($sessionId)->lockForUpdate()->firstOrFail();
@@ -108,8 +146,10 @@ final class MotoFilmRenderService
                 throw new RuntimeException('Đang có một lượt dựng phim của dự án này ('.$running->status.', bắt đầu '.$running->created_at?->toDateTimeString().') — đợi nó xong.');
             }
 
-            $stage = $this->plans->save($projectId, $preview);
-            $snapshot = $this->snapshot($projectId, $plan, (string) $preview['hash'], (string) $stage->id, $operationId, $requesterId);
+            // The edit plan is stored and confirmed first, then the film plan compiled for it, so each names the other by a row that exists.
+            $confirmed = $this->plans->confirm($projectId, $preview, $purpose, $operationId, $requesterId);
+            $stage = $this->plans->save($projectId, $preview, $confirmed);
+            $snapshot = self::snapshot($projectId, $plan, (string) $preview['hash'], (string) $stage->id, $operationId, $requesterId, $purpose, $scope, $confirmed);
             $final = VideoFinal::query()->create([
                 'session_id' => $sessionId,
                 'revision' => ((int) VideoFinal::query()->where('session_id', $sessionId)->max('revision')) + 1,
@@ -123,7 +163,8 @@ final class MotoFilmRenderService
                 'event_type' => 'moto_film_requested',
                 'entity_type' => 'final',
                 'entity_id' => $final->id,
-                'payload_json' => ['film_plan_hash' => $snapshot['moto_film']['film_plan_hash'], 'requested_by' => $requesterId],
+                'payload_json' => ['film_plan_hash' => $snapshot['moto_film']['film_plan_hash'], 'requested_by' => $requesterId, 'purpose' => $purpose, 'shots_expected' => $scope['expected'] ?? null, 'shots_used' => $scope['used'] ?? null]
+                    + ($confirmed === null ? [] : ['edit_plan_hash' => $confirmed['hash'], 'edit_plan_decision_id' => $confirmed['decision_id']]),
                 'operation_id' => $operationId,
                 'operation_payload_hash' => $payloadHash,
                 'operation_result_json' => ['status' => self::QUEUED, 'final_id' => (string) $final->id],
@@ -233,6 +274,15 @@ final class MotoFilmRenderService
             app(FinalCompositionReconciler::class)->complete($final, $cuts, (string) $result->path, (int) $result->frames);
         } catch (Throwable $e) {
             Log::warning('moto film: cut and checked but the row could not take it; video:final-recover reconciles it', ['final_id' => (string) $final->id, 'reason' => $e->getMessage()]);
+
+            return;
+        }
+
+        // A project whose release declares the QC action has its film measured right after the cut, by the worker that cut it. The film is ready whatever the measurement does: a film that could not be measured has no report, and is not approved until it has one.
+        try {
+            app(MotoFilmQcService::class)->run((string) $film['project_id'], (string) $final->id);
+        } catch (Throwable $e) {
+            Log::warning('moto film: cut, but its QC report could not be made; run the QC from the screen', ['final_id' => (string) $final->id, 'reason' => $e->getMessage()]);
         }
     }
 
@@ -275,9 +325,10 @@ final class MotoFilmRenderService
      * and `motoFilm` with the film's own parts (the plan, its blockers and warnings, the cards, what each final may do).
      * Opening the screen reads only and writes nothing.
      *
+     * @param  ?string  $selectedFinalId  the revision a person chose to look at and review; null, or one that is not a film of this project with a file, shows the newest film with a file
      * @return array{composition: array<string, mixed>, motoFilm: array<string, mixed>}
      */
-    public function screen(string $projectId): array
+    public function screen(string $projectId, ?string $selectedFinalId = null): array
     {
         $preview = null;
         $problem = null;
@@ -289,6 +340,7 @@ final class MotoFilmRenderService
         }
 
         $approvals = app(MotoFilmApprovalService::class);
+        $quality = app(MotoFilmQcService::class);
         $selection = $approvals->selection($projectId);
         $plan = $preview['plan'] ?? null;
         $entries = collect($preview['manifest']['clips'] ?? [])->keyBy('shot_id');
@@ -319,10 +371,15 @@ final class MotoFilmRenderService
         $finals = [];
         $extra = [];
         $active = null;
+        $withFile = [];
 
         foreach ($this->finalsOf($projectId) as $final) {
             $row = $this->describe($final, $preview['hash'] ?? null);
             $receipt = $row['has_file'] ? $approvals->receipt($final) : null;
+
+            if ($receipt !== null) {
+                $withFile[$row['id']] = $final;
+            }
             $approved = ($selection['final_id'] ?? null) === $row['id'];
             $active ??= in_array($row['status'], [self::QUEUED, self::COMPOSING], true) && ! $row['stopped'] ? $row : null;
             $finals[] = [
@@ -336,11 +393,21 @@ final class MotoFilmRenderService
                 'created_at' => $final->created_at?->format('Y-m-d H:i'),
                 'cuts' => collect((array) data_get($final->plan_json, 'moto_film.film_plan.clips', []))->mapWithKeys(static fn (array $clip): array => [(string) $clip['render_id'] => (int) $clip['timeline_start_ms']])->all(),
             ];
+            // A film of the plan the page shows holds what that plan holds: the same rule the approval applies on the server decides whether the button is offered.
+            $refusal = $row['current'] && $receipt !== null
+                ? (MotoFilmScope::approvalProblem($row['purpose'], $preview['scope'] ?? null) ?? $approvals->editProblem((array) ($final->plan_json['moto_film'] ?? []), $preview['edit'] ?? null) ?? self::qcProblem($quality, $projectId, $final))
+                : null;
             $extra[$row['id']] = [
                 'film_plan_hash' => $row['film_plan_hash'],
                 'sha256' => $receipt['sha256'] ?? null,
                 'approved' => $approved,
-                'can_approve' => $receipt !== null && $row['current'] && ! $approved,
+                'purpose' => $row['purpose'],
+                // Where the page is opened on this film: its player and its QC panel are then about this revision. Only a film with a file can be looked at.
+                'view_url' => $receipt === null ? null : route('video-projects.final-composition-preview', [$projectId, 'final' => $row['id']]),
+                // The stored documents of the film a person can take away: the timeline of every film, the edit decisions of one cut from an edit plan, the approval of the approved one. The QC report is offered in the QC panel.
+                'documents' => $final->status === self::READY ? array_values(array_filter(['timeline', is_array($final->plan_json['moto_film']['edit_plan'] ?? null) ? 'edit-decisions' : null, $approved ? 'approval' : null])) : [],
+                'can_approve' => $receipt !== null && $row['current'] && ! $approved && $refusal === null,
+                'approval_problem' => $receipt !== null && $row['current'] && ! $approved ? $refusal : null,
             ];
         }
 
@@ -348,6 +415,14 @@ final class MotoFilmRenderService
         $queue = $this->queueProblem();
         $tools = $this->toolProblem();
         $blockers = (array) ($preview['blockers'] ?? []);
+        // The film the page is about: the revision a person chose, when it is a film of this project with a file; otherwise the newest one with a file. The QC panel, its forms and the player are all about that one revision.
+        $chosen = $selectedFinalId !== null && isset($withFile[$selectedFinalId]) ? $withFile[$selectedFinalId] : (reset($withFile) ?: null);
+        $qc = $quality->screen($projectId, $chosen);
+        $shown = $qc === null || $chosen === null ? null : collect($finals)->firstWhere('id', (string) $chosen->id);
+
+        foreach ($extra as $finalId => $entry) {
+            $extra[$finalId]['viewed'] = $qc !== null && $chosen !== null && $finalId === (string) $chosen->id;
+        }
 
         return [
             'composition' => [
@@ -365,7 +440,8 @@ final class MotoFilmRenderService
                 'sizes' => $sizes,
                 'uniform_size' => count($sizes) === 1 ? $sizes[0] : null,
                 'finals' => $finals,
-                'latest_final' => $finals[0] ?? null,
+                // The film the player shows. A project with a QC panel plays the revision the panel is about, so what a person reviews is what they watch; a project without one plays its newest film, as before.
+                'latest_final' => $shown ?? ($finals[0] ?? null),
             ],
             'motoFilm' => [
                 'hash' => $preview['hash'] ?? null,
@@ -373,7 +449,55 @@ final class MotoFilmRenderService
                 'output' => $plan['output'] ?? null,
                 'finals' => $extra,
                 'active' => $active,
+                // The shots of the approved shot plan the film holds and the ones it leaves out, with why; null when the sources could not be read.
+                'scope' => $preview['scope'] ?? null,
+                'blockers' => $blockers,
+                // The warnings of the plan itself; a shot left out is listed in the scope, with its reason.
+                'warnings' => array_values(array_filter((array) ($preview['warnings'] ?? []), static fn (array $warning): bool => ($warning['code'] ?? null) !== 'shot_left_out')),
+                // Why a final cannot be asked for now although a preview can: the plan leaves shots out.
+                'final_problem' => $plan === null ? null : MotoFilmScope::finalProblem((array) ($preview['scope'] ?? [])),
+                // The edit plan the film would be cut from; null for a project that cuts with none.
+                'edit' => self::editOf($preview['edit'] ?? null),
+                // The QC of the film the page is about; null for a project whose release declares no QC.
+                'qc' => $qc,
             ],
+        ];
+    }
+
+    /** @return ?string why the QC of the film holds its approval back, or why the QC itself cannot be read; null when it does not */
+    private static function qcProblem(MotoFilmQcService $quality, string $projectId, VideoFinal $final): ?string
+    {
+        try {
+            return $quality->approvalProblem($projectId, $final);
+        } catch (RuntimeException $e) {
+            return $e->getMessage();
+        }
+    }
+
+    /**
+     * @param  ?array<string, mixed>  $edit  the edit plans of the plan in force, as MotoFilmPlans::preview() gives them
+     * @return ?array{origin: string, hashes: array<string, string>, segments: list<array<string, mixed>>, cards: int, problems: list<string>} what the screen shows of the edit plan: who wrote it, its hash for each purpose it can be cut for, its segments and why it cannot be cut; the segments are the same for every purpose, so the first plan there is gives them
+     */
+    private static function editOf(?array $edit): ?array
+    {
+        if ($edit === null) {
+            return null;
+        }
+
+        $plans = (array) $edit['plans'];
+        $first = $plans === [] ? null : (array) reset($plans)['plan'];
+        $problems = [];
+
+        foreach ($plans as $plan) {
+            $problems = [...$problems, ...array_column((array) $plan['problems'], 'message')];
+        }
+
+        return [
+            'origin' => (string) $edit['origin'],
+            'hashes' => array_map(static fn (array $plan): string => (string) $plan['hash'], $plans),
+            'segments' => $first === null ? [] : MotoFilmEditPlan::rows($first),
+            'cards' => $first === null ? 0 : count((array) ($first['text_tracks'][0]['cards'] ?? [])),
+            'problems' => array_values(array_unique($problems)),
         ];
     }
 
@@ -383,8 +507,18 @@ final class MotoFilmRenderService
         return match (true) {
             $row['stopped'] => $row['status'].' — dừng giữa chừng',
             $row['status'] === self::FAILED => 'failed: '.Str::limit((string) $row['error'], 140),
-            $row['status'] === self::READY => 'ready'.($approved ? ' · đã duyệt' : '').($row['current'] ? '' : ' · kế hoạch cũ'),
-            default => (string) $row['status'],
+            $row['status'] === self::READY => 'ready'.self::purposeLabel($row['purpose'] ?? null).($approved ? ' · đã duyệt' : '').($row['current'] ? '' : ' · kế hoạch cũ'),
+            default => $row['status'].self::purposeLabel($row['purpose'] ?? null),
+        };
+    }
+
+    /** @return string how the history names what a film was cut for; nothing for a film cut before a request named a purpose */
+    private static function purposeLabel(?string $purpose): string
+    {
+        return match ($purpose) {
+            MotoFilmScope::PREVIEW => ' · dựng thử',
+            MotoFilmScope::FINAL => ' · final',
+            default => '',
         };
     }
 
@@ -415,11 +549,67 @@ final class MotoFilmRenderService
             'stopped' => $stale,
             'error' => $final->error_message,
             'film_plan_hash' => (string) ($film['film_plan_hash'] ?? ''),
+            // What the film was cut for; null for one cut before a request named a purpose.
+            'purpose' => is_string($film['purpose'] ?? null) ? $film['purpose'] : null,
+            'shots_used' => is_int($film['scope']['used'] ?? null) ? $film['scope']['used'] : null,
+            'shots_expected' => is_int($film['scope']['expected'] ?? null) ? $film['scope']['expected'] : null,
             'current' => $currentHash !== null && hash_equals((string) ($film['film_plan_hash'] ?? ''), $currentHash),
             'requested_at' => $final->created_at?->toDateTimeString(),
             'updated_at' => $final->updated_at?->toDateTimeString(),
             'duration_seconds' => $final->duration_seconds,
             'has_file' => $final->status === self::READY && is_string($final->video_path) && $final->video_path !== '',
+        ];
+    }
+
+    /** @var array<string, string> the documents of a cut film a person can take away, by the name the route uses: each is read from what is stored and is never a place to edit */
+    public const DOCUMENTS = [
+        'edit-decisions' => 'EditDecisionList',
+        'timeline' => 'FilmTimeline',
+        'qc-report' => 'FinalQCReport',
+        'approval' => 'ApprovedFilm',
+    ];
+
+    /**
+     * One of the outputs of a cut film, as it is stored: the edit decisions the film was cut from, the timeline FFmpeg ran,
+     * the newest QC report of its file, or the decision that approved it with what that decision names.
+     *
+     * @return array{name: string, document: array<string, mixed>}
+     *
+     * @throws RuntimeException when the film has no such document
+     * @throws \Illuminate\Database\Eloquent\ModelNotFoundException
+     */
+    public function document(string $projectId, string $finalId, string $kind): array
+    {
+        $title = self::DOCUMENTS[$kind] ?? throw new RuntimeException('Không có loại tài liệu này.');
+        $final = $this->ownedFinal($projectId, $finalId);
+        $film = (array) $final->plan_json['moto_film'];
+        $content = match ($kind) {
+            'edit-decisions' => is_array($film['edit_plan'] ?? null)
+                ? ['stored_in' => 'video_finals.plan_json.moto_film.edit_plan', 'hash' => $film['edit_plan']['hash'], 'origin' => $film['edit_plan']['origin'], 'edit_plan_stage_id' => $film['edit_plan']['stage_id'], 'confirmation_decision_id' => $film['edit_plan']['decision_id'], 'edit_plan' => $film['edit_plan']['plan']]
+                : throw new RuntimeException('Bản này được dựng không qua phương án dựng — không có danh sách quyết định dựng.'),
+            'timeline' => ['stored_in' => 'video_finals.plan_json.moto_film.film_plan', 'hash' => $film['film_plan_hash'], 'film_plan_stage_id' => $film['film_plan_stage_id'], 'purpose' => $film['purpose'] ?? null, 'scope' => $film['scope'] ?? null, 'film_plan' => $film['film_plan']],
+            'qc-report' => (static function () use ($projectId, $final): array {
+                $latest = app(MotoFilmQcService::class)->latest($projectId, (string) $final->id) ?? throw new RuntimeException('Bản này chưa có báo cáo QC.');
+
+                return ['stored_in' => 'video_planning_stages '.$latest['stage_id'], 'hash' => $latest['hash'], 'qc_report' => $latest['report']];
+            })(),
+            'approval' => (static function () use ($projectId, $final): array {
+                $approvals = app(MotoFilmApprovalService::class);
+                $selection = $approvals->selection($projectId);
+
+                if (($selection['final_id'] ?? null) !== (string) $final->id) {
+                    throw new RuntimeException('Bản này không phải bản đã duyệt của dự án.');
+                }
+
+                $approved = $approvals->approvedFinal($projectId);
+
+                return ['stored_in' => 'video_review_decisions '.$approved['decision']->id, 'decided_at' => $approved['decision']->created_at?->toIso8601String(), 'reviewer_id' => $approved['decision']->reviewer_id, 'artifact_sha256' => $approved['sha256'], 'decision' => (array) $approved['decision']->metadata_json];
+            })(),
+        };
+
+        return [
+            'name' => 'final-'.$final->revision.'-'.$kind.'.json',
+            'document' => ['document' => $title, 'project_id' => $projectId, 'final_id' => (string) $final->id, 'final_revision' => (int) $final->revision] + $content,
         ];
     }
 
@@ -483,11 +673,14 @@ final class MotoFilmRenderService
 
     /**
      * @param  array<string, mixed>  $plan
-     * @return array<string, mixed> the plan_json of the final: the FFmpeg manifest of the cut, in the shape the composer and video:final-recover read, with the film it was frozen from
+     * @param  string  $purpose  what the film is cut for: a preview or a final
+     * @param  array<string, mixed>  $scope  MotoFilmScope::of() for the plan: the shots of the shot plan the film holds and the ones it leaves out, each with why
+     * @param  ?array<string, mixed>  $edit  MotoFilmPlans::confirm(): the edit plan the film is cut from, whole, with the row that stores it and the decision that confirmed it; null for a project that cuts with none, whose film is then stored in the shape it always had
+     * @return array<string, mixed> the plan_json of the final: the FFmpeg manifest of the cut, in the shape the composer and video:final-recover read, with the film it was frozen from, what it was cut for, what of the shot plan it holds and the edit plan it was cut from
      */
-    private function snapshot(string $projectId, array $plan, string $hash, string $stageId, string $operationId, ?string $requesterId): array
+    public static function snapshot(string $projectId, array $plan, string $hash, string $stageId, string $operationId, ?string $requesterId, string $purpose, array $scope, ?array $edit = null): array
     {
-        return [
+        $snapshot = [
             'engine' => VideoFinal::ENGINE_LARAVEL,
             'output' => ['width' => $plan['output']['width'], 'height' => $plan['output']['height'], 'fps' => $plan['output']['fps'], 'crf' => $plan['output']['crf']],
             'clips' => array_map(static fn (array $clip): array => [
@@ -505,6 +698,9 @@ final class MotoFilmRenderService
                 'film_plan' => $plan,
                 'film_plan_hash' => $hash,
                 'film_plan_stage_id' => $stageId,
+                // Frozen with the request: a preview is never approved for release, whatever is sent later, and the shots it leaves out stay named with the file.
+                'purpose' => $purpose,
+                'scope' => $scope,
                 'clip_manifest_hash' => $plan['source']['clips']['hash'],
                 'composer' => CompositionDecor::VERSION,
                 'decor' => self::decor($plan),
@@ -513,6 +709,13 @@ final class MotoFilmRenderService
                 'requested_at' => now()->toIso8601String(),
             ],
         ];
+
+        if ($edit !== null) {
+            // The decisions the film was cut from, frozen whole with the request: the list of edit decisions of this film is read from here, whatever is stored later.
+            $snapshot['moto_film']['edit_plan'] = $edit;
+        }
+
+        return $snapshot;
     }
 
     /**

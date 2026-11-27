@@ -1080,7 +1080,19 @@ return [
         'workflows' => [
             'harley_custom_v1' => [
                 'action' => 'spec.film',
+                // The action of the edit plan a film is cut from. Only a release that declares it has one; a project of any other release cuts its film as before, with no edit plan.
+                'edit_action' => 'spec.film_edit',
+                // The action of the QC report a film is approved with. Only a release that declares it has one; a project of any other release approves a film as before.
+                'qc_action' => 'spec.film_qc',
             ],
+        ],
+        // How the screen words each area a reviewer gives a verdict on; an area the QC policy names that is not listed here shows by its id.
+        'qc_area_labels' => [
+            'story_pacing' => 'Câu chuyện và nhịp',
+            'continuity' => 'Continuity',
+            'sound_fits_action' => 'Âm thanh phù hợp hành động',
+            'text_readability' => 'Chữ đọc được, bố cục ổn',
+            'intent_or_fault' => 'Đoạn nghi vấn là chủ ý hay lỗi',
         ],
         // How long a requested film may wait for a worker; a request left longer is closed as failed and never cut later on its own.
         'queue_wait_seconds' => (int) env('VIDEO_FILM_QUEUE_WAIT_SECONDS', 1800),
@@ -2237,6 +2249,10 @@ return [
                                 'phase-6' => ['input_format' => 'moto-scenes-input-v6', 'revisions' => [['id' => '163220d9-f275-4cd8-954e-38d2fb9b5a39', 'sha256' => 'b7ebec1c8d268f22b0d421437f36323e118cf099aa9574ca8556d97571f233b9']]],
                                 'phase-7' => ['input_format' => 'moto-shots-input-v12', 'revisions' => [['id' => '307c1f0e-ad9b-4565-9318-1601d40bb368', 'sha256' => '763f88b75a93234d928766c308dfecf108966e8776e3fa598a33c3e1db68a12c']]],
                                 'phase-10' => ['input_format' => 'moto-clip-prompt-input-v10', 'revisions' => [['id' => '5e45158a-f9dc-4cd7-abdf-97f84f4d1d49', 'sha256' => '5d99b04d2af3073d64218e7c63414b2bff05eabdc3a3763c180c4ac9127b9043']]],
+                                // What an edit plan of a film may decide (moto-film-edit-policy-v1): a JSON policy PHP reads, like the film policy of phase-11, so it names no input format. A later revision joins only by being listed here.
+                                'phase-11-edit' => ['revisions' => [['id' => 'cfaefec5-5df6-4613-a9d9-9603886507a2', 'sha256' => '9e9984cc7cd0f8b5c22922d3903e1fb60f91ee342e6a1fc77ac2679ab681926d']]],
+                                // How a cut film is checked before it may be approved (moto-film-qc-policy-v1): a JSON policy PHP reads, with no input format to name.
+                                'phase-11-qc' => ['revisions' => [['id' => '1ea30f37-a0ad-4f12-937d-2f5b053bea5b', 'sha256' => 'f6a66d85eaa262896ca2ea3f476fb4a6a3bb2a4b0bceda9a302628c6419970e2']]],
                             ],
                             'actions' => [
                                 'spec.design' => [
@@ -2302,6 +2318,34 @@ return [
                                     ],
                                     'outputs' => [
                                         'shots' => ['namespace' => 'moto', 'schema' => 'MotoShots', 'version' => '3.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 7 Output (format moto-shots-v3, policy full-coverage-budget-v1): how every approved scene is filmed within the shot budget, playing every event of the source with no omission — each shot with the checkpoints its first and end frame show, its camera and camera path, composition, action timeline, event progress, first frame, end frame, operating states, parts, people by character id, background and cards; the length and the mode of a take are set by code; release moto-cinematic-3s-v7'],
+                                    ],
+                                ],
+                                // The edit plan of a film: the decisions it is cut from, written by code as the default plan and confirmed by a person in the request that cuts it. A release that declares this action cuts its films from a stored edit plan; a release without it cuts as before. Still Phase 11 on the screen.
+                                'spec.film_edit' => [
+                                    'phase' => 'phase-11-edit',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['edit_plan'],
+                                    ],
+                                    'outputs' => [
+                                        'edit_plan' => ['namespace' => 'moto', 'schema' => 'MotoFilmEditPlan', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 11 edit plan (format moto-film-edit-plan-v1): what a film is cut for, its segments in order with the take, the interval and the transition of each, the shots it lacks with why, and its sound, colour and text tracks, under the edit policy of phase-11-edit (input slot edit_policy, MotoFilmEditPolicy 1.0.0). Code writes the default plan from the approved shot plan, the approved Phase 10 clips and the cards of the pinned script; who wrote and who confirmed it are recorded by the server. No model writes it under this revision.'],
+                                    ],
+                                ],
+                                // The QC of a cut film: what code measures on the file, what a person reviews, and the findings with what became of them. A release that declares this action approves a film only with a report of that very file; a release without it approves as before. Still Phase 11 on the screen.
+                                'spec.film_qc' => [
+                                    'phase' => 'phase-11-qc',
+                                    'instructions' => [],
+                                    'executor' => 'none',
+                                    'model_profile' => null,
+                                    'contract_version' => '1',
+                                    'stages' => [
+                                        'draft' => ['qc_report'],
+                                    ],
+                                    'outputs' => [
+                                        'qc_report' => ['namespace' => 'moto', 'schema' => 'MotoFilmQCReport', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 11 QC report (format moto-film-qc-report-v1): for one cut film, by the hash of its file and of its plans, the technical result code measured on the file, the content review of a person, what was not checked and every finding with what became of it, under the QC policy of phase-11-qc (input slot qc_policy, MotoFilmQCPolicy 1.0.0). Code puts it together; who reviewed and who settled a finding are recorded by the server. No model writes it under this revision.'],
                                     ],
                                 ],
                             ],

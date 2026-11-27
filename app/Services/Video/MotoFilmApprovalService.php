@@ -10,6 +10,7 @@ use App\Models\VideoReviewDecision;
 use App\Models\VideoSession;
 use App\Models\VideoSessionEvent;
 use App\Video\FinalComposition\CompositionReceipt;
+use App\Video\Moto\Film\MotoFilmScope;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -26,7 +27,7 @@ final class MotoFilmApprovalService
     public const SELECTION_KEY = 'moto_film_selection';
 
     public function __construct(
-        private readonly MotoFilmPlanService $plans,
+        private readonly MotoFilmPlans $plans,
         private readonly MotoFilmRenderService $films,
     ) {}
 
@@ -74,6 +75,25 @@ final class MotoFilmApprovalService
                 throw new RuntimeException('Nguồn đã đổi sau khi dựng bản này (clip, kế hoạch shot, chính sách hoặc kiểu card) — bản này giữ trong lịch sử theo nguồn cũ, không duyệt được. Dựng lại theo nguồn mới.');
             }
 
+            // The plan in force is the plan this film was cut from, so what it holds of the shot plan is what the film holds. A preview is never approved for release, and neither is a film that leaves shots out — also one cut before a request named its purpose.
+            $purpose = is_string($film['purpose'] ?? null) ? $film['purpose'] : null;
+            // Then, for a project that cuts from an edit plan: the film was cut from the plan in force, and a person confirmed that plan.
+            $refusal = MotoFilmScope::approvalProblem($purpose, $preview['scope'] ?? null) ?? $this->editProblem($film, $preview['edit'] ?? null);
+
+            if ($refusal !== null) {
+                throw new RuntimeException($refusal);
+            }
+
+            // Last, for a project whose release declares the QC action: a report of this very file, a technical pass, every required area passed, no blocking finding open, and no request for changes standing.
+            // The QC policy is read here, inside this transaction, and held until it ends: a report made under an older policy does not pass, and a policy published while the approval is written waits for it.
+            $quality = app(MotoFilmQcService::class);
+            $refusal = $quality->approvalProblem($projectId, $final, true);
+
+            if ($refusal !== null) {
+                throw new RuntimeException($refusal);
+            }
+
+            $report = $quality->contract($projectId) === null ? null : $quality->latest($projectId, (string) $final->id);
             $file = $this->file($final);
 
             if ($file === null || ! hash_equals($file['sha256'], $expectedSha)) {
@@ -97,6 +117,17 @@ final class MotoFilmApprovalService
                     'clip_manifest_hash' => (string) $film['clip_manifest_hash'],
                     'manifest_hash' => (string) $final->manifest_hash,
                     'artifact_sha256' => $file['sha256'],
+                    // What the film was cut for (null: cut before a request named a purpose) and how much of the shot plan it holds, as checked when it was approved.
+                    'purpose' => $purpose,
+                    'shots_expected' => (int) $preview['scope']['expected'],
+                    'shots_used' => (int) $preview['scope']['used'],
+                    // The edit plan the film was cut from and the decision that confirmed it; null for a film of a project that cuts with none.
+                    'edit_plan_hash' => $film['edit_plan']['hash'] ?? null,
+                    'edit_plan_stage_id' => $film['edit_plan']['stage_id'] ?? null,
+                    'edit_plan_decision_id' => $film['edit_plan']['decision_id'] ?? null,
+                    // The QC report the approval was given on, by the row that stores that revision and its hash; null for a project with no QC.
+                    'qc_report_stage_id' => $report['stage_id'] ?? null,
+                    'qc_report_hash' => $report['hash'] ?? null,
                 ],
             ]);
             // Session events are append-only: the event is written once, after the decision it points to.
@@ -123,6 +154,40 @@ final class MotoFilmApprovalService
 
             return [$decision, 'approved'];
         }, attempts: 3);
+    }
+
+    /**
+     * @param  array<string, mixed>  $film  the moto_film part of a cut film
+     * @param  ?array<string, mixed>  $edit  the edit plans of the plan in force, as MotoFilmPlans::preview() gives them; null for a project that cuts with no edit plan
+     * @return ?string why the film may not be approved for the edit plan it was cut from: it was cut from none, from one that is no longer the plan in force, or from one no person confirmed; null when it may, and always null for a project that cuts with none
+     */
+    public function editProblem(array $film, ?array $edit): ?string
+    {
+        if ($edit === null) {
+            return null;
+        }
+
+        $cut = is_array($film['edit_plan'] ?? null) ? $film['edit_plan'] : null;
+
+        if ($cut === null) {
+            return 'Bản này được dựng khi dự án chưa dùng phương án dựng — không có phương án đã xác nhận để đối chiếu. Dựng lại bản final rồi duyệt bản đó.';
+        }
+
+        $current = $edit['plans'][(string) ($film['purpose'] ?? '')] ?? null;
+
+        if ($current === null || $current['problems'] !== [] || ! hash_equals((string) $current['hash'], (string) ($cut['hash'] ?? ''))) {
+            return 'Phương án dựng của bản này không còn là phương án hiện hành — dựng lại theo phương án mới rồi duyệt bản đó.';
+        }
+
+        $confirmed = VideoReviewDecision::query()
+            ->whereKey($cut['decision_id'] ?? null)
+            ->where('entity_type', MotoFilmPlanService::EDIT_ENTITY)
+            ->where('entity_id', $cut['stage_id'] ?? null)
+            ->where('decision', 'approved')
+            ->where('metadata_json->edit_plan_hash', (string) $cut['hash'])
+            ->exists();
+
+        return $confirmed ? null : 'Phương án dựng của bản này không có xác nhận hợp lệ — không duyệt được.';
     }
 
     /**

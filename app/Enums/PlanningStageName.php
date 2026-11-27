@@ -32,6 +32,8 @@ enum PlanningStageName: string
     case REFERENCE_REVIEW = 'reference_review';
     case CLIP_PLAN = 'clip_plan';
     case FILM_PLAN = 'film_plan';
+    case FILM_EDIT_PLAN = 'film_edit_plan';
+    case FILM_QC_REPORT = 'film_qc_report';
     case KEYFRAME_PROMPT = 'keyframe_prompt';
     case CLIP_PROMPT = 'clip_prompt';
 
@@ -68,6 +70,8 @@ enum PlanningStageName: string
             self::REFERENCE_REVIEW => null,
             self::CLIP_PLAN => null,
             self::FILM_PLAN => null,
+            self::FILM_EDIT_PLAN => null,
+            self::FILM_QC_REPORT => null,
             self::KEYFRAME_PROMPT => null,
             self::CLIP_PROMPT => null,
         };

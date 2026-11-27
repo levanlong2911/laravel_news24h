@@ -36,7 +36,7 @@ final class MotoFilmPlanBuilder
      * @param  array<string, mixed>  $profile  the output profile the policy names, with its id and hash
      * @param  array<string, mixed>  $style  the card style the policy names, with its id and hash
      * @param  array<string, mixed>  $source  MotoFilmSourceService::source()
-     * @return array{ready: bool, blockers: list<array{code: string, subject: string, message: string}>, warnings: list<array<string, mixed>>, plan: ?array<string, mixed>, rows: list<array<string, mixed>>}
+     * @return array{ready: bool, blockers: list<array{code: string, subject: string, message: string}>, warnings: list<array<string, mixed>>, plan: ?array<string, mixed>, rows: list<array<string, mixed>>, scope: array<string, mixed>} scope is MotoFilmScope::of(): the shots of the plan the film holds and the ones it leaves out
      */
     public static function build(string $projectId, array $contract, array $policy, array $profile, array $style, MotoFilmFont $font, array $source): array
     {
@@ -209,8 +209,11 @@ final class MotoFilmPlanBuilder
             $blockers[] = self::blocker('frame_not_exact', 'timeline', "Phim dài {$cursorMs} ms không quy đúng ra khung ở {$fps} fps.");
         }
 
+        // What of the shot plan the film holds, by id: kept beside the plan, since a preview may leave shots out and a final may not.
+        $scope = MotoFilmScope::of($rows, $manifest, array_values(array_column($clips, 'shot_id')));
+
         if ($blockers !== []) {
-            return ['ready' => false, 'blockers' => $blockers, 'warnings' => [...$leftOut, ...$warnings], 'plan' => null, 'rows' => $display];
+            return ['ready' => false, 'blockers' => $blockers, 'warnings' => [...$leftOut, ...$warnings], 'plan' => null, 'rows' => $display, 'scope' => $scope];
         }
 
         $plan = [
@@ -233,7 +236,7 @@ final class MotoFilmPlanBuilder
             'warnings' => $warnings,
         ];
 
-        return ['ready' => true, 'blockers' => [], 'warnings' => [...$leftOut, ...$warnings], 'plan' => $plan, 'rows' => $display];
+        return ['ready' => true, 'blockers' => [], 'warnings' => [...$leftOut, ...$warnings], 'plan' => $plan, 'rows' => $display, 'scope' => $scope];
     }
 
     /**

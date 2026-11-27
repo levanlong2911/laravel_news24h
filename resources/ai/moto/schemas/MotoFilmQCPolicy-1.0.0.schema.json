@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoFilmQCPolicy",
+  "title": "Moto film QC policy (moto-film-qc-policy-v1)",
+  "description": "How a cut film is checked before it may be approved. The phase-11-qc revision stores it as its prompt_content; PHP reads it from the DB; no model reads it. It names what code measures on the file and with which thresholds, which areas a reviewer looks at and which of them must be reviewed, and which findings hold an approval back. Code measures and counts; whether a stretch found is a fault and whether the film tells its story are for a person. Every value is one this version carries out.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "report", "technical", "content", "findings"],
+  "properties": {
+    "format": { "const": "moto-film-qc-policy-v1" },
+    "schema": { "const": "MotoFilmQCPolicy@1.0.0" },
+    "report": {
+      "description": "The schema a QC report under this policy is written in.",
+      "const": "MotoFilmQCReport@1.0.0"
+    },
+    "technical": {
+      "description": "What code measures on the file. A stretch found is a place to look at, never a verdict: one the film plan declared (a dip to black, a silent clip) is not reported, any other becomes a finding of suspect_severity for a person to judge.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["black", "freeze", "silence", "loudness", "suspect_severity"],
+      "properties": {
+        "black": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min_duration_ms", "pixel_threshold", "picture_ratio"],
+          "properties": {
+            "min_duration_ms": { "description": "The shortest black stretch reported.", "type": "integer", "minimum": 1 },
+            "pixel_threshold": { "description": "How dark a pixel is to count as black, from 0 to 1.", "type": "number", "minimum": 0, "maximum": 1 },
+            "picture_ratio": { "description": "The share of black pixels that makes a frame black, from 0 to 1.", "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "freeze": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min_duration_ms", "noise_db"],
+          "properties": {
+            "min_duration_ms": { "description": "The shortest stretch of a picture that does not change reported.", "type": "integer", "minimum": 1 },
+            "noise_db": { "description": "The difference between two frames still read as no change, in dB.", "type": "number", "maximum": 0 }
+          }
+        },
+        "silence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min_duration_ms", "noise_db"],
+          "properties": {
+            "min_duration_ms": { "description": "The shortest silent stretch reported.", "type": "integer", "minimum": 1 },
+            "noise_db": { "description": "The level under which sound is read as silence, in dB.", "type": "number", "maximum": 0 }
+          }
+        },
+        "loudness": {
+          "description": "The loudness and the peak of the sound are measured on the file and written in the report. judge false: no target is set, so the numbers are shown and decide nothing.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "judge"],
+          "properties": {
+            "method": { "const": "ebur128" },
+            "judge": { "const": false }
+          }
+        },
+        "suspect_severity": {
+          "description": "The severity of a finding code raises for a stretch the film plan did not declare.",
+          "enum": ["info", "minor"]
+        }
+      }
+    },
+    "content": {
+      "description": "The review of what the film says and shows. A person reviews; a model does not under this version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["reviewers", "areas", "required"],
+      "properties": {
+        "reviewers": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["person"] }
+        },
+        "areas": {
+          "description": "What a reviewer gives a verdict on, by id. The screen words each id.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$" }
+        },
+        "required": {
+          "description": "The areas that must have a verdict of pass before the film may be approved. Each is one of areas.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,40}$" }
+        }
+      }
+    },
+    "findings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["severities", "blocking"],
+      "properties": {
+        "severities": {
+          "description": "The severities a finding may have, mildest first.",
+          "const": ["info", "minor", "major", "critical"]
+        },
+        "blocking": {
+          "description": "The severities that hold an approval back while the finding is open.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "enum": ["info", "minor", "major", "critical"] }
+        }
+      }
+    }
+  }
+}

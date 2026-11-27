@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoFilmEditPolicy",
+  "title": "Moto film edit policy (moto-film-edit-policy-v1)",
+  "description": "What an edit plan of a film may decide. The phase-11-edit revision stores it as its prompt_content; PHP reads it from the DB and checks every edit plan against it; no model reads it. Every value is one this version carries out: a decision the compiler and the renderer cannot carry out is not accepted here, so it can never be taken and then skipped quietly. What the film cuts — transitions, sound, cards, the output — stays with the film policy of phase-11.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "edit_plan", "origins", "sequence", "audio_tracks", "colour", "text_tracks", "confirmation"],
+  "properties": {
+    "format": { "const": "moto-film-edit-policy-v1" },
+    "schema": { "const": "MotoFilmEditPolicy@1.0.0" },
+    "edit_plan": {
+      "description": "The schema an edit plan under this policy is written in.",
+      "const": "MotoFilmEditPlan@1.0.0"
+    },
+    "origins": {
+      "description": "Who may write an edit plan: default is the plan code makes from the approved sources. A plan from a person (manual) or a model (ai) is not taken by this version.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["default"] }
+    },
+    "sequence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["order", "take", "trim", "transition", "omissions"],
+      "properties": {
+        "order": { "description": "The segments run in the order of the approved shot plan.", "const": "approved_plan" },
+        "take": { "description": "Each segment uses the clip a person approved for its shot.", "const": "approved_clip" },
+        "trim": { "description": "Each segment keeps the interval its shot keeps in the approved shot plan.", "const": "approved_used_interval" },
+        "transition": { "description": "Each segment comes in with the transition the approved shot plan names.", "const": "approved_plan" },
+        "omissions": { "description": "A shot is never left out by decision. A shot with no usable clip is missing, which only a preview allows.", "const": false }
+      }
+    },
+    "audio_tracks": {
+      "description": "The kinds of sound track an edit plan may carry: the sound of the clips only.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["clip_audio"] }
+    },
+    "colour": {
+      "description": "The colour treatments an edit plan may ask for: none, the picture stays as rendered.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["none"] }
+    },
+    "text_tracks": {
+      "description": "The kinds of text track an edit plan may carry: the cards of the pinned script, word for word.",
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["script_cards"] }
+    },
+    "confirmation": {
+      "description": "How an edit plan is confirmed: with_render_request records the confirmation of the plan shown, by its hash, in the request that cuts it.",
+      "const": "with_render_request"
+    }
+  }
+}

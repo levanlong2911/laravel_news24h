@@ -1,0 +1,252 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoFilmQCReport",
+  "title": "Moto film QC report (moto-film-qc-report-v1)",
+  "description": "What is known about one cut film: the file it is about, by its hash; what code measured on that file; what a reviewer said of it; what was not checked; and every finding with what became of it. Code puts it together; no model writes it. The technical result and the content review are two results and are never folded into one pass. A report is about one file and one film plan: another file or another plan has another report. Who reviewed and who settled a finding are recorded by the server; when, is in the rows that store each revision of the report, not in the report.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "project_id", "final", "policy", "tools", "technical", "content", "not_checked", "findings"],
+  "properties": {
+    "format": { "const": "moto-film-qc-report-v1" },
+    "schema": { "const": "MotoFilmQCReport@1.0.0" },
+    "project_id": { "$ref": "#/$defs/uuid" },
+    "final": {
+      "description": "The film the report is about: its row, the hash and the size of its file, and the plans it was cut from.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "purpose", "artifact_sha256", "bytes", "film_plan_hash", "edit_plan_hash"],
+      "properties": {
+        "id": { "$ref": "#/$defs/uuid" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "purpose": { "enum": ["preview", "final", null] },
+        "artifact_sha256": { "$ref": "#/$defs/hex" },
+        "bytes": { "type": "integer", "minimum": 1 },
+        "film_plan_hash": { "$ref": "#/$defs/content_hash" },
+        "edit_plan_hash": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/content_hash" }] }
+      }
+    },
+    "policy": {
+      "description": "The QC policy the report was made under: the revision row and the hash of the policy read from it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase_id", "phase_revision", "policy_hash"],
+      "properties": {
+        "phase_id": { "$ref": "#/$defs/uuid" },
+        "phase_revision": { "type": "integer", "minimum": 1 },
+        "policy_hash": { "$ref": "#/$defs/content_hash" }
+      }
+    },
+    "tools": {
+      "description": "What measured and what put the report together, each by its version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["report", "measure", "ffmpeg"],
+      "properties": {
+        "report": { "$ref": "#/$defs/id" },
+        "measure": { "$ref": "#/$defs/id" },
+        "ffmpeg": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }] }
+      }
+    },
+    "technical": {
+      "description": "What code checked and measured on the file. status pass: every check that can fail passed. fail: one did not. error: the file could not be measured, so nothing is known.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checks", "measured"],
+      "properties": {
+        "status": { "enum": ["pass", "fail", "error"] },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["code", "status", "detail"],
+            "properties": {
+              "code": { "enum": ["file", "cut", "scope", "measure", "black", "freeze", "silence", "loudness"] },
+              "status": {
+                "description": "pass and fail: a check with a right answer. suspect: stretches were found that the film plan did not declare, each raised as a finding. measured: numbers that are shown and decide nothing. not_checked: the check did not run.",
+                "enum": ["pass", "fail", "suspect", "measured", "not_checked"]
+              },
+              "detail": { "type": "string" }
+            }
+          }
+        },
+        "measured": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["duration_ms", "frames", "black", "freeze", "silence", "loudness"],
+          "properties": {
+            "duration_ms": { "type": "integer", "minimum": 0 },
+            "frames": { "type": "integer", "minimum": 0 },
+            "black": { "$ref": "#/$defs/stretches" },
+            "freeze": { "$ref": "#/$defs/stretches" },
+            "silence": { "$ref": "#/$defs/stretches" },
+            "loudness": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["integrated_lufs", "range_lu", "true_peak_dbfs"],
+              "properties": {
+                "integrated_lufs": { "type": ["number", "null"] },
+                "range_lu": { "type": ["number", "null"] },
+                "true_peak_dbfs": { "type": ["number", "null"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "content": {
+      "description": "What reviewers said of the film. status reviewed: every required area has a verdict. partly_reviewed: some have. not_reviewed: none has.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "areas", "reviews"],
+      "properties": {
+        "status": { "enum": ["not_reviewed", "partly_reviewed", "reviewed"] },
+        "areas": {
+          "description": "Every area of the policy with the verdict in force: the one of the latest review that gave it one.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["area", "required", "verdict", "review"],
+            "properties": {
+              "area": { "$ref": "#/$defs/id" },
+              "required": { "type": "boolean" },
+              "verdict": { "enum": ["pass", "fail", "not_checked"] },
+              "review": { "oneOf": [{ "type": "null" }, { "type": "string", "pattern": "^RV[0-9]{3}$" }] }
+            }
+          }
+        },
+        "reviews": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "reviewer", "evidence", "verdicts", "decision_id"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^RV[0-9]{3}$" },
+              "reviewer": {
+                "description": "Who reviewed, as the server recorded it.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "id"],
+                "properties": {
+                  "kind": { "const": "person" },
+                  "id": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/uuid" }] }
+                }
+              },
+              "evidence": {
+                "description": "What the reviewer had in front of them, as the server knows it: a person on the screen has the file itself, picture and sound.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["metadata", "frames", "video", "audio"],
+                "properties": {
+                  "metadata": { "type": "boolean" },
+                  "frames": { "type": "boolean" },
+                  "video": { "type": "boolean" },
+                  "audio": { "type": "boolean" }
+                }
+              },
+              "verdicts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["area", "verdict", "note"],
+                  "properties": {
+                    "area": { "$ref": "#/$defs/id" },
+                    "verdict": { "enum": ["pass", "fail", "not_checked"] },
+                    "note": { "type": ["string", "null"], "maxLength": 2000 }
+                  }
+                }
+              },
+              "decision_id": { "$ref": "#/$defs/uuid" }
+            }
+          }
+        }
+      }
+    },
+    "not_checked": {
+      "description": "What nobody checked: every area with no verdict, and every technical check that did not run.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "source", "raised_by", "check", "area", "start_ms", "end_ms", "shots", "kind", "severity", "description", "evidence", "suggestion", "status", "resolution"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^FD[0-9]{3}$" },
+          "source": { "enum": ["technical", "content"] },
+          "raised_by": {
+            "description": "Who raised it, as the server recorded it: code for a measurement, a person for a review.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "id"],
+            "properties": {
+              "kind": { "enum": ["code", "person"] },
+              "id": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/uuid" }] }
+            }
+          },
+          "check": { "enum": ["black", "freeze", "silence", null] },
+          "area": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }] },
+          "start_ms": { "type": ["integer", "null"], "minimum": 0 },
+          "end_ms": { "type": ["integer", "null"], "minimum": 0 },
+          "shots": {
+            "description": "The shots on the film at that time.",
+            "type": "array",
+            "items": { "$ref": "#/$defs/id" }
+          },
+          "kind": { "$ref": "#/$defs/id" },
+          "severity": { "enum": ["info", "minor", "major", "critical"] },
+          "description": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "evidence": { "type": ["string", "null"], "maxLength": 2000 },
+          "suggestion": { "type": ["string", "null"], "maxLength": 2000 },
+          "status": {
+            "description": "new: found. fixed: said to be fixed. rechecked: looked at again and settled. accepted: left as it is by a person, with the reason. false_positive: not a fault.",
+            "enum": ["new", "fixed", "rechecked", "accepted", "false_positive"]
+          },
+          "resolution": {
+            "description": "null while the finding is new; otherwise who settled it and why.",
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["by", "reason", "decision_id"],
+                "properties": {
+                  "by": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/uuid" }] },
+                  "reason": { "type": "string", "minLength": 1, "maxLength": 2000 },
+                  "decision_id": { "$ref": "#/$defs/uuid" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "hex": { "description": "The SHA-256 of a file, as 64 hex digits.", "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "content_hash": { "description": "The SHA-256 of canonical JSON, with its prefix.", "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "stretches": {
+      "description": "Stretches of the film, [start, end) in milliseconds, each with whether the film plan declared it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["start_ms", "end_ms", "declared"],
+        "properties": {
+          "start_ms": { "type": "integer", "minimum": 0 },
+          "end_ms": { "type": "integer", "minimum": 0 },
+          "declared": { "type": "boolean" }
+        }
+      }
+    }
+  }
+}

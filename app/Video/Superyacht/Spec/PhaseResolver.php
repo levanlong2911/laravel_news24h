@@ -81,6 +81,19 @@ final class PhaseResolver
         return is_string($pinned) && $pinned !== '' ? $pinned : null;
     }
 
+    /**
+     * @param  ?string  $release  the release a project pinned, null for none
+     * @return ?string the phase an action reads, as the workflow declares the action under that release; null when neither the release nor the workflow declares it. No row is read, so it says nothing about whether the action is ready
+     *
+     * @throws RuntimeException when the release is not configured
+     */
+    public function phaseOf(string $workflow, ?string $release, string $action): ?string
+    {
+        $declared = $this->release($workflow, $release)['actions'][$action] ?? $this->contracts()['workflows'][$workflow]['actions'][$action] ?? null;
+
+        return is_array($declared) && is_string($declared['phase'] ?? null) && $declared['phase'] !== '' ? $declared['phase'] : null;
+    }
+
     /** @param array<string, mixed> $manifest */
     public function fromManifest(array $manifest): ResolvedPhase
     {

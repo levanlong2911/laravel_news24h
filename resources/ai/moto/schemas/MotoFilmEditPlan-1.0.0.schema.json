@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/MotoFilmEditPlan",
+  "title": "Moto film edit plan (moto-film-edit-plan-v1)",
+  "description": "The decisions a film is cut from: what it is cut for, the segments in order with the take and the interval each keeps and the transition it comes in with, the shots it lacks, its sound, colour and text tracks. Code writes the default one from the approved sources. Who wrote a plan, who confirmed it and when are recorded by the server beside it, never inside it: the plan holds nothing that changes between two readings of the same sources, so the same sources give the same plan and the same hash. The schema checks the shape; PHP checks every id against the sources and every decision against the edit policy. No field here is a command for FFmpeg.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "project_id", "purpose", "source", "editorial_intent", "sequence", "omissions", "scope", "audio_tracks", "colour", "text_tracks", "asset_requests", "review_notes"],
+  "properties": {
+    "format": { "const": "moto-film-edit-plan-v1" },
+    "schema": { "const": "MotoFilmEditPlan@1.0.0" },
+    "project_id": { "$ref": "#/$defs/uuid" },
+    "purpose": {
+      "description": "preview: a film of the clips approved so far, which may lack shots and is never approved for release. final: a film that holds every shot of the approved shot plan.",
+      "enum": ["preview", "final"]
+    },
+    "source": {
+      "description": "What the plan was made from, each by the id and hash that pins it. A plan is used only while every one of them is still the one in force.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shots", "clips", "script", "film_policy", "edit_policy", "output_profile", "card_style"],
+      "properties": {
+        "shots": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["planning_stage_id", "revision", "token"],
+          "properties": {
+            "planning_stage_id": { "$ref": "#/$defs/uuid" },
+            "revision": { "type": "integer", "minimum": 1 },
+            "token": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["version", "stage_id", "content_hash", "selection_version", "source_fingerprint"],
+              "properties": {
+                "version": { "$ref": "#/$defs/id" },
+                "stage_id": { "$ref": "#/$defs/uuid" },
+                "content_hash": { "$ref": "#/$defs/content_hash" },
+                "selection_version": { "type": "integer", "minimum": 1 },
+                "source_fingerprint": { "$ref": "#/$defs/content_hash" }
+              }
+            }
+          }
+        },
+        "clips": {
+          "description": "The Phase 10 manifest of approved clips, by its hash.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["format", "hash", "hash_version", "selection_version"],
+          "properties": {
+            "format": { "$ref": "#/$defs/id" },
+            "hash": { "$ref": "#/$defs/content_hash" },
+            "hash_version": { "$ref": "#/$defs/id" },
+            "selection_version": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "script": {
+          "description": "The script the shot plan pins through its scene plan.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["stage_id", "content_hash", "scenes_stage_id"],
+          "properties": {
+            "stage_id": { "$ref": "#/$defs/uuid" },
+            "content_hash": { "$ref": "#/$defs/content_hash" },
+            "scenes_stage_id": { "$ref": "#/$defs/uuid" }
+          }
+        },
+        "film_policy": { "$ref": "#/$defs/policy_pin" },
+        "edit_policy": { "$ref": "#/$defs/policy_pin" },
+        "output_profile": { "$ref": "#/$defs/config_pin" },
+        "card_style": { "$ref": "#/$defs/config_pin" }
+      }
+    },
+    "editorial_intent": {
+      "description": "What the edit sets out to do. basis approved_shot_plan: the film follows the approved shot plan as it stands. summary is a sentence of the writer of a plan that changes something; the default plan changes nothing and gives none.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["basis", "summary"],
+      "properties": {
+        "basis": { "const": "approved_shot_plan" },
+        "summary": { "type": "null" }
+      }
+    },
+    "sequence": {
+      "description": "The segments of the picture, in film order.",
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "shot_id", "scene_id", "take", "source_in_ms", "source_out_ms", "transition_in"],
+        "properties": {
+          "id": {
+            "description": "SEG and the place of the shot in the approved shot plan, three digits: the same shot keeps the same id in a preview and in a final.",
+            "type": "string",
+            "pattern": "^SEG[0-9]{3}$"
+          },
+          "shot_id": { "$ref": "#/$defs/id" },
+          "scene_id": { "$ref": "#/$defs/id" },
+          "take": {
+            "description": "The clip the segment is cut from: the render a person approved for the shot, and the hash of its file.",
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["render_id", "sha256"],
+            "properties": {
+              "render_id": { "$ref": "#/$defs/uuid" },
+              "sha256": { "$ref": "#/$defs/hex" }
+            }
+          },
+          "source_in_ms": {
+            "description": "Where the part kept starts in the clip, in milliseconds of the clip.",
+            "type": "integer",
+            "minimum": 0
+          },
+          "source_out_ms": {
+            "description": "Where the part kept ends in the clip, [in, out): the first millisecond after it.",
+            "type": "integer",
+            "minimum": 1
+          },
+          "transition_in": {
+            "description": "null for the first segment of the film; for every other one the transition it comes in with.",
+            "oneOf": [
+              { "type": "null" },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind"],
+                "properties": {
+                  "kind": { "enum": ["cut", "match_cut", "time_jump", "dip"] }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "omissions": {
+      "description": "Shots left out by decision. This version takes none: a shot is never left out on purpose.",
+      "type": "array",
+      "maxItems": 0
+    },
+    "scope": {
+      "description": "What of the approved shot plan the film holds: how many shots the plan has, how many the sequence uses, and every shot it lacks with why. A missing shot is one with no usable clip; it is not a decision.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["expected", "used", "missing"],
+      "properties": {
+        "expected": { "type": "integer", "minimum": 1 },
+        "used": { "type": "integer", "minimum": 1 },
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["shot_id", "scene_id", "order", "reason", "cause"],
+            "properties": {
+              "shot_id": { "$ref": "#/$defs/id" },
+              "scene_id": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/id" }] },
+              "order": {
+                "description": "The place of the shot in the approved shot plan; null for a shot only the Phase 10 manifest reports.",
+                "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }]
+              },
+              "reason": {
+                "description": "clip_not_approved: no reviewer approved a clip of the shot. clip_file: the approved clip lost its file, or its file changed. clip_source: the approved clip no longer fits the sources.",
+                "enum": ["clip_not_approved", "clip_file", "clip_source"]
+              },
+              "cause": {
+                "description": "The cause as the Phase 10 manifest gives it, kept as given.",
+                "$ref": "#/$defs/id"
+              }
+            }
+          }
+        }
+      }
+    },
+    "audio_tracks": {
+      "description": "The sound of the film. This version carries one track: the sound of the clips of the sequence, as rendered.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind"],
+        "properties": {
+          "id": { "const": "A1" },
+          "kind": { "const": "clip_audio" }
+        }
+      }
+    },
+    "colour": {
+      "description": "The colour treatment. none: the picture stays as rendered.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode"],
+      "properties": {
+        "mode": { "const": "none" }
+      }
+    },
+    "text_tracks": {
+      "description": "The text on the film. This version carries one track: the cards of the pinned script, word for word, each on the segments it falls on.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "cards"],
+        "properties": {
+          "id": { "const": "T1" },
+          "kind": { "const": "script_cards" },
+          "cards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["source_card_id", "type", "text", "spans"],
+              "properties": {
+                "source_card_id": {
+                  "description": "The script and the place of the card in it: <script stage id>#/data/text_cards/<index>.",
+                  "$ref": "#/$defs/id"
+                },
+                "type": { "$ref": "#/$defs/id" },
+                "text": { "type": "string", "minLength": 1 },
+                "spans": {
+                  "description": "Where the card shows, by segment: [from, to) in milliseconds counted from the start of the part the segment keeps. A card across a cut has one span on each segment; in the film the spans that touch are one stretch.",
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["segment", "from_ms", "to_ms"],
+                    "properties": {
+                      "segment": { "type": "string", "pattern": "^SEG[0-9]{3}$" },
+                      "from_ms": { "type": "integer", "minimum": 0 },
+                      "to_ms": { "type": "integer", "minimum": 1 }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "asset_requests": {
+      "description": "Assets the plan asks for and does not have. This version uses none beyond the approved clips and the font of the card style.",
+      "type": "array",
+      "maxItems": 0
+    },
+    "review_notes": {
+      "description": "Points a person has to decide. The default plan decides nothing new and leaves none.",
+      "type": "array",
+      "maxItems": 0
+    }
+  },
+  "allOf": [
+    {
+      "description": "A final holds every shot of the approved shot plan.",
+      "if": { "properties": { "purpose": { "const": "final" } }, "required": ["purpose"] },
+      "then": { "properties": { "scope": { "properties": { "missing": { "maxItems": 0 } } } } }
+    }
+  ],
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "hex": { "description": "The SHA-256 of a file, as 64 hex digits.", "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "content_hash": { "description": "The SHA-256 of canonical JSON, with its prefix.", "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "policy_pin": {
+      "description": "A policy revision of the DB: the revision row and the hash of the policy read from it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase_id", "phase_revision", "policy_hash"],
+      "properties": {
+        "phase_id": { "$ref": "#/$defs/uuid" },
+        "phase_revision": { "type": "integer", "minimum": 1 },
+        "policy_hash": { "$ref": "#/$defs/content_hash" }
+      }
+    },
+    "config_pin": {
+      "description": "A profile or a style of the configuration: its id and the hash of the copy the film is cut with.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "hash"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "hash": { "$ref": "#/$defs/content_hash" }
+      }
+    }
+  }
+}

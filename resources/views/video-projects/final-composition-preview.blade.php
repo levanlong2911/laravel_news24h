@@ -174,6 +174,53 @@
             @endforelse
 @if($motoFilm)
             <div class="fcomp-note"><i class="fas fa-info-circle"></i> Chỉ hiển thị clip đã duyệt ở màn Clips. Thứ tự theo kế hoạch shot đã duyệt.</div>
+            {{-- Pham vi shot cua phim: du kien theo ke hoach shot, da len phim, va tung shot con thieu kem ly do. --}}
+            @php $filmScope = $motoFilm['scope'] ?? null; @endphp
+            @if($filmScope !== null)
+                <div class="fcomp-note" data-fcomp-scope>
+                    <i class="fas {{ $filmScope['complete'] ? 'fa-check-circle' : 'fa-exclamation-triangle' }}"></i>
+                    <b>Kế hoạch shot: {{ $filmScope['expected'] }} shot · lên phim: {{ $filmScope['used'] }} · còn thiếu: {{ count($filmScope['missing']) }}</b>
+                    @foreach($filmScope['missing'] as $missingShot)
+                        <div data-fcomp-missing="{{ $missingShot['shot_id'] }}">{{ $missingShot['message'] }}</div>
+                    @endforeach
+                </div>
+            @endif
+            {{-- Moi diem chan deu co tren trang: 12 diem dau hien san, phan con lai nam trong mot khoi mo ra duoc, khong cat mat. --}}
+            @php $filmBlockers = array_values($motoFilm['blockers'] ?? []); @endphp
+            @foreach(array_slice($filmBlockers, 0, 12) as $filmBlocker)
+                <div class="fcomp-note" data-fcomp-blocker><i class="fas fa-ban"></i> Chặn: {{ $filmBlocker['message'] }}</div>
+            @endforeach
+            @if(count($filmBlockers) > 12)
+                <details data-fcomp-blockers-more>
+                    <summary class="fcomp-note" style="cursor:pointer"><i class="fas fa-ban"></i> Xem thêm {{ count($filmBlockers) - 12 }} điểm chặn</summary>
+                    @foreach(array_slice($filmBlockers, 12) as $filmBlocker)
+                        <div class="fcomp-note" data-fcomp-blocker><i class="fas fa-ban"></i> Chặn: {{ $filmBlocker['message'] }}</div>
+                    @endforeach
+                </details>
+            @endif
+            @foreach($motoFilm['warnings'] ?? [] as $filmWarning)
+                <div class="fcomp-note" data-fcomp-warning><i class="fas fa-exclamation-circle"></i> Cảnh báo: {{ $filmWarning['message'] }}</div>
+            @endforeach
+            {{-- Phuong an dung: cac quyet dinh phim duoc dung theo. Chi co o du an ma ban phat hanh khai action phuong an dung; du an khac khong co khoi nay va dung nhu truoc. --}}
+            @php $filmEdit = $motoFilm['edit'] ?? null; @endphp
+            @if($filmEdit !== null)
+                <div class="fcomp-note" data-fcomp-edit-plan>
+                    <i class="fas fa-list-ol"></i>
+                    <b>Phương án dựng: {{ $filmEdit['origin'] === \App\Video\Moto\Film\MotoFilmEditPlan::ORIGIN_DEFAULT ? 'mặc định (code lập từ kế hoạch shot và clip đã duyệt)' : $filmEdit['origin'] }}</b>
+                    @forelse($filmEdit['segments'] as $filmSegment)
+                        <div data-fcomp-segment="{{ $filmSegment['id'] }}">{{ $filmSegment['id'] }} · {{ $filmSegment['shot_id'] }} · take {{ substr($filmSegment['render_id'], 0, 8) }} · {{ $filmSegment['in_ms'] }}–{{ $filmSegment['out_ms'] }} ms · {{ $filmSegment['transition'] ?? 'đầu phim' }}</div>
+                    @empty
+                        <div>Chưa lập được phương án dựng: kế hoạch phim còn bị chặn.</div>
+                    @endforelse
+                    @if($filmEdit['segments'] !== [])
+                        <div>Tiếng: tiếng của clip · Màu: giữ nguyên · Chữ: {{ $filmEdit['cards'] }} card của kịch bản</div>
+                        <div>Bấm Dựng là xác nhận đúng phương án này.</div>
+                    @endif
+                    @foreach($filmEdit['problems'] as $editProblem)
+                        <div data-fcomp-edit-problem><i class="fas fa-ban"></i> {{ $editProblem }}</div>
+                    @endforeach
+                </div>
+            @endif
 @else
             <div class="fcomp-note"><i class="fas fa-info-circle"></i> Chỉ hiển thị clip đã dựng xong. Thứ tự lấy theo thứ tự scene của bản kế hoạch mới nhất.</div>
 @endif
@@ -296,8 +343,15 @@
                 <small>Thiết lập theo chính sách Phase 11{{ $output ? ' ('.$output['id'].')' : '' }}; chuyển cảnh, dip và card theo kế hoạch phim, không chỉnh ở đây.</small>
                 <input type="hidden" name="expected_hash" value="{{ $motoFilm['hash'] ?? '' }}">
                 <input type="hidden" name="operation_id" value="{{ $motoFilm['operation_id'] }}">
-                <button class="fcomp-render" type="submit" @disabled(($composition['blocked'] ?? null) !== null)><i class="fas fa-cog"></i> Render Final Video</button>
-                <p>{{ $composition['blocked'] ?? (\App\Video\Queue\VideoQueues::enabled() ? 'Lượt dựng vào hàng đợi FFmpeg và chạy nền; đóng tab không làm dừng nó.' : 'Máy này không bật hàng đợi: phim được dựng ngay trong lượt bấm — đừng đóng tab cho tới khi trang tải lại.') }}</p>
+                {{-- Du an dung theo phuong an dung: moi muc dich co mot phuong an rieng, trang gui ma bam cua ca hai va server doi chieu cai cua nut duoc bam. Bam Dung la xac nhan dung phuong an do. --}}
+                @foreach(($motoFilm['edit']['hashes'] ?? []) as $editPurpose => $editHash)
+                    <input type="hidden" name="expected_edit_hash[{{ $editPurpose }}]" value="{{ $editHash }}">
+                @endforeach
+                {{-- Hai muc dich dung: ban final phai du moi shot cua ke hoach shot va duyet xuat ban duoc; ban dung thu ghep phan clip da duyet va khong bao gio duyet xuat ban. Server quyet dinh, nut chi gui muc dich. --}}
+                <button class="fcomp-render" type="submit" name="purpose" value="{{ \App\Video\Moto\Film\MotoFilmScope::FINAL }}" @disabled(($composition['blocked'] ?? null) !== null || ($motoFilm['final_problem'] ?? null) !== null)><i class="fas fa-cog"></i> Dựng final</button>
+                <button class="fcomp-render" type="submit" name="purpose" value="{{ \App\Video\Moto\Film\MotoFilmScope::PREVIEW }}" @disabled(($composition['blocked'] ?? null) !== null)><i class="fas fa-eye"></i> Dựng thử</button>
+                <p>{{ $composition['blocked'] ?? $motoFilm['final_problem'] ?? (\App\Video\Queue\VideoQueues::enabled() ? 'Lượt dựng vào hàng đợi FFmpeg và chạy nền; đóng tab không làm dừng nó.' : 'Máy này không bật hàng đợi: phim được dựng ngay trong lượt bấm — đừng đóng tab cho tới khi trang tải lại.') }}</p>
+                <small>Bản dựng thử ghép các clip đã duyệt để xem trước và không duyệt xuất bản được; chỉ bản final đủ shot mới duyệt được.</small>
 @else
 
                 <label>
@@ -387,6 +441,17 @@
                                 <td class="fcomp-actions">
                                     @if($final['video_url'])
                                         <a class="fcomp-download" href="{{ $final['video_url'] }}" download><i class="fas fa-download"></i> Tải xuống</a>
+                                        {{-- Du an co QC: moi ban co file deu chon duoc de xem va kiem QC. Trinh phat, bao cao, finding va cac form deu ve dung ban duoc chon. --}}
+                                        @if(($motoFilm['qc'] ?? null) !== null && ($motoFilm['finals'][$final['id']]['view_url'] ?? null) !== null)
+                                            @if($motoFilm['finals'][$final['id']]['viewed'] ?? false)
+                                                <span class="fcomp-status" data-fcomp-viewed="{{ $final['id'] }}"><i class="fas fa-eye"></i> Đang xem và kiểm QC bản này</span>
+                                            @else
+                                                <a class="fcomp-download" href="{{ $motoFilm['finals'][$final['id']]['view_url'] }}" data-fcomp-view="{{ $final['id'] }}"><i class="fas fa-eye"></i> Xem và kiểm QC bản này</a>
+                                            @endif
+                                        @endif
+                                        @foreach(($motoFilm['finals'][$final['id']]['documents'] ?? []) as $filmDocument)
+                                            <a class="fcomp-download" href="{{ route('video-projects.final-document', [$id, $final['id'], $filmDocument]) }}" data-fcomp-document="{{ $filmDocument }}"><i class="fas fa-file-code"></i> {{ ['timeline' => 'Timeline', 'edit-decisions' => 'Quyết định dựng', 'approval' => 'Quyết định duyệt'][$filmDocument] }}</a>
+                                        @endforeach
 @if($motoFilm['finals'][$final['id']]['can_approve'] ?? false)
                                         <form method="POST" action="{{ route('video-projects.final-approve', [$id, $final['id']]) }}">
                                             @csrf
@@ -395,6 +460,8 @@
                                             <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
                                             <button class="fcomp-download" type="submit"><i class="fas fa-check"></i> Duyệt final</button>
                                         </form>
+@elseif(($motoFilm['finals'][$final['id']]['approval_problem'] ?? null) !== null)
+                                        <span class="fcomp-empty-cell" data-fcomp-not-approvable>{{ $motoFilm['finals'][$final['id']]['approval_problem'] }}</span>
 @endif
                                     @else
                                         <span class="fcomp-empty-cell">không có file</span>
@@ -408,6 +475,127 @@
                 </table>
             </div>
         </section>
+{{-- QC cua ban final moi nhat co file. Chi co o du an ma ban phat hanh khai action QC; du an khac khong co khoi nay va duyet nhu truoc.
+     Code do tren file va dem; nguoi review ket luan noi dung va xu ly finding. Hai ket qua khong gop thanh mot chu "dat". --}}
+@php
+    $filmQc = $motoFilm['qc'] ?? null;
+    $qcVerdicts = ['pass' => 'Đạt', 'fail' => 'Không đạt', 'not_checked' => 'Chưa kiểm'];
+    $qcStatuses = ['new' => 'mới', 'fixed' => 'đã sửa', 'rechecked' => 'đã kiểm lại', 'accepted' => 'chấp nhận kèm lý do', 'false_positive' => 'báo nhầm'];
+    $qcSeverities = ['info' => 'thông tin', 'minor' => 'nhẹ', 'major' => 'nặng', 'critical' => 'nghiêm trọng'];
+@endphp
+@if($filmQc !== null)
+        <section class="fcomp-card fcomp-history" data-fcomp-qc>
+            <div class="fcomp-card-title">QC bản dựng @if($filmQc['final'])<span data-fcomp-qc-final="{{ $filmQc['final']['id'] }}">revision {{ $filmQc['final']['revision'] }} · {{ collect($finals)->firstWhere('id', $filmQc['final']['id'])['status'] ?? '' }}</span>@endif</div>
+            @if($filmQc['final'])
+                <div class="fcomp-note"><i class="fas fa-info-circle"></i> Trình phát phía trên, báo cáo, finding và các thao tác dưới đây đều là của revision {{ $filmQc['final']['revision'] }}. Muốn kiểm bản khác, bấm "Xem và kiểm QC bản này" ở dòng của bản đó trong Lịch sử render.</div>
+            @endif
+            @if($filmQc['problem'])
+                <div class="fcomp-note"><i class="fas fa-ban"></i> {{ $filmQc['problem'] }}</div>
+            @elseif($filmQc['final'] === null)
+                <div class="fcomp-note"><i class="fas fa-info-circle"></i> Chưa có bản dựng nào có file để kiểm QC.</div>
+            @else
+                @php $qcReport = $filmQc['report']; $qcFinal = $filmQc['final']['id']; @endphp
+                <form method="POST" action="{{ route('video-projects.final-qc', [$id, $qcFinal]) }}" class="fcomp-note">
+                    @csrf
+                    <button class="fcomp-download" type="submit"><i class="fas fa-stethoscope"></i> {{ $qcReport ? 'Kiểm QC lại' : 'Kiểm QC' }}</button>
+                    Đo file bằng FFmpeg trên máy này; không gọi AI, không phát sinh phí.
+                </form>
+                @if($filmQc['changes_requested'])
+                    <div class="fcomp-note" data-fcomp-qc-changes><i class="fas fa-undo"></i> Đã yêu cầu sửa lúc {{ $filmQc['changes_requested']['at'] }}: {{ $filmQc['changes_requested']['reason'] }}</div>
+                @endif
+                @if($filmQc['approval_problem'])
+                    <div class="fcomp-note" data-fcomp-qc-problem><i class="fas fa-ban"></i> {{ $filmQc['approval_problem'] }}</div>
+                @endif
+                @if($qcReport === null)
+                    <div class="fcomp-note"><i class="fas fa-info-circle"></i> Bản này chưa có báo cáo QC.</div>
+                @else
+                    <div class="fcomp-note" data-fcomp-qc-technical>
+                        <b>QC kỹ thuật: {{ ['pass' => 'đạt', 'fail' => 'không đạt', 'error' => 'chưa đo được'][$qcReport['technical']['status']] }}</b>
+                        (file {{ substr($qcReport['final']['artifact_sha256'], 0, 12) }}…)
+                        <a class="fcomp-download" href="{{ route('video-projects.final-document', [$id, $qcFinal, 'qc-report']) }}" data-fcomp-document="qc-report"><i class="fas fa-file-code"></i> Tải báo cáo QC</a>
+                        @foreach($qcReport['technical']['checks'] as $qcCheck)
+                            <div data-fcomp-qc-check="{{ $qcCheck['code'] }}">[{{ $qcCheck['status'] }}] {{ $qcCheck['detail'] }}</div>
+                        @endforeach
+                    </div>
+
+                    <form method="POST" action="{{ route('video-projects.final-qc-review', [$id, $qcFinal]) }}" class="fcomp-note" data-fcomp-qc-review>
+                        @csrf
+                        <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                        <b>QC nội dung: {{ ['not_reviewed' => 'chưa review', 'partly_reviewed' => 'review một phần', 'reviewed' => 'đã review đủ mục bắt buộc'][$qcReport['content']['status']] }}</b>
+                        — xem file rồi kết luận từng mục; mục có dấu * là bắt buộc. Mục để "Chưa kiểm" giữ kết luận đang có.
+                        @foreach($filmQc['areas'] as $qcArea)
+                            <div data-fcomp-qc-area="{{ $qcArea['id'] }}">
+                                {{ $qcArea['label'] }}{{ $qcArea['required'] ? ' *' : '' }} — hiện: {{ $qcVerdicts[$qcArea['verdict']] }}
+                                <select name="verdicts[{{ $qcArea['id'] }}]">
+                                    @foreach($qcVerdicts as $qcValue => $qcLabel)
+                                        <option value="{{ $qcValue }}" @selected($qcValue === 'not_checked')>{{ $qcLabel }}</option>
+                                    @endforeach
+                                </select>
+                                <input type="text" name="notes[{{ $qcArea['id'] }}]" maxlength="2000" placeholder="Ghi chú">
+                            </div>
+                        @endforeach
+                        <button class="fcomp-download" type="submit"><i class="fas fa-clipboard-check"></i> Ghi review</button>
+                    </form>
+
+                    <div class="fcomp-note" data-fcomp-qc-findings>
+                        <b>Finding: {{ count($qcReport['findings']) }}</b> — mức {{ implode(', ', array_map(fn ($severity) => $qcSeverities[$severity] ?? $severity, $filmQc['blocking'])) }} chặn duyệt khi chưa xử lý.
+                        @forelse($qcReport['findings'] as $qcFinding)
+                            <div data-fcomp-qc-finding="{{ $qcFinding['id'] }}">
+                                {{ $qcFinding['id'] }} · {{ $qcSeverities[$qcFinding['severity']] ?? $qcFinding['severity'] }} · {{ $qcStatuses[$qcFinding['status']] ?? $qcFinding['status'] }}
+                                · {{ $qcFinding['raised_by']['kind'] === 'code' ? 'máy đo' : 'người review' }}@if($qcFinding['shots'] !== []) · {{ implode(', ', $qcFinding['shots']) }}@endif
+                                — {{ $qcFinding['description'] }}
+                                @if($qcFinding['suggestion']) Hướng xử lý: {{ $qcFinding['suggestion'] }}@endif
+                                @if($qcFinding['resolution']) Lý do: {{ $qcFinding['resolution']['reason'] }}@endif
+                                <form method="POST" action="{{ route('video-projects.final-qc-settle', [$id, $qcFinal, $qcFinding['id']]) }}">
+                                    @csrf
+                                    <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                                    <select name="status">
+                                        @foreach($filmQc['statuses'] as $qcStatus)
+                                            <option value="{{ $qcStatus }}">{{ $qcStatuses[$qcStatus] ?? $qcStatus }}</option>
+                                        @endforeach
+                                    </select>
+                                    <input type="text" name="reason" maxlength="2000" placeholder="Lý do" required>
+                                    <button class="fcomp-download" type="submit">Ghi xử lý</button>
+                                </form>
+                            </div>
+                        @empty
+                            <div>Chưa có finding nào.</div>
+                        @endforelse
+                    </div>
+
+                    <form method="POST" action="{{ route('video-projects.final-qc-finding', [$id, $qcFinal]) }}" class="fcomp-note" data-fcomp-qc-raise>
+                        @csrf
+                        <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                        <b>Nêu finding</b>
+                        <select name="severity">
+                            @foreach($filmQc['severities'] as $qcSeverity)
+                                <option value="{{ $qcSeverity }}">{{ $qcSeverities[$qcSeverity] ?? $qcSeverity }}</option>
+                            @endforeach
+                        </select>
+                        <select name="area">
+                            <option value="">— mục review —</option>
+                            @foreach($filmQc['areas'] as $qcArea)
+                                <option value="{{ $qcArea['id'] }}">{{ $qcArea['label'] }}</option>
+                            @endforeach
+                        </select>
+                        <input type="number" name="start_s" min="0" step="0.001" placeholder="Từ giây">
+                        <input type="number" name="end_s" min="0" step="0.001" placeholder="Đến giây">
+                        <input type="text" name="description" maxlength="2000" placeholder="Mô tả vấn đề" required>
+                        <input type="text" name="suggestion" maxlength="2000" placeholder="Hướng xử lý đề xuất">
+                        <button class="fcomp-download" type="submit"><i class="fas fa-flag"></i> Ghi finding</button>
+                    </form>
+
+                    <form method="POST" action="{{ route('video-projects.final-request-changes', [$id, $qcFinal]) }}" class="fcomp-note" data-fcomp-qc-request>
+                        @csrf
+                        <input type="hidden" name="operation_id" value="{{ \Illuminate\Support\Str::uuid() }}">
+                        <b>Yêu cầu sửa</b> — bản này ở lại lịch sử và không duyệt được nữa; sửa xong thì dựng bản mới.
+                        <input type="text" name="reason" maxlength="2000" placeholder="Lý do yêu cầu sửa" required>
+                        <button class="fcomp-download" type="submit"><i class="fas fa-undo"></i> Yêu cầu sửa</button>
+                    </form>
+                @endif
+            @endif
+        </section>
+@endif
     </main>
 </div>
 @endsection

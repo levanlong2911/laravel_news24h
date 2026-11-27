@@ -42,6 +42,9 @@ class AppServiceProvider extends ServiceProvider
         // A hand revision of a design reads the design runs through the service that makes them.
         $this->app->bind(\App\Services\Video\DesignRevisionRuns::class, \App\Services\Video\YachtDesignService::class);
 
+        // A film request and an approval read the film plan through the service that compiles it.
+        $this->app->bind(\App\Services\Video\MotoFilmPlans::class, \App\Services\Video\MotoFilmPlanService::class);
+
         $this->app->singleton(
             OpenAiImageClient::class,
             static fn (Application $app): OpenAiImageClient => new OpenAiImageClient(
