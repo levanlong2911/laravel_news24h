@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/SocialPublishingPlan",
+  "title": "SocialPublishingPlan 1.0.0 (social-publishing-plan-v1)",
+  "description": "What a model proposes for ONE package: one channel, one format, one language, all three given by the input and never chosen here. Code checks the shape and the ids; a person edits and approves. Nothing here is posted as it is: code assembles the posted text from what a person kept. When there is nothing to say: a text the format does not use is null, a list with nothing in it is [], and a string is never empty.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "strategy", "hook_options", "selected_hook_id", "copy", "claims", "artwork_options", "review_notes"],
+  "properties": {
+    "format": { "const": "social-publishing-plan-v1" },
+    "strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["goal", "audience", "angle", "message", "rationale"],
+      "properties": {
+        "goal": { "$ref": "#/$defs/text", "description": "What this post is for." },
+        "audience": { "$ref": "#/$defs/text", "description": "Who it speaks to." },
+        "angle": { "$ref": "#/$defs/text", "description": "The side of the film it leads with." },
+        "message": { "$ref": "#/$defs/text", "description": "The one thing a viewer should take away." },
+        "rationale": { "$ref": "#/$defs/text", "description": "Why this goal, audience and angle fit the film and the channel." }
+      }
+    },
+    "hook_options": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 5,
+      "description": "Different first lines to choose from. Ids H1, H2, ... in order, each once.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "rationale"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^H[1-9]$" },
+          "text": { "$ref": "#/$defs/text" },
+          "rationale": { "$ref": "#/$defs/text" }
+        }
+      }
+    },
+    "selected_hook_id": { "type": "string", "pattern": "^H[1-9]$", "description": "The id of the hook proposed for use. It must be an id of hook_options." },
+    "copy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "opening", "body", "cta", "hashtags", "keywords"],
+      "properties": {
+        "title": { "$ref": "#/$defs/nullableText", "description": "The title. null when input.limits.title.used is false. Mapped to content.title." },
+        "opening": { "$ref": "#/$defs/text", "description": "The first line of the caption or description, written from the selected hook. Mapped to content.opening." },
+        "body": { "$ref": "#/$defs/text", "description": "The rest of the caption or description, without the call to action, the link, the disclosure sentence and the hashtags: code adds those. Mapped to content.body." },
+        "cta": { "$ref": "#/$defs/nullableText", "description": "The call to action as one sentence, without any link. null for none. Mapped to content.cta." },
+        "hashtags": {
+          "type": "array",
+          "maxItems": 30,
+          "uniqueItems": true,
+          "description": "Without the # sign and without spaces. [] for none. Mapped to content.hashtags.",
+          "items": { "type": "string", "pattern": "^[^\\s#]{1,100}$" }
+        },
+        "keywords": {
+          "type": "array",
+          "maxItems": 40,
+          "uniqueItems": true,
+          "description": "Search keywords or tags. [] when input.limits.keywords.used is false. Mapped to content.keywords.",
+          "items": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[^<>,]+$" }
+        }
+      }
+    },
+    "claims": {
+      "type": "array",
+      "maxItems": 40,
+      "description": "Every specific statement the copy makes about the design, the build or the film, each with the sources it rests on. [] when the copy states nothing specific. Ids C1, C2, ... each once.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "text", "source_refs"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^C[1-9][0-9]?$" },
+          "text": { "$ref": "#/$defs/text" },
+          "source_refs": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "description": "Values of input.refs[].ref only.",
+            "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+          }
+        }
+      }
+    },
+    "artwork_options": {
+      "type": "array",
+      "maxItems": 5,
+      "description": "Thumbnail or cover proposals, each from one asset of input.assets. [] when no asset fits. Ids A1, A2, ... each once.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "asset_id", "layout", "overlay_text", "rationale"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^A[1-9]$" },
+          "asset_id": { "type": "string", "minLength": 1, "maxLength": 200, "description": "A value of input.assets[].id only." },
+          "layout": { "$ref": "#/$defs/text", "description": "Where the subject and the text sit." },
+          "overlay_text": { "$ref": "#/$defs/nullableText", "description": "The words on the picture; null for a picture with no words." },
+          "rationale": { "$ref": "#/$defs/text" }
+        }
+      }
+    },
+    "review_notes": {
+      "type": "array",
+      "maxItems": 20,
+      "description": "What a person must confirm, what the sources do not give, and the limits of this proposal. [] for none.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["topic", "note"],
+        "properties": {
+          "topic": { "$ref": "#/$defs/text" },
+          "note": { "$ref": "#/$defs/text" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 6000, "pattern": "\\S" },
+    "nullableText": { "type": ["string", "null"], "minLength": 1, "maxLength": 6000, "pattern": "\\S" }
+  }
+}

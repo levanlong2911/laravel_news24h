@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/SocialPublishingReview",
+  "title": "SocialPublishingReview 1.0.0 (social-publishing-review-v1)",
+  "description": "What a model found when it read ONE package revision against the sources of its film and the profile of its channel. It changes nothing and approves nothing. A list with nothing in it is [], a suggestion that does not exist is null, and a string is never empty.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "summary", "findings", "not_reviewed"],
+  "properties": {
+    "format": { "const": "social-publishing-review-v1" },
+    "summary": { "$ref": "#/$defs/text", "description": "What was read and what stands out, in a few sentences." },
+    "findings": {
+      "type": "array",
+      "maxItems": 40,
+      "description": "[] when nothing was found. Ids F1, F2, ... each once.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "location", "severity", "issue", "source_refs", "suggestion"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^F[1-9][0-9]?$" },
+          "location": {
+            "enum": ["title", "opening", "body", "cta", "link", "hashtags", "keywords", "disclosure_text", "synthetic_media", "artwork", "package"],
+            "description": "The part of the package the finding is about; `package` for the package as a whole."
+          },
+          "severity": { "enum": ["info", "minor", "major"], "description": "How much it matters before posting. It holds nothing back: a person decides." },
+          "issue": { "$ref": "#/$defs/text" },
+          "source_refs": {
+            "type": "array",
+            "uniqueItems": true,
+            "description": "Values of input.refs[].ref the finding rests on; [] when it rests on the package alone.",
+            "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          "suggestion": { "$ref": "#/$defs/nullableText", "description": "What to change, in words. null when there is nothing to propose." }
+        }
+      }
+    },
+    "not_reviewed": {
+      "type": "array",
+      "maxItems": 20,
+      "description": "What could not be reviewed from the input, each named plainly — the picture of the film when no picture was given, for one. [] when everything was read.",
+      "items": { "$ref": "#/$defs/text" }
+    }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1, "maxLength": 4000, "pattern": "\\S" },
+    "nullableText": { "type": ["string", "null"], "minLength": 1, "maxLength": 4000, "pattern": "\\S" }
+  }
+}

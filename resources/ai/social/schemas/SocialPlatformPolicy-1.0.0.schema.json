@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/SocialPlatformPolicy",
+  "title": "SocialPlatformPolicy 1.0.0 (social-platform-policy-v1)",
+  "description": "What each format of each platform takes, stored by phase-12-platforms as its prompt_content and read by PHP alone: the one place a limit comes from, for the check, the screen and the input a model is given. No model reads it as an instruction. A limit of an account or of a connection is not here: it is read from the platform when a posting is prepared. A value the pages read do not give is null and nothing is checked for it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "package", "checked_on", "formats"],
+  "properties": {
+    "format": { "const": "social-platform-policy-v1" },
+    "schema": { "const": "SocialPlatformPolicy@1.0.0" },
+    "package": { "const": "SocialPackage@1.0.0" },
+    "checked_on": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "description": "The day the documentation was read." },
+    "formats": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{1,29}$" },
+      "additionalProperties": { "$ref": "#/$defs/format" }
+    }
+  },
+  "$defs": {
+    "limit": { "type": ["integer", "null"], "minimum": 0 },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["used", "required", "max_chars", "max_bytes", "forbidden"],
+      "properties": {
+        "used": { "type": "boolean" },
+        "required": { "type": "boolean" },
+        "max_chars": { "$ref": "#/$defs/limit" },
+        "max_bytes": { "$ref": "#/$defs/limit" },
+        "forbidden": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 4 }, "description": "Characters the platform refuses in this field." }
+      }
+    },
+    "format": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["platform", "label", "api", "documents", "unverified", "media", "text", "cover", "schedule", "metadata", "synthetic_media", "metrics", "account_notes"],
+      "properties": {
+        "platform": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "api": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name", "version", "adapter"],
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "version": { "type": "string", "minLength": 1 },
+            "adapter": { "type": "string", "minLength": 1, "description": "The version of the code that turns a package into requests for this format." }
+          }
+        },
+        "documents": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^https://\\S+$" }, "description": "The pages the values were read from on checked_on." },
+        "unverified": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Values kept from earlier knowledge of the platform and not read again on checked_on, each named by its path with why." },
+        "media": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["containers", "orientation", "classification", "aspect", "min_width", "min_height", "min_fps", "max_fps", "min_duration_ms", "max_duration_ms", "max_bytes"],
+          "properties": {
+            "containers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+            "orientation": { "enum": ["portrait", "portrait_or_square", "landscape", "any"] },
+            "classification": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["name", "orientation", "max_duration_ms", "member", "instead"],
+              "description": "How the platform itself sorts an upload into a kind of video by its file, whatever the request says: a file is of the kind when its frame has the orientation and it lasts no longer than max_duration_ms. member says whether a file of this format must be of that kind (true) or must not be (false). null: the platform sorts by nothing that is checked here.",
+              "properties": {
+                "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+                "orientation": { "enum": ["portrait", "portrait_or_square", "landscape"] },
+                "max_duration_ms": { "$ref": "#/$defs/limit" },
+                "member": { "type": "boolean" },
+                "instead": { "type": ["string", "null"], "minLength": 1, "maxLength": 80, "description": "The label of the format a file refused for this reason is posted as." }
+              }
+            },
+            "aspect": {
+              "type": ["object", "null"],
+              "additionalProperties": false,
+              "required": ["width", "height", "tolerance_percent"],
+              "properties": {
+                "width": { "type": "integer", "minimum": 1 },
+                "height": { "type": "integer", "minimum": 1 },
+                "tolerance_percent": { "type": "integer", "minimum": 0, "maximum": 20 }
+              }
+            },
+            "min_width": { "$ref": "#/$defs/limit" },
+            "min_height": { "$ref": "#/$defs/limit" },
+            "min_fps": { "$ref": "#/$defs/limit" },
+            "max_fps": { "$ref": "#/$defs/limit" },
+            "min_duration_ms": { "$ref": "#/$defs/limit" },
+            "max_duration_ms": { "$ref": "#/$defs/limit" },
+            "max_bytes": { "$ref": "#/$defs/limit" }
+          }
+        },
+        "text": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["title", "body", "hashtags", "keywords"],
+          "properties": {
+            "title": { "$ref": "#/$defs/field" },
+            "body": { "$ref": "#/$defs/field" },
+            "hashtags": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["used", "max_count"],
+              "properties": { "used": { "type": "boolean" }, "max_count": { "$ref": "#/$defs/limit" } }
+            },
+            "keywords": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["used", "max_total_chars"],
+              "properties": { "used": { "type": "boolean" }, "max_total_chars": { "$ref": "#/$defs/limit" } }
+            }
+          }
+        },
+        "cover": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["width", "height", "mime", "max_bytes", "api", "note"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 16 },
+            "height": { "type": "integer", "minimum": 16 },
+            "mime": { "const": "image/jpeg" },
+            "max_bytes": { "$ref": "#/$defs/limit" },
+            "api": { "type": "boolean", "description": "Whether the adapter sets the cover through the API. False: the file is exported and a person sets it by hand." },
+            "note": { "type": ["string", "null"], "minLength": 1 }
+          }
+        },
+        "schedule": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["supported", "owner", "min_lead_seconds", "max_lead_seconds", "requires_privacy", "cancel"],
+          "properties": {
+            "supported": { "type": "boolean" },
+            "owner": { "enum": ["platform", "none"], "description": "Who holds the time of a scheduled posting. Never two holders for one posting." },
+            "min_lead_seconds": { "$ref": "#/$defs/limit" },
+            "max_lead_seconds": { "$ref": "#/$defs/limit" },
+            "requires_privacy": { "type": ["string", "null"], "minLength": 1, "description": "The visibility a package must have to be scheduled; null when the format has no such choice." },
+            "cancel": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["api", "note"],
+              "description": "Taking back a schedule the platform holds.",
+              "properties": {
+                "api": { "type": "boolean", "description": "Whether the adapter asks the platform to take a schedule back and reads the video back. False: a person cancels on the platform and records it." },
+                "note": { "type": ["string", "null"], "minLength": 1 }
+              }
+            }
+          }
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["privacy", "default_privacy", "made_for_kids"],
+          "properties": {
+            "privacy": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 20 }, "description": "The visibilities a package may choose from; [] for a format with no such choice." },
+            "default_privacy": { "type": ["string", "null"], "minLength": 1 },
+            "made_for_kids": { "type": "boolean", "description": "Whether a posting carries a made-for-kids declaration." }
+          }
+        },
+        "synthetic_media": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["api", "note"],
+          "properties": {
+            "api": { "type": "boolean", "description": "Whether the adapter makes the platform's declaration of altered or synthetic content through the API. False: a person makes it by hand on the platform." },
+            "note": { "type": ["string", "null"], "minLength": 1 }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "items"],
+          "properties": {
+            "source": { "type": "string", "minLength": 1 },
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "label", "group", "unit", "shape"],
+                "properties": {
+                  "id": { "type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]{1,59}$", "description": "The name the platform gives the number. Two platforms' numbers are never one metric, whatever they are called." },
+                  "label": { "type": "string", "minLength": 1 },
+                  "group": { "enum": ["views", "reach", "watch_time", "retention", "engagement", "followers"] },
+                  "unit": { "enum": ["count", "seconds", "minutes", "milliseconds", "percent"] },
+                  "shape": { "enum": ["number", "map"], "description": "map: the platform gives one number per key, each stored as id.key." }
+                }
+              }
+            }
+          }
+        },
+        "account_notes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "description": "Limits of an account or an app, for a person to read. Nothing here is checked: what holds for an account is what the platform answers when a posting is prepared." }
+      }
+    }
+  }
+}

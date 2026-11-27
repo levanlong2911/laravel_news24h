@@ -139,6 +139,10 @@
         </div>
         <div class="fcomp-head-actions">
             <a class="fcomp-button" href="{{ route('video-projects.render-video', $id) }}"><i class="fas fa-arrow-left"></i> Quay lại Clips</a>
+@if($motoFilm && \App\Services\Video\Social\SocialSourceService::enabled() && collect($motoFilm['finals'] ?? [])->contains(static fn (array $final): bool => (bool) ($final['approved'] ?? false)))
+            {{-- Phase 12: chi mo khi co ban final da duyet; man Social Publishing tu kiem lai phim va hash. --}}
+            <a class="fcomp-button primary" href="{{ route('video-projects.social-publishing', $id) }}" data-fcomp-social><i class="fas fa-share-alt"></i> Social Publishing →</a>
+@endif
             <button class="fcomp-button primary" type="button" disabled><i class="far fa-save"></i> Lưu bản nháp</button>
             <button class="fcomp-button success" type="button" disabled><i class="fas fa-cog"></i> Render Final Video</button>
         </div>

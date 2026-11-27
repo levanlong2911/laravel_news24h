@@ -1142,6 +1142,99 @@ return [
         ],
     ],
 
+    /*
+     * Phase 12 — Social Publishing: packages of content for a Fanpage or a YouTube channel, made from the film a person
+     * approved in Phase 11. Every part is switched on by its own flag, off until set: with a flag off its screen, its
+     * buttons and its routes refuse, and the packages, approvals and postings already stored stay as they are.
+     */
+    'social' => [
+        'enabled' => (bool) env('VIDEO_SOCIAL_ENABLED', false),
+        // Writing a package or reviewing it with a model. Off: packages are written and edited by hand.
+        'ai_content' => (bool) env('VIDEO_SOCIAL_AI_CONTENT', false),
+        // Posting through the API of each platform. Off: a package is exported and posted by hand, and a person reports the posting.
+        'publish' => [
+            'youtube' => (bool) env('VIDEO_SOCIAL_PUBLISH_YOUTUBE', false),
+            'facebook' => (bool) env('VIDEO_SOCIAL_PUBLISH_FACEBOOK', false),
+        ],
+        // Reading the numbers of a posting from its platform.
+        'analytics' => (bool) env('VIDEO_SOCIAL_ANALYTICS', false),
+
+        'workflows' => [
+            'harley_custom_v1' => [
+                // Reads the approved film and everything it was made from.
+                'source' => \App\Video\Social\MotoSocialSource::class,
+                'package_action' => 'spec.social_package',
+                'review_action' => 'spec.social_review',
+                'publish_action' => 'spec.social_publish',
+            ],
+        ],
+
+        // The formats a package may be made for, each on its platform; what each takes is in the platform policy of the DB.
+        'formats' => [
+            'facebook_reel' => ['platform' => 'facebook', 'label' => 'Facebook Reel'],
+            'youtube_short' => ['platform' => 'youtube', 'label' => 'YouTube Short'],
+            'youtube_video' => ['platform' => 'youtube', 'label' => 'YouTube Video'],
+        ],
+        'platforms' => ['facebook' => 'Facebook', 'youtube' => 'YouTube'],
+        'languages' => ['en' => 'English', 'vi' => 'Tiếng Việt'],
+
+        /*
+         * Who may do what, by the role of the admin; '*' is everything. Checked on the server for every action.
+         *   channels — edit channel profiles      packages — create and edit packages, make artwork
+         *   approve  — approve or revoke          export   — download a package, report a posting made by hand
+         *   connect  — connect a platform account publish  — post, schedule, cancel, read numbers
+         */
+        'abilities' => [
+            'admin' => ['*'],
+            'member' => ['packages', 'export'],
+        ],
+
+        // The model that writes a package and the one that reviews it.
+        'content' => [
+            'execution' => 'social-package-writer-v1',
+            'model' => env('VIDEO_SOCIAL_CONTENT_MODEL', 'sonnet55'),
+            'effort' => env('VIDEO_SOCIAL_CONTENT_EFFORT', 'medium'),
+            'max_tokens' => (int) env('VIDEO_SOCIAL_CONTENT_MAX_TOKENS', 8000),
+            'timeout_seconds' => (int) env('VIDEO_SOCIAL_CONTENT_TIMEOUT_SECONDS', 600),
+            'schema_heading' => 'Output JSON Schema',
+        ],
+        'review' => [
+            'execution' => 'social-package-reviewer-v1',
+            'model' => env('VIDEO_SOCIAL_REVIEW_MODEL', 'sonnet55'),
+            'effort' => env('VIDEO_SOCIAL_REVIEW_EFFORT', 'medium'),
+            'max_tokens' => (int) env('VIDEO_SOCIAL_REVIEW_MAX_TOKENS', 6000),
+            'timeout_seconds' => (int) env('VIDEO_SOCIAL_REVIEW_TIMEOUT_SECONDS', 600),
+            'schema_heading' => 'Output JSON Schema',
+        ],
+
+        // Artwork: the font a cover is lettered with, pinned by its hash like the font of the film cards, and where the files go.
+        'artwork' => [
+            'font' => ['path' => 'public/assets/admin/font/Roboto-Bold.ttf', 'sha256' => 'ec685a46105296fe46c8744da4a11cf8118ba6c11271941766f7a546df6aa7c7', 'family' => 'Roboto Bold'],
+            'disk' => env('VIDEO_SOCIAL_ARTWORK_DISK', 'video_artifacts'),
+            'jpeg_quality' => 92,
+        ],
+
+        // How long a request to a platform may take, and how long a worker holds a posting before another may take it over.
+        'http_timeout_seconds' => (int) env('VIDEO_SOCIAL_HTTP_TIMEOUT_SECONDS', 120),
+        'upload_timeout_seconds' => (int) env('VIDEO_SOCIAL_UPLOAD_TIMEOUT_SECONDS', 900),
+        'claim_seconds' => (int) env('VIDEO_SOCIAL_CLAIM_SECONDS', 1800),
+        // After a video is sent: how often and how long a worker asks the platform whether it is processed, and after how long a later job asks again.
+        // With the queue on, a posting the platform still processes or holds a time for is looked up by one job after another —
+        // looked up only, never sent again — until it settles or its window ends; then the posting says a person must look.
+        'poll' => [
+            'tries' => (int) env('VIDEO_SOCIAL_POLL_TRIES', 6),
+            'seconds' => (int) env('VIDEO_SOCIAL_POLL_SECONDS', 10),
+            'requeue_seconds' => (int) env('VIDEO_SOCIAL_POLL_REQUEUE_SECONDS', 120),
+            // How long a posting is followed: from the upload while the platform processes it, from its time when it is scheduled.
+            'follow_hours' => (int) env('VIDEO_SOCIAL_FOLLOW_HOURS', 6),
+            // How long after its time a scheduled posting is first looked up.
+            'after_schedule_seconds' => (int) env('VIDEO_SOCIAL_FOLLOW_AFTER_SCHEDULE_SECONDS', 300),
+            // The longest a job of the chain waits; a posting scheduled further ahead is woken on the way and waits again without asking the platform.
+            'max_delay_seconds' => (int) env('VIDEO_SOCIAL_FOLLOW_MAX_DELAY_SECONDS', 21600),
+        ],
+        'history_per_page' => 20,
+    ],
+
     'moto' => [
         'brief' => [
             'platform' => null,
@@ -2621,6 +2714,46 @@ return [
                             ],
                             'outputs' => [
                                 'film_plan' => ['namespace' => 'moto', 'schema' => 'MotoFilmPlan', 'version' => '1.1.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Moto Phase 11 plan (format moto-film-plan-v1): the film PHP compiles from the phase-11 policy (input slot film_policy, MotoFilmPolicy 1.0.0), the approved Phase 10 clips and the cards of the script the shot plan pins, on one frame timeline FFmpeg cuts exactly. No model writes it.'],
+                            ],
+                        ],
+                        // Phase 12 — Social Publishing. Declared for the workflow, not for a release: a project of any release with an approved film resolves them, and no phase of an earlier step is touched.
+                        'spec.social_package' => [
+                            'phase' => 'phase-12',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['social_plan'],
+                            ],
+                            'outputs' => [
+                                'social_plan' => ['namespace' => 'social', 'schema' => 'SocialPublishingPlan', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 12 Output (format social-publishing-plan-v1): for one package — one channel, one format, one language — the strategy, the hooks, the copy, the claims with the source each relies on, the artwork proposals by the id of an asset or a frame of the input, and what the sources do not give. A model writes it from the sources of the approved film and the profile of the channel; code checks the shape and the ids, a person edits and approves.'],
+                            ],
+                        ],
+                        'spec.social_review' => [
+                            'phase' => 'phase-12-review',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['social_review'],
+                            ],
+                            'outputs' => [
+                                'social_review' => ['namespace' => 'social', 'schema' => 'SocialPublishingReview', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 12 review (format social-publishing-review-v1): the findings of a model that read one package against the sources of its film and the profile of its channel — where, how severe, against which source, and what to change. It changes nothing and approves nothing; it runs only when a person asks.'],
+                            ],
+                        ],
+                        'spec.social_publish' => [
+                            'phase' => 'phase-12-platforms',
+                            'instructions' => [],
+                            'executor' => 'none',
+                            'model_profile' => null,
+                            'contract_version' => '1',
+                            'stages' => [
+                                'draft' => ['social_package'],
+                            ],
+                            'outputs' => [
+                                'social_package' => ['namespace' => 'social', 'schema' => 'SocialPackage', 'version' => '1.0.0', 'pointer' => '', 'mode' => 'whole', 'required' => true, 'source' => 'Phase 12 package (format social-package-v1): what is approved, exported and posted for one channel, one format and one language — the film it is about by its hash, the final text as it will read, the artwork, the target and the disclosure choices, under the platform policy of phase-12-platforms (input slot platform_policy, SocialPlatformPolicy 1.0.0). Code assembles it from what a person edited; no model writes it.'],
                             ],
                         ],
                         'spec.reference' => [

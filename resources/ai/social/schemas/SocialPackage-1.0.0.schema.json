@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://superyacht.local/schemas/SocialPackage",
+  "title": "SocialPackage 1.0.0 (social-package-v1)",
+  "description": "What is approved, exported and posted for one channel, one format and one language. Code assembles it from what a person edited; no model writes it. Its hash is the package hash: the film, the final text, the cover, the target, the format, the language, the disclosure choices and the metadata a posting carries. No time, no status, no number of a platform and no secret is part of it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "schema", "project_id", "target", "source", "policy", "content", "rendered", "disclosure", "artwork", "metadata"],
+  "properties": {
+    "format": { "const": "social-package-v1" },
+    "schema": { "const": "SocialPackage@1.0.0" },
+    "project_id": { "$ref": "#/$defs/id" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["channel_id", "platform", "format", "language", "external_id", "channel_hash"],
+      "properties": {
+        "channel_id": { "$ref": "#/$defs/id" },
+        "platform": { "type": "string", "minLength": 1, "maxLength": 20 },
+        "format": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "language": { "type": "string", "minLength": 2, "maxLength": 10 },
+        "external_id": { "type": ["string", "null"], "minLength": 1, "maxLength": 191, "description": "The id the platform knows the page or channel by, as the channel profile held it; null for a profile that names none." },
+        "channel_hash": { "$ref": "#/$defs/hash", "description": "The hash of the channel profile the package was written for." }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hash", "final_id", "artifact_sha256", "decision_id"],
+      "properties": {
+        "hash": { "$ref": "#/$defs/hash", "description": "The source hash: the film, the decision that approved it and every source pinned with it." },
+        "final_id": { "$ref": "#/$defs/id" },
+        "artifact_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "decision_id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["phase_id", "phase_revision", "policy_hash"],
+      "properties": {
+        "phase_id": { "$ref": "#/$defs/id" },
+        "phase_revision": { "type": "integer", "minimum": 1 },
+        "policy_hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["hook_id", "title", "opening", "body", "cta", "link", "hashtags", "keywords", "disclosure_text"],
+      "properties": {
+        "hook_id": { "type": ["string", "null"], "pattern": "^H[1-9]$" },
+        "title": { "$ref": "#/$defs/nullableText" },
+        "opening": { "$ref": "#/$defs/nullableText" },
+        "body": { "$ref": "#/$defs/nullableText" },
+        "cta": { "$ref": "#/$defs/nullableText" },
+        "link": { "type": ["string", "null"], "minLength": 1, "maxLength": 500, "pattern": "^https?://\\S+$" },
+        "hashtags": { "type": "array", "uniqueItems": true, "items": { "type": "string", "pattern": "^[^\\s#]{1,100}$" } },
+        "keywords": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[^<>,]+$" } },
+        "disclosure_text": { "$ref": "#/$defs/nullableText", "description": "The sentence that discloses synthetic content inside the caption or description; null when the package carries none." }
+      }
+    },
+    "rendered": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "text", "tags"],
+      "description": "The text exactly as it is posted: the opening, the body, the call to action with its link, the disclosure sentence and the hashtags, in that order, each on a paragraph of its own.",
+      "properties": {
+        "title": { "$ref": "#/$defs/nullableText" },
+        "text": { "type": "string", "maxLength": 20000 },
+        "tags": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 100 } }
+      }
+    },
+    "disclosure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["synthetic_media", "in_text"],
+      "properties": {
+        "synthetic_media": { "type": "boolean", "description": "Whether the platform's own declaration of altered or synthetic content is made for this posting." },
+        "in_text": { "type": "boolean", "description": "Whether rendered.text carries content.disclosure_text." }
+      }
+    },
+    "artwork": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["artifact_id", "sha256", "width", "height", "recipe_hash"],
+      "description": "The cover of the package; null for a package with none.",
+      "properties": {
+        "artifact_id": { "$ref": "#/$defs/id" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 },
+        "recipe_hash": { "$ref": "#/$defs/hash", "description": "The hash of how the cover was made: its source, its time or image, its crop, its words, its font and the tool." }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["privacy", "made_for_kids"],
+      "properties": {
+        "privacy": { "type": ["string", "null"], "minLength": 1, "maxLength": 20, "description": "The visibility the posting is made with, one the platform policy lists; null for a format with no such choice." },
+        "made_for_kids": { "type": ["boolean", "null"], "description": "The made-for-kids declaration; null for a format with no such choice." }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "hash": { "type": "string", "minLength": 16, "maxLength": 80 },
+    "nullableText": { "type": ["string", "null"], "minLength": 1, "maxLength": 6000, "pattern": "\\S" }
+  }
+}

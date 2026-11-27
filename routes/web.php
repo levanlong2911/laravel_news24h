@@ -18,6 +18,7 @@ use App\Http\Controllers\NewsWebController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\PromptFrameworkController;
 use App\Http\Controllers\RawArticleController;
+use App\Http\Controllers\SocialPublishingController;
 use App\Http\Controllers\TagController;
 use App\Http\Controllers\VideoArtifactController;
 use App\Http\Controllers\Video\DesignController;
@@ -276,6 +277,39 @@ Route::group(
                 Route::post('/scene-keyframes/{image}/approve', [LegacyVideoController::class, 'approveSceneKeyframe'])->name('video-projects.scene-keyframe-approve');
             });
         });
+
+        // Phase 12 — Social Publishing: goi noi dung cho tung kenh tu phim da duyet. Man hinh va controller rieng;
+        // moi thao tac kiem co bat chuc nang, quyen tren du an va quyen theo vai tro o server (SocialPublishingController::open).
+        Route::group(['prefix' => 'video-projects/{id}/social-publishing'], function () {
+            Route::get('/', [SocialPublishingController::class, 'index'])->name('video-projects.social-publishing');
+            Route::post('/channels', [SocialPublishingController::class, 'storeChannel'])->name('video-projects.social-channel-store');
+            Route::post('/channels/{channel}', [SocialPublishingController::class, 'updateChannel'])->whereUuid('channel')->name('video-projects.social-channel-update');
+            Route::post('/channels/{channel}/archive', [SocialPublishingController::class, 'archiveChannel'])->whereUuid('channel')->name('video-projects.social-channel-archive');
+            Route::get('/connect/{platform}', [SocialPublishingController::class, 'connect'])->whereIn('platform', ['youtube', 'facebook'])->name('video-projects.social-connect');
+            Route::post('/connections/{connection}/disconnect', [SocialPublishingController::class, 'disconnect'])->whereUuid('connection')->name('video-projects.social-disconnect');
+            Route::post('/packages', [SocialPublishingController::class, 'storePackage'])->name('video-projects.social-package-store');
+            Route::post('/packages/{package}/save', [SocialPublishingController::class, 'savePackage'])->whereUuid('package')->name('video-projects.social-package-save');
+            Route::post('/packages/{package}/rebase', [SocialPublishingController::class, 'rebasePackage'])->whereUuid('package')->name('video-projects.social-package-rebase');
+            // Hai nut tinh phi: AI viet noi dung va AI review. Chi chay khi nguoi dung bam.
+            Route::post('/packages/{package}/write', [SocialPublishingController::class, 'writePackage'])->whereUuid('package')->name('video-projects.social-package-write');
+            Route::post('/packages/{package}/review', [SocialPublishingController::class, 'reviewPackage'])->whereUuid('package')->name('video-projects.social-package-review');
+            Route::get('/packages/{package}/frame', [SocialPublishingController::class, 'frame'])->whereUuid('package')->name('video-projects.social-frame');
+            Route::post('/packages/{package}/cover', [SocialPublishingController::class, 'makeCover'])->whereUuid('package')->name('video-projects.social-cover-make');
+            Route::post('/packages/{package}/cover/select', [SocialPublishingController::class, 'selectCover'])->whereUuid('package')->name('video-projects.social-cover-select');
+            Route::get('/covers/{artifact}', [SocialPublishingController::class, 'cover'])->whereUuid('artifact')->name('video-projects.social-cover');
+            Route::post('/packages/{package}/approve', [SocialPublishingController::class, 'approve'])->whereUuid('package')->name('video-projects.social-package-approve');
+            Route::post('/packages/{package}/revoke', [SocialPublishingController::class, 'revoke'])->whereUuid('package')->name('video-projects.social-package-revoke');
+            Route::get('/packages/{package}/export', [SocialPublishingController::class, 'export'])->whereUuid('package')->name('video-projects.social-package-export');
+            Route::post('/packages/{package}/manual', [SocialPublishingController::class, 'reportManual'])->whereUuid('package')->name('video-projects.social-manual');
+            Route::post('/packages/{package}/publish', [SocialPublishingController::class, 'publish'])->whereUuid('package')->name('video-projects.social-publish');
+            Route::post('/publications/{publication}/follow', [SocialPublishingController::class, 'followPublication'])->whereUuid('publication')->name('video-projects.social-publication-follow');
+            Route::post('/publications/{publication}/cancel', [SocialPublishingController::class, 'cancelPublication'])->whereUuid('publication')->name('video-projects.social-publication-cancel');
+            Route::post('/publications/{publication}/resolve', [SocialPublishingController::class, 'resolvePublication'])->whereUuid('publication')->name('video-projects.social-publication-resolve');
+            Route::post('/publications/{publication}/reschedule', [SocialPublishingController::class, 'reschedulePublication'])->whereUuid('publication')->name('video-projects.social-publication-reschedule');
+            Route::post('/publications/{publication}/metrics', [SocialPublishingController::class, 'syncMetrics'])->whereUuid('publication')->name('video-projects.social-publication-metrics');
+        });
+        // Noi nen tang tra nguoi dung ve sau khi cap quyen. Dia chi co dinh vi ung dung OAuth doi dung tung ky tu; du an quay ve nam trong phien.
+        Route::get('/video-social/oauth/{platform}/callback', [SocialPublishingController::class, 'oauthCallback'])->whereIn('platform', ['youtube', 'facebook'])->name('video-social.oauth-callback');
 
         Route::get('/video-artifacts/{artifact}', [VideoArtifactController::class, 'show'])->name('video-artifacts.show');
 

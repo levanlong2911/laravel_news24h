@@ -11,6 +11,7 @@ use App\Services\Video\KeyframePromptWriterService;
 use App\Services\Video\LocationWriterService;
 use App\Services\Video\ReferenceWriterService;
 use App\Services\Video\SceneWriterService;
+use App\Services\Video\Social\SocialContentService;
 use App\Services\Video\ShotWriterService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\YachtDesignService;
@@ -92,5 +93,11 @@ final class CanonicalConceptServiceProvider extends ServiceProvider
         $this->app->when(YachtDesignService::class)
             ->needs(LlmClient::class)
             ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.superyacht.design_stream'));
+
+        // Phase 12: the model that writes and reviews a social package. The client is made with the service — opening
+        // the screen builds it — and is called only when a person asks for a paid run.
+        $this->app->when(SocialContentService::class)
+            ->needs(LlmClient::class)
+            ->give(static fn (Application $app): ClaudeStreamClient => $stream($app, 'video.social.stream'));
     }
 }

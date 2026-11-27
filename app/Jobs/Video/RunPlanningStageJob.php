@@ -13,6 +13,7 @@ use App\Services\Video\ReferenceWriterService;
 use App\Services\Video\SceneWriterService;
 use App\Services\Video\ScriptWriterService;
 use App\Services\Video\ShotWriterService;
+use App\Services\Video\Social\SocialContentService;
 use App\Services\Video\YachtDesignService;
 use App\Services\VideoProjectService;
 use Illuminate\Bus\Queueable;
@@ -41,6 +42,9 @@ class RunPlanningStageJob implements ShouldQueue
         'references' => ReferenceWriterService::class,
         'keyframe_prompts' => KeyframePromptWriterService::class,
         'clip_prompts' => ClipPromptWriterService::class,
+        // Phase 12: one service runs both, told apart by the stage of the run.
+        SocialContentService::WRITE_STEP => SocialContentService::class,
+        SocialContentService::REVIEW_STEP => SocialContentService::class,
     ];
 
     public int $tries = 1;

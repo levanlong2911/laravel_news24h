@@ -34,6 +34,8 @@ enum PlanningStageName: string
     case FILM_PLAN = 'film_plan';
     case FILM_EDIT_PLAN = 'film_edit_plan';
     case FILM_QC_REPORT = 'film_qc_report';
+    case SOCIAL_PACKAGE = 'social_package';
+    case SOCIAL_REVIEW = 'social_review';
     case KEYFRAME_PROMPT = 'keyframe_prompt';
     case CLIP_PROMPT = 'clip_prompt';
 
@@ -72,6 +74,8 @@ enum PlanningStageName: string
             self::FILM_PLAN => null,
             self::FILM_EDIT_PLAN => null,
             self::FILM_QC_REPORT => null,
+            self::SOCIAL_PACKAGE => null,
+            self::SOCIAL_REVIEW => null,
             self::KEYFRAME_PROMPT => null,
             self::CLIP_PROMPT => null,
         };
