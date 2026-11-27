@@ -9,6 +9,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Services\VideoProjectService;
 use App\Video\DesignDna\DnaCheck;
@@ -21,7 +22,6 @@ use App\Video\Moto\MotoDnaCheck;
 use App\Video\Moto\MotoPipelineRelease;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Spec\ResolvedPhase;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use RuntimeException;
@@ -51,6 +51,8 @@ final class DesignDnaService implements QueuedStageService
         private readonly VideoProjectService $videoProjects,
         private readonly LlmClient $writer,
         private readonly DesignApprovalLock $approval,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly PhaseResolver $resolver,
     ) {}
 
     /**
@@ -62,7 +64,7 @@ final class DesignDnaService implements QueuedStageService
     {
         $held = null;
 
-        return (new StageQueue($this->stageStore))->submit(
+        return (new StageQueue($this->stageStore, $this->stages))->submit(
             'dna',
             $projectId,
             PlanningStageName::DESIGN_DNA,
@@ -111,7 +113,7 @@ final class DesignDnaService implements QueuedStageService
         $history = is_array($stage->input_json) ? ($stage->input_json['concept_history_stage_ids'] ?? null) : null;
         $queued = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null)['manifest'] ?? null;
 
-        return (new StageQueue($this->stageStore))->execute(
+        return (new StageQueue($this->stageStore, $this->stages))->execute(
             $stageId,
             $token,
             function () use ($stage, $history, $queued): array {
@@ -131,7 +133,7 @@ final class DesignDnaService implements QueuedStageService
     /** @return \Closure(VideoPlanningStage, string, array<string, mixed>, ?\Closure(\Throwable): ?array): array{0: ?VideoPlanningStage, 1: string} */
     private function perform(): \Closure
     {
-        return (new StageQueue($this->stageStore))->singleCall($this->writer, PlanningStageName::DESIGN_DNA, fn (array $run, string $raw): array => $this->output($run, $raw), 'tạo DNA', 'design dna');
+        return (new StageQueue($this->stageStore, $this->stages))->singleCall($this->writer, PlanningStageName::DESIGN_DNA, fn (array $run, string $raw): array => $this->output($run, $raw), 'tạo DNA', 'design dna');
     }
 
     private function project(string $projectId): VideoProject
@@ -205,16 +207,15 @@ final class DesignDnaService implements QueuedStageService
      */
     private function contract(VideoProject $project, ?array $queued = null): ResolvedPhase
     {
-        $resolver = PhaseResolver::fromConfig((array) config('video.superyacht'));
         $pinned = $project->metadata_json[self::CONTRACT_KEY]['manifest'] ?? null;
         $manifest = $queued ?? (is_array($pinned) ? $pinned : null);
 
         if (! is_array($manifest)) {
-            return $resolver->forProject($project, self::ACTION);
+            return $this->resolver->forProject($project, self::ACTION);
         }
 
         try {
-            return $resolver->fromManifest($manifest);
+            return $this->resolver->fromManifest($manifest);
         } catch (RuntimeException $e) {
             throw new RuntimeException('Hợp đồng Phase 2 '.($queued !== null ? 'của lượt đã xếp hàng' : 'đã ghim của dự án').' không còn dựng lại được: '.$e->getMessage().' — không tự chuyển sang revision khác, không gọi model.', 0, $e);
         }
@@ -253,7 +254,7 @@ final class DesignDnaService implements QueuedStageService
             return [null, 'Lượt DNA nguồn không lưu manifest.'];
         }
 
-        [$bundleHash, $problem] = self::replay($manifest);
+        [$bundleHash, $problem] = $this->replay($manifest);
 
         return $problem !== null
             ? [null, 'Manifest của lượt DNA nguồn không còn dựng lại được: '.$problem]
@@ -264,10 +265,10 @@ final class DesignDnaService implements QueuedStageService
      * @param  array<string, mixed>  $manifest  the manifest of a Phase 2 run
      * @return array{0: ?string, 1: ?string} the bundle hash the manifest replays to, or why it no longer replays to the rows it names
      */
-    public static function replay(array $manifest): array
+    public function replay(array $manifest): array
     {
         try {
-            return [PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest)->bundleHash(), null];
+            return [$this->resolver->fromManifest($manifest)->bundleHash(), null];
         } catch (RuntimeException $e) {
             return [null, $e->getMessage()];
         }
@@ -352,7 +353,7 @@ final class DesignDnaService implements QueuedStageService
 
         $shown = $served !== null && $latest !== null && (string) $served->id === (string) $latest->id;
         $parsed = $latest?->status === VideoPlanningStageStatus::SUCCEEDED->value ? JsonAnswer::parse((string) ($latest->output_json['raw_text'] ?? '')) : null;
-        $servedCheck = $served === null ? null : self::checkOf($served, $run, $shown ? $parsed : null);
+        $servedCheck = $served === null ? null : $this->checkOf($served, $run, $shown ? $parsed : null);
         $locked = $this->approval->holds($projectId);
         $canRun = ! $locked && $run !== null && $served === null;
         $canRegenerate = ! $locked && $servedCheck !== null && ! MotoCheckRules::usable($servedCheck);
@@ -369,7 +370,7 @@ final class DesignDnaService implements QueuedStageService
         $current = $succeeded && $matchesInput && $run !== null;
         $check = match (true) {
             $current && $shown => $servedCheck,
-            $current => self::checkOf($latest, $run, $parsed),
+            $current => $this->checkOf($latest, $run, $parsed),
             default => is_array($stored['check'] ?? null) ? $stored['check'] : null,
         };
         [$decoded, $parseError] = $parsed ?? [null, null];
@@ -438,7 +439,7 @@ final class DesignDnaService implements QueuedStageService
         }
 
         $moto = MotoContract::is($workflow);
-        $stage = VideoPlanningStage::query()->select(['id', 'output_json'])->findOrFail($phaseOne['stage_id']);
+        $stage = $this->stages->findStageOutputOrFail($phaseOne['stage_id']);
         $inspiration = PhaseOneEvidence::inspiration(JsonAnswer::object((string) ($stage->output_json['raw_text'] ?? '')));
 
         if (! is_array($inspiration) || array_is_list($inspiration)) {
@@ -482,7 +483,7 @@ final class DesignDnaService implements QueuedStageService
         $flags = array_values(array_filter((array) ($phaseOne['source_check']['flags'] ?? []), 'is_string'));
         $brief = $moto ? self::motoBrief($themed ? $project : null) : [];
         [$history, $historyStages] = $moto
-            ? self::conceptHistory($project, ['phase_id' => (string) $prompt->id, 'bundle_hash' => $bundle->bundleHash(), 'inspiration_stage_id' => (string) $stage->id], $queuedHistory)
+            ? $this->conceptHistory($project, ['phase_id' => (string) $prompt->id, 'bundle_hash' => $bundle->bundleHash(), 'inspiration_stage_id' => (string) $stage->id], $queuedHistory)
             : [[], []];
         $payload = (string) json_encode(
             $moto
@@ -525,7 +526,7 @@ final class DesignDnaService implements QueuedStageService
      * @param  ?array{0: mixed, 1: ?string}  $parsed  the answer of the stage as JsonAnswer::parse() already read it in this request
      * @return array<string, mixed> the check of the contract the stage pinned; the answer's own format never chooses it
      */
-    private static function checkOf(VideoPlanningStage $stage, array $run, ?array $parsed = null): array
+    private function checkOf(VideoPlanningStage $stage, array $run, ?array $parsed = null): array
     {
         $raw = (string) (is_array($stage->output_json) ? ($stage->output_json['raw_text'] ?? '') : '');
         $input = is_array($stage->input_json) ? $stage->input_json : [];
@@ -536,7 +537,7 @@ final class DesignDnaService implements QueuedStageService
             return DnaCheck::evaluate(JsonAnswer::objectOf($parsed), $run['inspiration'], $run['flags'], null, DnaCheck::FORMAT);
         }
 
-        return self::checkV2($parsed, $run, PlanningStageStore::metadataOf($input)['manifest'] ?? null, $execution);
+        return $this->checkV2($parsed, $run, PlanningStageStore::metadataOf($input)['manifest'] ?? null, $execution);
     }
 
     /**
@@ -548,7 +549,7 @@ final class DesignDnaService implements QueuedStageService
      * @param  string  $execution  the execution the run pinned; a moto run is checked as moto-dna-v1
      * @return array<string, mixed>
      */
-    private static function checkV2(array $parsed, array $run, mixed $manifest, string $execution): array
+    private function checkV2(array $parsed, array $run, mixed $manifest, string $execution): array
     {
         $moto = $execution === MotoContract::DNA_EXECUTION;
         $schemas = [];
@@ -559,7 +560,7 @@ final class DesignDnaService implements QueuedStageService
             [$decoded] = $parsed;
             $schemas = is_array($manifest) && $manifest == $run['manifest']
                 ? $run['schemas']
-                : PhaseResolver::fromConfig((array) config('video.superyacht'))
+                : $this->resolver
                     ->fromManifest(is_array($manifest) ? $manifest : throw new RuntimeException('lượt này không lưu manifest hợp đồng'))
                     ->outputSchemas();
             $errors = is_object($decoded) ? ($moto ? MotoContract::structureErrors($decoded, $schemas) : PhaseOneEvidence::schemaErrors($decoded, $schemas)) : ['phản hồi không phải một object JSON'];
@@ -601,16 +602,10 @@ final class DesignDnaService implements QueuedStageService
      * @param  ?list<string>  $queued  the history stages a queued run was sent with; they win over every other source
      * @return array{0: list<array{id: string, theme: string, silhouette: string, features: list<string>, motifs: list<string>}>, 1: list<string>} the passed moto concepts of other projects with the DNA stages they come from: the snapshot a queued run or a passed run of this project and contract was sent with, in its stored order, or, while there is none, the newest concept of every other project passed before now, newest first, up to the configured number. Those are read HISTORY_BATCH runs at a time, newest finished first and by id among runs finished together, with only the columns the history is built from; a project already in the history is left out of the next read, so many runs of one project never hide the others
      */
-    private static function conceptHistory(VideoProject $project, array $contract, ?array $queued = null): array
+    private function conceptHistory(VideoProject $project, array $contract, ?array $queued = null): array
     {
-        $passed = static fn (): Builder => VideoPlanningStage::query()->passedDna()->where('input_json->execution', MotoContract::DNA_EXECUTION);
-        $pinned = $queued ?? ($passed()
-            ->where('project_id', $project->id)
-            ->where('input_json->phase_id', $contract['phase_id'])
-            ->where('input_json->bundle_hash', $contract['bundle_hash'])
-            ->where('input_json->inspiration_stage_id', $contract['inspiration_stage_id'])
-            ->orderBy('created_at')
-            ->first(['id', 'input_json'])?->input_json['concept_history_stage_ids'] ?? null);
+        $pinned = $queued ?? ($this->stages->findFirstPassedDnaRunFor((string) $project->id, MotoContract::DNA_EXECUTION, $contract['phase_id'], $contract['bundle_hash'], $contract['inspiration_stage_id'])
+            ?->input_json['concept_history_stage_ids'] ?? null);
         $limit = (int) config('video.moto.concept_history_limit');
         $history = [];
         $sources = [];
@@ -634,7 +629,7 @@ final class DesignDnaService implements QueuedStageService
         };
 
         if (is_array($pinned)) {
-            $stages = VideoPlanningStage::query()->whereIn('id', $pinned)->get(['id', 'project_id', 'output_json'])
+            $stages = $this->stages->findStagesByIdsWithColumns($pinned, ['id', 'project_id', 'output_json'])
                 ->sortBy(static fn (VideoPlanningStage $stage): int => (int) array_search((string) $stage->id, $pinned, true));
 
             foreach ($stages as $stage) {
@@ -649,24 +644,7 @@ final class DesignDnaService implements QueuedStageService
         $after = null;
 
         do {
-            $batch = $passed()
-                ->forceIndex(self::HISTORY_INDEX)
-                ->where('project_id', '!=', $project->id)
-                ->when($history !== [], static fn (Builder $query) => $query->whereNotIn('project_id', array_keys($history)))
-                ->when($after !== null, static fn (Builder $query) => $query->where(static function (Builder $older) use ($after): void {
-                    [$finishedAt, $id] = $after;
-
-                    if ($finishedAt === null) {
-                        $older->whereNull('finished_at')->where('id', '<', $id);
-                    } else {
-                        $older->where('finished_at', '<', $finishedAt)->orWhereNull('finished_at')
-                            ->orWhere(static fn (Builder $same) => $same->where('finished_at', $finishedAt)->where('id', '<', $id));
-                    }
-                }))
-                ->orderByDesc('finished_at')
-                ->orderByDesc('id')
-                ->limit(self::HISTORY_BATCH)
-                ->get(['id', 'project_id', 'finished_at'])
+            $batch = $this->stages->findPassedDnaBatch(MotoContract::DNA_EXECUTION, self::HISTORY_INDEX, (string) $project->id, array_keys($history), $after, self::HISTORY_BATCH)
                 ->values();
             $outputs = [];
 
@@ -681,7 +659,7 @@ final class DesignDnaService implements QueuedStageService
                         ->unique('project_id')
                         ->pluck('id');
 
-                    foreach (VideoPlanningStage::query()->whereIn('id', $next)->get(['id', 'output_json']) as $row) {
+                    foreach ($this->stages->findStagesByIdsWithColumns($next, ['id', 'output_json']) as $row) {
                         $outputs[(string) $row->id] = $row->output_json;
                     }
                 }
@@ -701,7 +679,7 @@ final class DesignDnaService implements QueuedStageService
     /** @param array{inspiration: array<mixed>, flags: list<string>, brief: array<string, mixed>, history: list<array<string, mixed>>} $run */
     private function replaceable(VideoPlanningStage $served, array $run): bool
     {
-        return ! MotoCheckRules::usable(self::checkOf($served, $run));
+        return ! MotoCheckRules::usable($this->checkOf($served, $run));
     }
 
     /**
@@ -730,7 +708,7 @@ final class DesignDnaService implements QueuedStageService
             'flags' => $run['flags'],
             'raw_text' => $raw,
             'json_parse_error' => $parsed[1],
-            'check' => self::checkV2($parsed, $run, $run['manifest'], (string) $run['input']['execution']),
+            'check' => $this->checkV2($parsed, $run, $run['manifest'], (string) $run['input']['execution']),
         ];
     }
 
