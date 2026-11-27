@@ -7,6 +7,8 @@ namespace App\Services\Video;
 use App\Enums\PlanningStageName;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoRenderScene;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderSceneRepositoryInterface;
 use App\Video\Moto\MotoShotPlanner;
 use RuntimeException;
 
@@ -14,6 +16,11 @@ final class ShotRenderPlanService
 {
     /** @var string the key of state_json that ties a render row to the shot plan and the shot it stands for */
     public const SOURCE_KEY = 'shot_source';
+
+    public function __construct(
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoRenderSceneRepositoryInterface $scenes,
+    ) {}
 
     /**
      * @param  array{stage_id: string, plan: array<string, mixed>, token: array<string, mixed>}  $approved  what ShotSourceService::approvedSource() returned; the caller holds the row lock of the project in a transaction
@@ -79,18 +86,11 @@ final class ShotRenderPlanService
             return [];
         }
 
-        return VideoRenderScene::query()
-            ->where('project_id', $projectId)
-            ->where('revision', (int) $stage->planning_revision)
-            ->where('state_json->'.self::SOURCE_KEY.'->stage_id', $stageId)
-            ->orderBy('scene_index')
-            ->get()
-            ->keyBy('scene_code')
-            ->all();
+        return $this->scenes->findForShotPlan($projectId, (int) $stage->planning_revision, $stageId);
     }
 
     private function stage(string $projectId, string $stageId): ?VideoPlanningStage
     {
-        return VideoPlanningStage::query()->withoutSnapshot()->whereKey($stageId)->where('project_id', $projectId)->where('stage', PlanningStageName::SHOTS->value)->first();
+        return $this->stages->findStageOfKind($projectId, $stageId, PlanningStageName::SHOTS);
     }
 }
