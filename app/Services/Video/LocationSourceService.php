@@ -6,12 +6,16 @@ namespace App\Services\Video;
 
 use App\Enums\DesignImageStatus;
 use App\Enums\PlanningStageName;
-use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Llm\JsonAnswer;
 use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Locations\LocationWorkflow;
@@ -44,10 +48,19 @@ final class LocationSourceService
 
     public const TOKEN_VERSION = 'locations-source-token-v6';
 
+    public function __construct(
+        private readonly ScriptEvaluation $evaluation,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
+        private readonly VideoDesignImageRepositoryInterface $images,
+    ) {}
+
     /** @return array{workflow: string, action: string, adapter: LocationWorkflow, category_id: string, category_slug: string} */
     public function workflowFor(string $projectId): array
     {
-        $project = VideoProject::query()->with('article.category')->find($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
+        $project = $this->projects->findProjectWithCategory($projectId) ?? throw new RuntimeException('Không tìm thấy dự án.');
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — Phase 5 không áp dụng.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
         $entry = $workflow === '' ? null : (config('video.locations.workflows')[$workflow] ?? null);
@@ -72,7 +85,7 @@ final class LocationSourceService
     /** @return array{version: int, text: ?array<string, mixed>, images: array<string, array<string, mixed>>, set: ?array<string, mixed>, standards: array<string, array<string, mixed>>} */
     public function selection(string $projectId): array
     {
-        return $this->selectionOf(VideoProject::query()->find($projectId) ?? new VideoProject);
+        return $this->selectionOf($this->projects->findProject($projectId) ?? new VideoProject);
     }
 
     /**
@@ -105,13 +118,7 @@ final class LocationSourceService
 
     public function locationStage(string $projectId, string $stageId): ?VideoPlanningStage
     {
-        return VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::LOCATIONS->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereNull('input_json->orphan_of_stage_id')
-            ->first();
+        return $this->stages->findSucceededSourceStage($projectId, $stageId, PlanningStageName::LOCATIONS);
     }
 
     /** @return array{0: array<string, mixed>, 1: ?string} a Phase 5 stage re-evaluated from its raw answer and pinned contract — under the format its run pinned, whenever the workflow still reads it — a stage of a format it no longer reads as it was checked when it ran, or why it cannot be trusted */
@@ -273,8 +280,7 @@ final class LocationSourceService
         $selection = $this->selection($projectId);
         $text = $selection['text'] ?? throw new RuntimeException('Chưa có bộ bối cảnh nào đang dùng — bấm Render Plate ở một bộ đạt kiểm để dùng bộ đó.');
         $stage = $this->locationStage($projectId, (string) ($text['stage_id'] ?? '')) ?? throw new RuntimeException('Bộ bối cảnh đang dùng không còn hoặc không thuộc dự án.');
-        $decision = VideoReviewDecision::query()->whereKey($text['approval_id'] ?? null)->where('project_id', $projectId)
-            ->where('entity_type', self::TEXT_ENTITY)->where('entity_id', $stage->id)->where('decision', 'approved')->first();
+        $decision = $this->decisions->findApprovalFor($projectId, $text['approval_id'] ?? null, self::TEXT_ENTITY, $stage->id);
 
         if ($decision === null) {
             throw new RuntimeException('Quyết định dùng bộ bối cảnh này không hợp lệ.');
@@ -1000,7 +1006,7 @@ final class LocationSourceService
     {
         $ids = array_values(array_unique(array_filter($ids, static fn (mixed $id): bool => is_string($id) && $id !== '')));
 
-        return $ids === [] ? new Collection : VideoArtifact::query()->whereIn('id', $ids)->where('project_id', $projectId)->get()->keyBy('id');
+        return $ids === [] ? new Collection : $this->artifacts->findOwnedArtifactsByIds($projectId, $ids)->keyBy('id');
     }
 
     /**
@@ -1011,8 +1017,7 @@ final class LocationSourceService
     {
         $ids = array_values(array_unique(array_filter($ids, static fn (mixed $id): bool => is_string($id) && $id !== '')));
 
-        return $ids === [] ? new Collection : VideoDesignImage::query()->whereIn('id', $ids)->where('project_id', $projectId)
-            ->get(['id', 'project_id', 'image_type', 'status', 'environment_key', 'prompt_spec_json'])->keyBy('id');
+        return $ids === [] ? new Collection : $this->images->findPlateImagesByIds($projectId, $ids)->keyBy('id');
     }
 
     /**
@@ -1089,7 +1094,7 @@ final class LocationSourceService
         }
 
         try {
-            $evaluation = ScriptEvaluation::of((string) $stage->raw_response, $meta['manifest'], $context, $meta['source'], $adapter);
+            $evaluation = $this->evaluation->of((string) $stage->raw_response, $meta['manifest'], $context, $meta['source'], $adapter);
         } catch (RuntimeException $e) {
             return [[], 'Không kiểm lại được bản này theo hợp đồng của nó: '.$e->getMessage()];
         }

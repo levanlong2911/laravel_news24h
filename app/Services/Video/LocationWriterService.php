@@ -11,11 +11,13 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
 use App\Video\Locations\LocationReferencePrompt;
 use App\Video\Media\MediaModelRegistry;
 use App\Video\Moto\MotoLocationImagePlan;
+use App\Video\Script\ScriptEvaluation;
 use App\Video\Superyacht\Spec\PhaseResolver;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -30,6 +32,9 @@ final class LocationWriterService implements QueuedStageService
         private readonly LocationSourceService $sources,
         private readonly DesignImageStore $images,
         private readonly LlmClient $llm,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly PhaseResolver $resolver,
+        private readonly ScriptEvaluation $evaluation,
     ) {}
 
     /**
@@ -39,7 +44,7 @@ final class LocationWriterService implements QueuedStageService
      */
     public function run(string $projectId, bool $regenerate, string $operationId, ?string $effort = null, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->submit(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->submit(
             'locations',
             $projectId,
             PlanningStageName::LOCATIONS,
@@ -66,7 +71,7 @@ final class LocationWriterService implements QueuedStageService
         $projectId = (string) $stage->project_id;
         $effort = is_string($stage->input_json['effort'] ?? null) ? $stage->input_json['effort'] : null;
 
-        return (new SpecStageRunner($this->stageStore))->execute(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->execute(
             $stageId,
             $token,
             fn (): array => $this->prepare($projectId, $effort),
@@ -313,7 +318,7 @@ final class LocationWriterService implements QueuedStageService
     {
         $flow = $this->sources->workflowFor($projectId);
         $adapter = $flow['adapter'];
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($projectId, $flow['action']);
+        $bundle = $this->resolver->forProject($projectId, $flow['action']);
 
         if (! $bundle->ready()) {
             throw new RuntimeException("Hợp đồng {$flow['action']} chưa sẵn sàng: ".implode('; ', $bundle->mismatches()).' — chạy video:phase-release cho chủ đề này trước.');
