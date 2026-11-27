@@ -213,9 +213,9 @@ interface VideoDesignImageRepositoryInterface extends RepositoryInterface
     /**
      * @param  string  $projectId
      * @param  string  $imageType
-     * @return ?object {total, changed}: how many images of the project and type there are and when one last changed, read without the model
+     * @return string how many images of the project and type there are, with a hash of the id, status, selected artifact, prompt spec and last change of each, read in one query without the model: it changes whenever one of them is written, also twice within the same second, which a count with the latest updated_at (a timestamp of whole seconds) does not
      */
-    public function countAndLastChangeOfType(string $projectId, string $imageType): ?object;
+    public function changeSignatureOfType(string $projectId, string $imageType): string;
 
     /**
      * @param  string  $projectId

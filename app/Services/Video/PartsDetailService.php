@@ -180,8 +180,7 @@ class PartsDetailService implements QueuedImageService
      */
     private function memo(string $kind, string $projectId, ?array $shots, \Closure $make): array
     {
-        $masters = $this->images->countAndLastChangeOfType($projectId, self::MASTER);
-        $key = implode('|', [$kind, $projectId, md5((string) json_encode($this->projects->findMetadata($projectId))), md5((string) json_encode(config('video.moto'))), $shots === null ? '-' : md5((string) json_encode($shots)), ($masters->total ?? 0).'@'.($masters->changed ?? '-')]);
+        $key = implode('|', [$kind, $projectId, md5((string) json_encode($this->projects->findMetadata($projectId))), md5((string) json_encode(config('video.moto'))), $shots === null ? '-' : md5((string) json_encode($shots)), $this->images->changeSignatureOfType($projectId, self::MASTER)]);
 
         if (! array_key_exists($key, self::$memo)) {
             $value = $make();

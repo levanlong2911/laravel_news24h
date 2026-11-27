@@ -266,9 +266,12 @@ class VideoDesignImageRepository extends BaseRepository implements VideoDesignIm
             ->whereIn('status', $statuses)->orderBy('created_at')->get(['id', 'status', 'prompt_spec_json']);
     }
 
-    public function countAndLastChangeOfType(string $projectId, string $imageType): ?object
+    public function changeSignatureOfType(string $projectId, string $imageType): string
     {
-        return $this->model->newQuery()->where('project_id', $projectId)->where('image_type', $imageType)->selectRaw('count(*) as total, max(updated_at) as changed')->toBase()->first();
+        $rows = $this->model->newQuery()->where('project_id', $projectId)->where('image_type', $imageType)->orderBy('id')
+            ->selectRaw('id, status, selected_artifact_id, md5(prompt_spec_json) as spec, updated_at')->toBase()->get();
+
+        return $rows->count().'@'.md5((string) json_encode($rows->map(static fn (object $row): array => (array) $row)->all()));
     }
 
     public function findOfTypeByStatusesWithArtifacts(string $projectId, string $imageType, array $statuses): Collection
