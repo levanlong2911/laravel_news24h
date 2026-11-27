@@ -5,14 +5,18 @@ declare(strict_types=1);
 namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
-use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
-use App\Models\VideoProject;
-use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Llm\LlmClient;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoKeyframePrompt;
+use App\Video\Script\ScriptEvaluation;
+use App\Video\Superyacht\Spec\PhaseResolver;
 use App\Video\Superyacht\Support\CanonicalJson;
 use RuntimeException;
 
@@ -44,7 +48,7 @@ final class KeyframePromptWriterService extends ShotPromptWriterService
 
     protected const ADAPTER = MotoKeyframePrompt::class;
 
-    protected const TEXT_KEY = 'image_prompt';
+    public const TEXT_KEY = 'image_prompt';
 
     /** @var array<string, array{context: array<string, mixed>, built: array<string, mixed>, frame: array<string, mixed>}> by project and shot, the keyframe context, the cards and the image settings a screen has already read, so the stored runs of the shot are verified from them and not read again */
     private array $given = [];
@@ -62,8 +66,16 @@ final class KeyframePromptWriterService extends ShotPromptWriterService
         PlanningStageStore $stageStore,
         LlmClient $llm,
         private readonly MotoKeyframeSourceService $frames,
+        PromptSelectionReader $selections,
+        VideoProjectRepositoryInterface $projects,
+        VideoPlanningStageRepositoryInterface $stages,
+        VideoReviewDecisionRepositoryInterface $decisions,
+        VideoArtifactRepositoryInterface $artifacts,
+        AiPhaseRepositoryInterface $phases,
+        PhaseResolver $resolver,
+        ScriptEvaluation $evaluation,
     ) {
-        parent::__construct($stageStore, $llm);
+        parent::__construct($stageStore, $llm, $selections, $projects, $stages, $decisions, $artifacts, $phases, $resolver, $evaluation);
     }
 
     /**
@@ -123,7 +135,7 @@ final class KeyframePromptWriterService extends ShotPromptWriterService
     {
         $this->forget($projectId);
 
-        return (new SpecStageRunner($this->stageStore))->submit(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->submit(
             static::STEP,
             $projectId,
             static::STAGE,
@@ -136,56 +148,6 @@ final class KeyframePromptWriterService extends ShotPromptWriterService
             static::TASK,
             $requester,
         );
-    }
-
-    /**
-     * @return array<string, array<string, array{stage_id: string, decision_id: string, text: string, sha256: string, version: string, fingerprint: string, request: array<string, mixed>}>> the edit prompt approved for every candidate of this shot plan, by shot id and the rendered file it edits, with the request it was written for — the faults, what they point at, the note and the reference images kept; one whose run, decision or text no longer matches is left out
-     */
-    public static function editSelected(string $projectId, string $shotStageId): array
-    {
-        $selection = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::EDIT_SELECTION][$shotStageId] ?? []);
-        $entries = [];
-
-        foreach ($selection as $shotId => $byArtifact) {
-            foreach ((array) $byArtifact as $artifactId => $entry) {
-                $entries[] = [(string) $shotId, (string) $artifactId, (array) $entry];
-            }
-        }
-
-        if ($entries === []) {
-            return [];
-        }
-
-        $stages = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)
-            ->where('stage', self::STAGE->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereIn('id', array_filter(array_map(static fn (array $row): ?string => $row[2]['stage_id'] ?? null, $entries)))->get()->keyBy('id');
-        $decisions = VideoReviewDecision::query()->whereIn('id', array_filter(array_map(static fn (array $row): ?string => $row[2]['decision_id'] ?? null, $entries)))
-            ->where('entity_type', self::EDIT_ENTITY_TYPE)->where('decision', 'approved')->get()->keyBy('id');
-        $result = [];
-
-        foreach ($entries as [$shotId, $artifactId, $entry]) {
-            $stage = $stages->get($entry['stage_id'] ?? null);
-            $decision = $decisions->get($entry['decision_id'] ?? null);
-            $text = (string) ($stage?->output_json['derived'][self::TEXT_KEY] ?? '');
-
-            if ($stage === null || $decision === null || (string) $decision->entity_id !== (string) $stage->id || $text === ''
-                || ! hash_equals((string) ($entry['prompt_sha256'] ?? ''), CanonicalJson::hashString($text))
-                || (string) ($stage->input_json['shot_id'] ?? '') !== $shotId || (string) ($stage->input_json['edit_of'] ?? '') !== $artifactId) {
-                continue;
-            }
-
-            $result[$shotId][$artifactId] = [
-                'stage_id' => (string) $stage->id,
-                'decision_id' => (string) $decision->id,
-                'text' => $text,
-                'sha256' => CanonicalJson::hashString($text),
-                'version' => (string) ($stage->output_json['prompt_version'] ?? $stage->instruction_version ?? ''),
-                'fingerprint' => (string) $entry['source_fingerprint'],
-                'request' => array_intersect_key((array) ($stage->input_json['source']['edit'] ?? []), array_flip(['faults', 'targets', 'note', 'references'])),
-            ];
-        }
-
-        return $result;
     }
 
     /** What a screen has already read of the shot is used for the package, and the package is kept for that one reading; an approval and a queued run read every source again. A run written for an edit is prepared again for that same edit. */
@@ -254,9 +216,7 @@ final class KeyframePromptWriterService extends ShotPromptWriterService
     /** @return list<VideoPlanningStage> every run that composes the prompt of the shot in this shot plan, newest first; the runs written for an edit of a candidate are not among them */
     protected function stagesOf(string $projectId, string $shotStageId, string $shotId): array
     {
-        return VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)
-            ->where('stage', static::STAGE->value)->where('input_json->shot_stage_id', $shotStageId)
-            ->where('input_json->shot_id', $shotId)->whereNull('input_json->edit_of')->orderByDesc('planning_revision')->get()->all();
+        return $this->stages->findKeyframeComposeRunsOfShot($projectId, $shotStageId, $shotId);
     }
 
     /** @return array<string, list<VideoPlanningStage>> every edit run of the shot in this shot plan by the rendered file it edits, newest first */

@@ -6,11 +6,12 @@ namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
-use App\Models\AiPhase;
-use App\Models\VideoArtifact;
 use App\Models\VideoPlanningStage;
-use App\Models\VideoProject;
-use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
 use App\Video\Moto\MotoDesignStates;
@@ -54,7 +55,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
     protected const ADAPTER = '';
 
     /** @var string the field of the derived answer that holds the prompt sent word for word */
-    protected const TEXT_KEY = '';
+    public const TEXT_KEY = '';
 
     /** @var array<string, array<string, mixed>> the phase, bundle and system text each project's new runs are written to, kept until forget() */
     private array $pins = [];
@@ -65,6 +66,14 @@ abstract class ShotPromptWriterService implements QueuedStageService
     public function __construct(
         protected readonly PlanningStageStore $stageStore,
         protected readonly LlmClient $llm,
+        protected readonly PromptSelectionReader $selections,
+        protected readonly VideoProjectRepositoryInterface $projects,
+        protected readonly VideoPlanningStageRepositoryInterface $stages,
+        protected readonly VideoReviewDecisionRepositoryInterface $decisions,
+        protected readonly VideoArtifactRepositoryInterface $artifacts,
+        protected readonly AiPhaseRepositoryInterface $phases,
+        protected readonly PhaseResolver $resolver,
+        protected readonly ScriptEvaluation $evaluation,
     ) {}
 
     /**
@@ -157,13 +166,13 @@ abstract class ShotPromptWriterService implements QueuedStageService
      */
     protected function pinsUnder(array $pins, array $contract, object $adapter): array
     {
-        $phase = AiPhase::query()->find((string) $contract['phase_id']);
+        $phase = $this->phases->findPhase((string) $contract['phase_id']);
 
         if ($phase === null || ! hash_equals((string) $phase->content_sha256, (string) $contract['prompt_sha256'])) {
             throw new RuntimeException('Revision '.static::PHASE.' mà lượt này được viết theo không còn hoặc đã đổi nội dung — không xác minh được.');
         }
 
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest((array) $contract['manifest']);
+        $bundle = $this->resolver->fromManifest((array) $contract['manifest']);
 
         return [
             'phase' => $phase,
@@ -187,7 +196,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
     {
         $this->forget($projectId);
 
-        return (new SpecStageRunner($this->stageStore))->submit(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->submit(
             static::STEP,
             $projectId,
             static::STAGE,
@@ -205,7 +214,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
     /** @return array{0: ?VideoPlanningStage, 1: string} what the queued run became when a worker took it */
     public function execute(string $stageId, string $token): array
     {
-        $stage = VideoPlanningStage::query()->withoutSnapshot()->find($stageId);
+        $stage = $this->stages->findStage($stageId);
 
         if ($stage === null) {
             return [null, 'Lượt '.static::LABEL.' không còn — bỏ qua.'];
@@ -214,7 +223,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
         $projectId = (string) $stage->project_id;
         $this->forget($projectId);
 
-        return (new SpecStageRunner($this->stageStore))->execute(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->execute(
             $stageId,
             $token,
             fn (): array => $this->prepared($this->queuedPackage($projectId, $stage)),
@@ -243,9 +252,8 @@ abstract class ShotPromptWriterService implements QueuedStageService
         $this->forget($projectId);
 
         DB::transaction(function () use ($projectId, $stageId, $reviewer, $expectedShot): void {
-            $project = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
-            $stage = VideoPlanningStage::query()->withoutSnapshot()->whereKey($stageId)->where('project_id', $projectId)
-                ->where('stage', static::STAGE->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->first()
+            $project = $this->projects->lockProject($projectId);
+            $stage = $this->stages->findSucceededStageOfKind($projectId, $stageId, static::STAGE)
                 ?? throw new RuntimeException('Lượt viết prompt này không thuộc dự án hoặc chưa chạy xong.');
 
             if ($expectedShot !== null && (string) ($stage->input_json['shot_id'] ?? '') !== $expectedShot) {
@@ -254,7 +262,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
             $meta = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null);
             $adapter = $this->workflowFor($projectId)['adapter'];
-            $evaluation = ScriptEvaluation::of((string) $stage->raw_response, (array) $meta['manifest'], (array) $meta['context'], (array) $meta['source'], $adapter);
+            $evaluation = $this->evaluation->of((string) $stage->raw_response, (array) $meta['manifest'], (array) $meta['context'], (array) $meta['source'], $adapter);
 
             if ($evaluation['content_hash'] === null || ! hash_equals((string) $evaluation['content_hash'], (string) ($stage->output_json['content_hash'] ?? ''))) {
                 throw new RuntimeException('Nội dung lượt viết prompt không khớp hash đã lưu — không duyệt được.');
@@ -281,23 +289,23 @@ abstract class ShotPromptWriterService implements QueuedStageService
 
             $prompt = (string) $evaluation['derived'][static::TEXT_KEY];
             $entityType = $this->entityTypeOf($stage);
-            $decision = VideoReviewDecision::create([
+            $decision = $this->decisions->createDecision([
                 'project_id' => $projectId,
                 'entity_type' => $entityType,
                 'entity_id' => (string) $stage->id,
                 'decision' => 'approved',
-                'revision' => 1 + (int) VideoReviewDecision::query()->where('entity_type', $entityType)->where('entity_id', (string) $stage->id)->max('revision'),
+                'revision' => 1 + $this->decisions->maxRevisionFor($entityType, (string) $stage->id),
                 'reviewer_id' => $reviewer,
                 'metadata_json' => ['shot_id' => $shotId, 'shot_stage_id' => $shotStageId, 'source_fingerprint' => $fingerprint, 'prompt_sha256' => CanonicalJson::hashString($prompt)]
                     + ($modelStatus === 'ok' ? [] : ['approved_with_notes' => ['model_status' => $modelStatus, 'warnings' => array_values((array) ($evaluation['check']['warnings'] ?? []))]]),
             ]);
-            $project->forceFill(['metadata_json' => $this->kept((array) ($project->metadata_json ?? []), $shotStageId, $shotId, $stage, [
+            $this->projects->saveLockedMetadata($project, $this->kept((array) ($project->metadata_json ?? []), $shotStageId, $shotId, $stage, [
                 'stage_id' => (string) $stage->id,
                 'decision_id' => (string) $decision->id,
                 'prompt_sha256' => CanonicalJson::hashString($prompt),
                 'source_fingerprint' => $fingerprint,
                 'approved_at' => now()->toIso8601String(),
-            ])])->save();
+            ]));
         });
     }
 
@@ -322,38 +330,17 @@ abstract class ShotPromptWriterService implements QueuedStageService
     /**
      * @return array<string, array{stage_id: string, decision_id: string, text: string, sha256: string, version: string, fingerprint: string}> the approved prompt of every shot of this shot plan, by shot id; one whose run, decision or text no longer matches is left out, so its shot has none
      */
-    public static function selected(string $projectId, string $shotStageId): array
+    public function selected(string $projectId, string $shotStageId): array
     {
-        $selection = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[static::SELECTION][$shotStageId] ?? []);
-        $stages = $selection === [] ? collect() : VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)
-            ->where('stage', static::STAGE->value)->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->whereIn('id', array_column($selection, 'stage_id'))->get()->keyBy('id');
-        $decisions = $selection === [] ? collect() : VideoReviewDecision::query()->whereIn('id', array_column($selection, 'decision_id'))
-            ->where('entity_type', static::ENTITY_TYPE)->where('decision', 'approved')->get()->keyBy('id');
-        $result = [];
+        return $this->selections->selected($projectId, $shotStageId, static::STAGE);
+    }
 
-        foreach ($selection as $shotId => $entry) {
-            $stage = $stages->get($entry['stage_id'] ?? null);
-            $decision = $decisions->get($entry['decision_id'] ?? null);
-            $text = (string) ($stage?->output_json['derived'][static::TEXT_KEY] ?? '');
-
-            if ($stage === null || $decision === null || (string) $decision->entity_id !== (string) $stage->id || $text === ''
-                || ! hash_equals((string) ($entry['prompt_sha256'] ?? ''), CanonicalJson::hashString($text))
-                || (string) ($stage->input_json['shot_id'] ?? '') !== (string) $shotId) {
-                continue;
-            }
-
-            $result[(string) $shotId] = [
-                'stage_id' => (string) $stage->id,
-                'decision_id' => (string) $decision->id,
-                'text' => $text,
-                'sha256' => CanonicalJson::hashString($text),
-                'version' => (string) ($stage->output_json['prompt_version'] ?? $stage->instruction_version ?? ''),
-                'fingerprint' => (string) $entry['source_fingerprint'],
-            ];
-        }
-
-        return $result;
+    /**
+     * @return ?string the prompt a run wrote, word for word, while the run is a finished run of the project and the decision names it as approved; null when the run is gone, did not finish, wrote nothing or that decision is not an approval of it. Which prompt the shot uses now is not asked, so approving another one never withdraws this one
+     */
+    public function approvedRunText(string $projectId, string $stageId, string $decisionId): ?string
+    {
+        return $this->selections->approvedRunText($projectId, $stageId, $decisionId, static::STAGE);
     }
 
     /**
@@ -435,7 +422,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
      */
     protected function stillHolds(array $selected): bool
     {
-        $stage = VideoPlanningStage::query()->withoutSnapshot()->find((string) $selected['stage_id']);
+        $stage = $this->stages->findStage((string) $selected['stage_id']);
 
         return $stage !== null && $this->sourcesHold((string) $stage->project_id, $stage);
     }
@@ -523,7 +510,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
     private function estimate(array $package): array
     {
         $settings = $package['run']['settings'];
-        $artifacts = VideoArtifact::query()->whereIn('id', array_column($package['sources'], 'artifact_id'))->get(['id', 'width', 'height'])->keyBy('id');
+        $artifacts = $this->artifacts->findArtifactSizesByIds(array_column($package['sources'], 'artifact_id'))->keyBy('id');
         $imageTokens = 0;
 
         foreach ($package['sources'] as $source) {
@@ -555,7 +542,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
      */
     private function images(array $sources, array $settings): array
     {
-        $artifacts = VideoArtifact::query()->whereIn('id', array_column($sources, 'artifact_id'))->get()->keyBy('id');
+        $artifacts = $this->artifacts->findArtifactsByIds(array_column($sources, 'artifact_id'))->keyBy('id');
         $images = [];
         $sent = [];
 
@@ -630,9 +617,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
     /** @return list<VideoPlanningStage> every run of the writer for the shot in this shot plan, newest first */
     protected function stagesOf(string $projectId, string $shotStageId, string $shotId): array
     {
-        return VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)
-            ->where('stage', static::STAGE->value)->where('input_json->shot_stage_id', $shotStageId)
-            ->where('input_json->shot_id', $shotId)->orderByDesc('planning_revision')->get()->all();
+        return $this->stages->findWriterRunsOfShot($projectId, static::STAGE, $shotStageId, $shotId);
     }
 
     /**
@@ -642,7 +627,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
      */
     protected function workflowFor(string $projectId): array
     {
-        $project = VideoProject::query()->with('article.category')->findOrFail($projectId);
+        $project = $this->projects->findProjectWithCategoryOrFail($projectId);
         $category = $project->article?->category ?? throw new RuntimeException('Dự án không gắn bài viết có chủ đề — '.static::PHASE.' không áp dụng.');
         $workflow = (string) (config('video.superyacht.contracts.categories')[$category->slug] ?? '');
         $entry = config(static::WORKFLOWS)[$workflow] ?? null;
@@ -678,7 +663,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
         }
 
         try {
-            $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($projectId, $flow['action']);
+            $bundle = $this->resolver->forProject($projectId, $flow['action']);
         } catch (RuntimeException $e) {
             throw new RuntimeException("Hợp đồng {$flow['action']} chưa sẵn sàng: {$e->getMessage()} — chạy php artisan db:seed --class=AiPhaseSeeder trước.", 0, $e);
         }
@@ -688,7 +673,7 @@ abstract class ShotPromptWriterService implements QueuedStageService
         }
 
         $manifest = $bundle->manifest();
-        $phase = AiPhase::query()->findOrFail($manifest['phase']['id']);
+        $phase = $this->phases->findPhaseOrFail($manifest['phase']['id']);
         $adapter = $flow['adapter'];
 
         if (! str_contains((string) $phase->prompt_content, $adapter->format()) || ! str_contains((string) $phase->prompt_content, "Input format: `{$adapter->inputsVersion()}`")) {
@@ -719,9 +704,9 @@ abstract class ShotPromptWriterService implements QueuedStageService
         }
 
         $script = app(ScriptSourceService::class)->approvedSource($projectId);
-        $scriptStage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($script['stage_id']);
+        $scriptStage = $this->stages->findStageForProjectOrFail($projectId, $script['stage_id']);
         $pin = (array) (PlanningStageStore::metadataOf(is_array($scriptStage->input_json) ? $scriptStage->input_json : null)['source'] ?? []);
-        $design = VideoPlanningStage::query()->where('project_id', $projectId)->find($pin['design_stage_id'] ?? null);
+        $design = $this->stages->findStageForProjectWithSnapshot($projectId, $pin['design_stage_id'] ?? null);
         $raw = (string) $design?->raw_response;
 
         if ($design === null || ! hash_equals((string) ($pin['design_raw_sha256'] ?? ''), hash('sha256', $raw))) {

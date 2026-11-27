@@ -9,6 +9,8 @@ use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Moto\MotoPipelineRelease;
 use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\Storage;
@@ -23,6 +25,11 @@ final class MotoKeyframeFramingService
 
     /** @var string the role of the artifact handed to the video: the window cut from a master, never a render of its own */
     public const DELIVERY_ROLE = 'keyframe_delivery';
+
+    public function __construct(
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
+        private readonly VideoDesignImageRepositoryInterface $images,
+    ) {}
 
     /**
      * @param  string  $filmAspect  the frame of the film, as the approved shot plan pinned it
@@ -274,14 +281,13 @@ final class MotoKeyframeFramingService
     /**
      * @return ?VideoReviewDecision the decision that holds the keyframe of the image now: the newest decision on its rendered file, when that decision approves it; null when the image is not approved or its newest decision revoked it
      */
-    public static function approval(VideoDesignImage $image): ?VideoReviewDecision
+    public function approval(VideoDesignImage $image): ?VideoReviewDecision
     {
         if ($image->status !== DesignImageStatus::APPROVED->value || $image->selected_artifact_id === null) {
             return null;
         }
 
-        $decision = VideoReviewDecision::query()->where('project_id', $image->project_id)->where('entity_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('entity_id', (string) $image->selected_artifact_id)->orderByDesc('revision')->first();
+        $decision = $this->decisions->findLatestForProjectEntity((string) $image->project_id, DesignImageStore::SCENE_KEYFRAME_TYPE, (string) $image->selected_artifact_id);
 
         return $decision !== null && $decision->decision === 'approved' ? $decision : null;
     }
@@ -290,15 +296,14 @@ final class MotoKeyframeFramingService
      * @param  string  $sceneId  the render scene the video is made for
      * @return bool whether the artifact is the delivery image of the keyframe set approved for that scene now: the set its newest approval names, whose master is the file in use of the approved keyframe; a delivery image that was only tried, or of a set since replaced or revoked, is not
      */
-    public static function inUse(VideoArtifact $source, string $sceneId): bool
+    public function inUse(VideoArtifact $source, string $sceneId): bool
     {
         if ($source->role !== self::DELIVERY_ROLE || $source->design_image_id === null) {
             return false;
         }
 
-        $image = VideoDesignImage::query()->whereKey($source->design_image_id)->where('render_scene_id', $sceneId)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)->first();
-        $delivery = $image === null ? null : (self::approval($image)?->metadata_json['delivery'] ?? null);
+        $image = $this->images->findKeyframeOfScene($source->design_image_id, $sceneId);
+        $delivery = $image === null ? null : ($this->approval($image)?->metadata_json['delivery'] ?? null);
 
         return is_array($delivery) && ($delivery['artifact_id'] ?? null) === (string) $source->id && ($delivery['sha256'] ?? null) === (string) $source->sha256
             && ($source->metadata_json['master_artifact_id'] ?? null) === (string) $image->selected_artifact_id;

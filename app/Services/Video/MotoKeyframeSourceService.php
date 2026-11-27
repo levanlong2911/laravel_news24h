@@ -6,12 +6,15 @@ namespace App\Services\Video;
 
 use App\Enums\DesignImageStatus;
 use App\Enums\PlanningStageName;
-use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoArtifact;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
-use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Moto\MotoCharacterPlanner;
 use App\Video\Moto\MotoContract;
 use App\Video\Moto\MotoKeyframePrompt;
@@ -75,6 +78,12 @@ final class MotoKeyframeSourceService
         private readonly LocationSourceService $locations,
         private readonly MotoCharacterReferenceService $characters,
         private readonly MotoKeyframeFramingService $framing,
+        private readonly PromptSelectionReader $prompts,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly VideoDesignImageRepositoryInterface $images,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
     ) {}
 
     /**
@@ -91,7 +100,7 @@ final class MotoKeyframeSourceService
 
         return ModelSheetService::readOnce(function () use ($projectId): array {
             $approved = $this->shots->approvedSource($projectId);
-            $stage = VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->findOrFail($approved['stage_id']);
+            $stage = $this->stages->findStageForProjectOrFail($projectId, $approved['stage_id']);
             $metadata = PlanningStageStore::metadataOf(is_array($stage->input_json) ? $stage->input_json : null);
             $rows = $this->plans->forStage($projectId, (string) $stage->id);
             $shotOf = [];
@@ -102,8 +111,7 @@ final class MotoKeyframeSourceService
 
             $images = [];
             $current = [];
-            $found = $rows === [] ? collect() : VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-                ->whereIn('render_scene_id', array_keys($shotOf))->with('artifacts')->orderByDesc('created_at')->orderByDesc('image_code')->get();
+            $found = $rows === [] ? collect() : $this->images->findKeyframesForRenderScenes($projectId, array_keys($shotOf));
 
             foreach ($found as $image) {
                 $shotId = $shotOf[(string) $image->render_scene_id];
@@ -119,8 +127,8 @@ final class MotoKeyframeSourceService
             $plates = $this->plates($projectId);
             $ids = array_filter([$sheet['source']['artifact_id'] ?? null, ...array_keys($reference['masters']), ...array_column($plates, 'artifact_id')]);
             $stored = array_values((array) ($stage->output_json['derived']['shots'] ?? []));
-            $people = MotoCharacterPlanner::planFor($stored, (array) ($metadata['context']['characters'] ?? []), MotoCharacterPlanner::settingsFor($stored), VideoProject::query()->whereKey($projectId)->value('metadata_json'));
-            $project = VideoProject::query()->findOrFail($projectId);
+            $people = MotoCharacterPlanner::planFor($stored, (array) ($metadata['context']['characters'] ?? []), MotoCharacterPlanner::settingsFor($stored), $this->projects->findMetadata($projectId));
+            $project = $this->projects->findProjectOrFail($projectId);
             $framing = MotoKeyframeFramingService::policy($project, (string) ($metadata['context']['aspect_ratio'] ?? ''));
 
             return [
@@ -137,7 +145,7 @@ final class MotoKeyframeSourceService
                 'people_descriptions' => (array) ($metadata['context']['characters'] ?? []),
                 'people_settings' => MotoCharacterPlanner::settingsFor($stored),
                 'people_shots' => $stored,
-                'identity_masters' => MotoPipelineRelease::cinematic(VideoProject::query()->findOrFail($projectId)),
+                'identity_masters' => MotoPipelineRelease::cinematic($this->projects->findProjectOrFail($projectId)),
                 'project_id' => $projectId,
                 'approved' => $approved,
                 'stage' => $stage,
@@ -152,12 +160,12 @@ final class MotoKeyframeSourceService
                 'rows' => $rows,
                 'images' => $images,
                 'current' => $current,
-                'prompts' => $prompts = KeyframePromptWriterService::selected($projectId, (string) $stage->id),
+                'prompts' => $prompts = $this->prompts->selected($projectId, (string) $stage->id, PlanningStageName::KEYFRAME_PROMPT),
                 'prompt_contracts' => array_map(static fn (VideoPlanningStage $run): array => ['inputs' => $run->input_json['source']['inputs'] ?? null, 'framing' => $run->input_json['source']['framing'] ?? null],
-                    $prompts === [] ? [] : VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->whereIn('id', array_column($prompts, 'stage_id'))->get()->keyBy('id')->all()),
-                'edit_prompts' => KeyframePromptWriterService::editSelected($projectId, (string) $stage->id),
-                'choices' => (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::CHOICES][(string) $stage->id] ?? []),
-                'artifacts' => VideoArtifact::query()->where('project_id', $projectId)->whereIn('id', $ids)->get()->keyBy('id')->all(),
+                    $prompts === [] ? [] : $this->stages->findStagesForProject($projectId, array_column($prompts, 'stage_id'))->keyBy('id')->all()),
+                'edit_prompts' => $this->prompts->editSelected($projectId, (string) $stage->id),
+                'choices' => (array) ($this->projects->findMetadata($projectId)[self::CHOICES][(string) $stage->id] ?? []),
+                'artifacts' => $this->artifacts->findOwnedArtifactsByIds($projectId, $ids)->keyBy('id')->all(),
             ];
         });
     }
@@ -325,7 +333,7 @@ final class MotoKeyframeSourceService
         }
 
         $spec = (array) $image->prompt_spec_json;
-        $decision = ($this->approvals[(string) $image->id] ??= MotoKeyframeFramingService::approval($image) ?? false) ?: null;
+        $decision = ($this->approvals[(string) $image->id] ??= $this->framing->approval($image) ?? false) ?: null;
         $framed = is_array($spec['framing'] ?? null);
         $named = $framed ? ($decision?->metadata_json['delivery'] ?? null) : null;
         $delivery = is_array($named) ? $image->artifacts->first(static fn (VideoArtifact $artifact): bool => (string) $artifact->id === ($named['artifact_id'] ?? null) && (string) $artifact->sha256 === ($named['sha256'] ?? null)) : null;
@@ -361,12 +369,10 @@ final class MotoKeyframeSourceService
             return [];
         }
 
-        $decisions = VideoReviewDecision::query()->where('project_id', $projectId)->whereIn('entity_type', [KeyframePromptWriterService::ENTITY_TYPE, KeyframePromptWriterService::EDIT_ENTITY_TYPE])
-            ->where('decision', 'approved')->whereIn('entity_id', array_keys($ids))->get(['id', 'entity_id'])->groupBy('entity_id');
+        $decisions = $this->decisions->findApprovedIdsGroupedByEntity($projectId, [KeyframePromptWriterService::ENTITY_TYPE, KeyframePromptWriterService::EDIT_ENTITY_TYPE], array_keys($ids));
         $pinned = [];
 
-        foreach (VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', PlanningStageName::KEYFRAME_PROMPT->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)->whereIn('id', array_keys($ids))->get() as $stage) {
+        foreach ($this->stages->findSucceededStagesOfKind($projectId, PlanningStageName::KEYFRAME_PROMPT, array_keys($ids)) as $stage) {
             $pinned[(string) $stage->id] = [
                 'text' => (string) ($stage->output_json['derived']['image_prompt'] ?? ''),
                 'decisions' => array_values(array_map('strval', ($decisions->get((string) $stage->id) ?? collect())->pluck('id')->all())),
@@ -522,7 +528,7 @@ final class MotoKeyframeSourceService
      */
     private function fileProblem(array $context, string $artifactId, string $sha, bool $deep): ?string
     {
-        $artifact = $context['artifacts'][$artifactId] ?? VideoArtifact::query()->where('project_id', $context['project_id'])->find($artifactId);
+        $artifact = $context['artifacts'][$artifactId] ?? $this->artifacts->findOwnedArtifact($context['project_id'], $artifactId);
 
         if ($artifact === null) {
             return 'ảnh không thuộc dự án';
@@ -713,7 +719,7 @@ final class MotoKeyframeSourceService
             return $this->card('continuity', $target, [], [$need], null, "Keyframe của {$target}: ".self::STALE, []);
         }
 
-        $decision = VideoReviewDecision::query()->where('project_id', $context['project_id'])->where('entity_type', DesignImageStore::SCENE_KEYFRAME_TYPE)->where('entity_id', (string) $frame['master']->id)->where('decision', 'approved')->orderByDesc('revision')->value('id');
+        $decision = $this->decisions->findLatestApprovedIdForEntity($context['project_id'], DesignImageStore::SCENE_KEYFRAME_TYPE, (string) $frame['master']->id);
 
         return $this->card('continuity', $target, [], [$need], ['image_id' => (string) $image->id, 'artifact_id' => (string) $artifact->id, 'sha256' => (string) $artifact->sha256, 'code' => (string) $image->image_code, 'decision_id' => $decision === null ? null : (string) $decision], null, []);
     }
@@ -914,7 +920,7 @@ final class MotoKeyframeSourceService
             'image_id' => (string) $sheet['master_image_id'],
             'artifact_id' => (string) $sheet['master_artifact_id'],
             'sha256' => (string) $sheet['master_artifact_sha256'],
-            'code' => (string) VideoDesignImage::query()->whereKey($sheet['master_image_id'])->value('image_code'),
+            'code' => (string) $this->images->findImageCode($sheet['master_image_id']),
         ], 'problem' => null];
     }
 
@@ -929,8 +935,7 @@ final class MotoKeyframeSourceService
         }
 
         $references = array_column($preview['plan']['references'], null, 'id');
-        $images = VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', PartsDetailService::MASTER)
-            ->where('status', DesignImageStatus::APPROVED->value)->whereNotNull('selected_artifact_id')->with('artifact')->orderByDesc('approved_at')->get();
+        $images = $this->images->findApprovedWithSelectedArtifact($projectId, PartsDetailService::MASTER);
         $masters = [];
         $byImage = [];
 
@@ -971,10 +976,10 @@ final class MotoKeyframeSourceService
     {
         $selection = $this->locations->selection($projectId);
         $chosen = $this->locations->handedImages($projectId, $selection);
-        $set = is_string($selection['text']['stage_id'] ?? null) ? VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->find($selection['text']['stage_id']) : null;
+        $set = is_string($selection['text']['stage_id'] ?? null) ? $this->stages->findStageForProject($projectId, $selection['text']['stage_id']) : null;
         $records = array_column((array) ($set?->output_json['derived']['images'] ?? []), null, 'id');
-        $codes = VideoDesignImage::query()->where('project_id', $projectId)->whereIn('id', array_filter(array_column($chosen, 'image_id')))->pluck('image_code', 'id');
-        $artifacts = VideoArtifact::query()->where('project_id', $projectId)->whereIn('id', array_filter(array_column($chosen, 'artifact_id')))->get()->keyBy('id');
+        $codes = $this->images->findImageCodesByIds($projectId, array_filter(array_column($chosen, 'image_id')));
+        $artifacts = $this->artifacts->findOwnedArtifactsByIds($projectId, array_filter(array_column($chosen, 'artifact_id')))->keyBy('id');
         $plates = [];
 
         foreach ($chosen as $background => $image) {
