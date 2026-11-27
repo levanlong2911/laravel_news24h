@@ -9,6 +9,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\AiPhase;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Services\Admin\ClaudeWriterService;
 use App\Video\Llm\LlmClient;
 use App\Video\Moto\MotoReference;
@@ -22,6 +23,9 @@ final class ReferenceWriterService implements QueuedStageService
     public function __construct(
         private readonly PlanningStageStore $stageStore,
         private readonly LlmClient $llm,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly PhaseResolver $resolver,
+        private readonly ScriptEvaluation $evaluation,
     ) {}
 
     /**
@@ -31,7 +35,7 @@ final class ReferenceWriterService implements QueuedStageService
      */
     public function run(string $projectId, string $planId, array $cellIds, bool $regenerate, string $operationId, ?array $requester = null): array
     {
-        return (new SpecStageRunner($this->stageStore))->submit(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->submit(
             'references',
             $projectId,
             PlanningStageName::REFERENCE_REVIEW,
@@ -59,7 +63,7 @@ final class ReferenceWriterService implements QueuedStageService
         $planId = (string) ($stage->input_json['plan_id'] ?? '');
         $cellIds = array_values(array_map(static fn (array $cell): string => (string) $cell['id'], (array) ($stage->input_json['cells'] ?? [])));
 
-        return (new SpecStageRunner($this->stageStore))->execute(
+        return (new SpecStageRunner($this->stageStore, $this->stages, $this->evaluation))->execute(
             $stageId,
             $token,
             fn (): array => $this->prepare($projectId, $planId, $cellIds),
@@ -153,7 +157,7 @@ final class ReferenceWriterService implements QueuedStageService
             throw new RuntimeException("Adapter Phase 8 của workflow {$workflow} không hợp lệ.");
         }
 
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($projectId, (string) $entry['action']);
+        $bundle = $this->resolver->forProject($projectId, (string) $entry['action']);
 
         if (! $bundle->ready()) {
             throw new RuntimeException("Hợp đồng {$entry['action']} chưa sẵn sàng: ".implode('; ', $bundle->mismatches()).' — chạy php artisan db:seed --class=AiPhaseSeeder trước.');

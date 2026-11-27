@@ -9,6 +9,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Video\Concept\Contracts\StructuredOutputLlmClient;
 use App\Video\Concept\Exceptions\AnthropicRefusalException;
 use App\Video\Concept\Exceptions\AnthropicTruncatedOutputException;
@@ -116,6 +117,7 @@ final class ReferencePromptWriter
 
     public function __construct(
         private readonly PlanningStageStore $stages,
+        private readonly VideoPlanningStageRepositoryInterface $stageRows,
         private ?OpenAiTextClient $client = null,
         private ?StructuredOutputLlmClient $planClient = null,
     ) {}
@@ -720,13 +722,7 @@ final class ReferencePromptWriter
     {
         $keys = self::planSourceKeys($source);
 
-        return VideoPlanningStage::query()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::REFERENCE_PROMPT->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->where('input_json->mode', self::PLAN_MODE)
-            ->orderByDesc('planning_revision')
-            ->get()
+        return $this->stageRows->findSucceededReferencePlans($projectId, self::PLAN_MODE)
             ->first(fn (VideoPlanningStage $stage): bool => ($stage->output_json['contract'] ?? null) === self::PLAN_VERSION
                 && array_intersect_key((array) $stage->input_json, $keys) == $keys);
     }

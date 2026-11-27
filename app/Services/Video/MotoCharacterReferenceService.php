@@ -12,6 +12,10 @@ use App\Models\VideoDesignImage;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Media\OpenAiImagePricing;
 use App\Video\ModelSheet\ModelSheetMaster;
 use App\Video\Moto\MotoCharacterPlanner;
@@ -49,6 +53,10 @@ final class MotoCharacterReferenceService implements QueuedImageService
         private readonly DesignImageStore $store,
         private readonly OpenAiImagePricing $pricing,
         private readonly SheetCropService $crops,
+        private readonly VideoProjectRepositoryInterface $projects,
+        private readonly VideoDesignImageRepositoryInterface $images,
+        private readonly VideoArtifactRepositoryInterface $artifacts,
+        private readonly VideoReviewDecisionRepositoryInterface $decisions,
     ) {}
 
     /**
@@ -106,7 +114,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
      */
     public function approvedMasterCells(string $projectId, array $plan): array
     {
-        $selection = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::SELECTION]['cells'] ?? []);
+        $selection = (array) ($this->projects->findMetadata($projectId)[self::SELECTION]['cells'] ?? []);
         $cells = array_column((array) $plan['cells'], null, 'id');
 
         return $this->heldCells($projectId, array_filter($selection, static fn (mixed $chosen, string|int $id): bool => isset($cells[$id]) && is_array($chosen) && ($chosen['fingerprint'] ?? null) === $cells[$id]['fingerprint'], ARRAY_FILTER_USE_BOTH));
@@ -125,7 +133,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
         }
 
         $cells = array_column(MotoCharacterPlanner::identityCells($character, $description, $settings), null, 'id');
-        $stored = (array) (VideoProject::query()->whereKey($projectId)->value('metadata_json')[self::SELECTION] ?? []);
+        $stored = (array) ($this->projects->findMetadata($projectId)[self::SELECTION] ?? []);
         $selection = array_intersect_key((array) ($stored['cells'] ?? []), $cells);
         $same = array_filter($selection, static fn (mixed $chosen, string $id): bool => is_array($chosen) && self::sameIdentity($chosen, $cells[$id]), ARRAY_FILTER_USE_BOTH);
         $valid = $this->heldCells($projectId, $same);
@@ -149,7 +157,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
         }
 
         if (count($masters) > 1) {
-            $codes = VideoDesignImage::query()->where('project_id', $projectId)->whereIn('id', array_unique(array_column($valid, 'image_id')))->pluck('image_code')->all();
+            $codes = $this->images->findImageCodeListByIds($projectId, array_unique(array_column($valid, 'image_id')));
 
             return ['source' => null, 'problem' => "{$character} có ".count($masters).' master đã duyệt cùng chứa ảnh nhận diện ('.implode(', ', $codes).") — cần chọn master dùng cho nhân vật: php artisan video:moto-character-master {$projectId} --choose={$character}=<mã ảnh master>."];
         }
@@ -162,7 +170,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
         }
 
         $first = reset($kept);
-        $image = VideoDesignImage::query()->where('project_id', $projectId)->find($first['image_id']);
+        $image = $this->images->findForProject($projectId, $first['image_id']);
         $positions = [];
 
         foreach ((new ModelSheetMaster((array) ($image?->prompt_spec_json['layout'] ?? [])))->cells() as $position) {
@@ -325,8 +333,7 @@ final class MotoCharacterReferenceService implements QueuedImageService
             return null;
         }
 
-        $decision = $reviewId === '' ? null : VideoReviewDecision::query()->whereKey($reviewId)->where('project_id', $projectId)->where('entity_type', self::MASTER)
-            ->where('entity_id', (string) $master->id)->where('decision', 'approved')->first();
+        $decision = $reviewId === '' ? null : $this->decisions->findApprovalFor($projectId, $reviewId, self::MASTER, (string) $master->id);
         $layout = (array) ($image->prompt_spec_json['layout'] ?? []);
 
         if ($image->status !== DesignImageStatus::APPROVED->value || (string) $image->selected_artifact_id !== (string) $master->id || $decision === null
@@ -984,8 +991,8 @@ final class MotoCharacterReferenceService implements QueuedImageService
     /** @return array{0: VideoArtifact, 1: VideoDesignImage} */
     private function master(string $projectId, string $artifactId): array
     {
-        $master = VideoArtifact::query()->where('project_id', $projectId)->find($artifactId);
-        $image = $master === null ? null : VideoDesignImage::query()->where('project_id', $projectId)->where('image_type', self::MASTER)->find($master->design_image_id);
+        $master = $this->artifacts->findOwnedArtifact($projectId, $artifactId);
+        $image = $master === null ? null : $this->images->findForProjectOfType($projectId, self::MASTER, $master->design_image_id);
 
         if ($image === null) {
             throw new RuntimeException('Ảnh không thuộc Reference nhân vật của dự án.');
