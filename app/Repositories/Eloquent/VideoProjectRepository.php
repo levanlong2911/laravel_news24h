@@ -6,6 +6,7 @@ use App\Models\Admin;
 use App\Models\Article;
 use App\Models\VideoCostEntry;
 use App\Models\VideoProject;
+use App\Models\VideoRenderScene;
 use App\Models\VideoSession;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Moto\MotoContract;
@@ -118,5 +119,60 @@ class VideoProjectRepository extends BaseRepository implements VideoProjectRepos
             'article:id,title,content,source_url,source_name,created_at,category_id',
             'article.category:id,slug',
         ])->find($id);
+    }
+
+    public function findOwnership(string $projectId): ?VideoProject
+    {
+        return $this->model->newQuery()->select(['id', 'admin_id'])->find($projectId);
+    }
+
+    public function findProject(string $projectId): ?VideoProject
+    {
+        return $this->model->newQuery()->find($projectId);
+    }
+
+    public function findProjectOrFail(string $projectId): VideoProject
+    {
+        return $this->model->newQuery()->findOrFail($projectId);
+    }
+
+    public function findProjectWithCategory(string $projectId): ?VideoProject
+    {
+        return $this->model->newQuery()->with('article.category')->find($projectId);
+    }
+
+    public function findProjectWithCategoryOrFail(string $projectId): VideoProject
+    {
+        return $this->model->newQuery()->with('article.category')->findOrFail($projectId);
+    }
+
+    public function findMetadata(string $projectId): ?array
+    {
+        return $this->model->newQuery()->whereKey($projectId)->value('metadata_json');
+    }
+
+    public function lockProject(string $projectId): VideoProject
+    {
+        return $this->model->newQuery()->whereKey($projectId)->lockForUpdate()->firstOrFail();
+    }
+
+    public function lockProjectOrNull(string $projectId): ?VideoProject
+    {
+        return $this->model->newQuery()->whereKey($projectId)->lockForUpdate()->first();
+    }
+
+    public function saveLockedMetadata(VideoProject $project, array $metadata): void
+    {
+        $project->forceFill(['metadata_json' => $metadata])->save();
+    }
+
+    public function findArticleOf(VideoProject $project): ?Article
+    {
+        return $project->article;
+    }
+
+    public function findProjectOfScene(VideoRenderScene $scene): ?VideoProject
+    {
+        return $this->model->newQuery()->whereKey($scene->project_id)->first();
     }
 }

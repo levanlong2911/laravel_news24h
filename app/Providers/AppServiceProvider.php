@@ -571,6 +571,13 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(\App\Video\Superyacht\Validation\StateGeometryCompiler::class, static fn () => \App\Video\Superyacht\Validation\StateGeometryCompiler::fromConfig($superyacht()));
         $this->app->singleton(\App\Video\Superyacht\Support\BuildStates::class, static fn () => \App\Video\Superyacht\Support\BuildStates::fromConfig($superyacht()));
         $this->app->singleton(\App\Video\Superyacht\Validation\DocumentValidator::class, static fn () => \App\Video\Superyacht\Validation\DocumentValidator::fromConfig($superyacht()));
+        $this->app->bind(\App\Video\Superyacht\Spec\PhaseResolver::class, static fn (Application $app): \App\Video\Superyacht\Spec\PhaseResolver => new \App\Video\Superyacht\Spec\PhaseResolver(
+            static fn (): array => (array) ($superyacht()['contracts'] ?? []),
+            $app->make(\App\Repositories\Interfaces\AiPhaseRepositoryInterface::class),
+            $app->make(\App\Repositories\Interfaces\AiJsonSchemaRepositoryInterface::class),
+            $app->make(\App\Repositories\Interfaces\CategoryRepositoryInterface::class),
+            $app->make(\App\Repositories\Interfaces\VideoProjectRepositoryInterface::class),
+        ));
     }
 
     /**

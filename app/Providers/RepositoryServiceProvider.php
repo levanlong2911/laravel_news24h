@@ -34,6 +34,34 @@ use App\Repositories\Eloquent\ArticleRepository;
 use App\Repositories\Eloquent\VideoProjectRepository;
 use App\Repositories\Interfaces\ArticleRepositoryInterface;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Eloquent\AiJsonSchemaRepository;
+use App\Repositories\Eloquent\AiPhaseRepository;
+use App\Repositories\Eloquent\VideoArtifactRepository;
+use App\Repositories\Eloquent\VideoCostEntryRepository;
+use App\Repositories\Eloquent\VideoDesignImageRepository;
+use App\Repositories\Eloquent\VideoPlanningStageRepository;
+use App\Repositories\Eloquent\VideoProviderSubmissionReceiptRepository;
+use App\Repositories\Eloquent\VideoRenderAttemptRepository;
+use App\Repositories\Eloquent\VideoRenderRepository;
+use App\Repositories\Eloquent\VideoRenderSceneRepository;
+use App\Repositories\Eloquent\VideoReviewDecisionRepository;
+use App\Repositories\Eloquent\VideoSessionEventRepository;
+use App\Repositories\Eloquent\VideoSessionRepository;
+use App\Repositories\Eloquent\VideoShotRepository;
+use App\Repositories\Interfaces\AiJsonSchemaRepositoryInterface;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoCostEntryRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
+use App\Repositories\Interfaces\VideoProviderSubmissionReceiptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderAttemptRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderSceneRepositoryInterface;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
+use App\Repositories\Interfaces\VideoSessionEventRepositoryInterface;
+use App\Repositories\Interfaces\VideoSessionRepositoryInterface;
+use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use Illuminate\Support\ServiceProvider;
 
 class RepositoryServiceProvider extends ServiceProvider
@@ -107,6 +135,62 @@ class RepositoryServiceProvider extends ServiceProvider
         $this->app->bind(
             PromptFrameworkRepositoryInterface::class,
             PromptFrameworkRepository::class
+        );
+        $this->app->bind(
+            VideoPlanningStageRepositoryInterface::class,
+            VideoPlanningStageRepository::class
+        );
+        $this->app->bind(
+            VideoDesignImageRepositoryInterface::class,
+            VideoDesignImageRepository::class
+        );
+        $this->app->bind(
+            VideoArtifactRepositoryInterface::class,
+            VideoArtifactRepository::class
+        );
+        $this->app->bind(
+            VideoRenderSceneRepositoryInterface::class,
+            VideoRenderSceneRepository::class
+        );
+        $this->app->bind(
+            VideoSessionRepositoryInterface::class,
+            VideoSessionRepository::class
+        );
+        $this->app->bind(
+            VideoShotRepositoryInterface::class,
+            VideoShotRepository::class
+        );
+        $this->app->bind(
+            VideoRenderRepositoryInterface::class,
+            VideoRenderRepository::class
+        );
+        $this->app->bind(
+            VideoRenderAttemptRepositoryInterface::class,
+            VideoRenderAttemptRepository::class
+        );
+        $this->app->bind(
+            VideoSessionEventRepositoryInterface::class,
+            VideoSessionEventRepository::class
+        );
+        $this->app->bind(
+            VideoReviewDecisionRepositoryInterface::class,
+            VideoReviewDecisionRepository::class
+        );
+        $this->app->bind(
+            VideoProviderSubmissionReceiptRepositoryInterface::class,
+            VideoProviderSubmissionReceiptRepository::class
+        );
+        $this->app->bind(
+            AiPhaseRepositoryInterface::class,
+            AiPhaseRepository::class
+        );
+        $this->app->bind(
+            AiJsonSchemaRepositoryInterface::class,
+            AiJsonSchemaRepository::class
+        );
+        $this->app->bind(
+            VideoCostEntryRepositoryInterface::class,
+            VideoCostEntryRepository::class
         );
     }
 

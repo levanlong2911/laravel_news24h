@@ -8,6 +8,7 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Jobs\Video\RunPlanningStageJob;
 use App\Models\VideoPlanningStage;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
@@ -25,7 +26,10 @@ final class StageQueue
     /** @var string a key the output of a single call may carry: the record of the run when it is not the answer of the model itself, as a text. It is stored as the raw response of a succeeded run and never kept in the output; a run that fails or loses its claim still keeps the answer the model gave */
     public const RECORD = '_record';
 
-    public function __construct(private readonly PlanningStageStore $stageStore) {}
+    public function __construct(
+        private readonly PlanningStageStore $stageStore,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+    ) {}
 
     /**
      * @param  string  $step  a key of RunPlanningStageJob::STEPS, the service a worker runs this stage with
@@ -118,7 +122,7 @@ final class StageQueue
             return [null, "Lượt {$label} này đã bị huỷ, đã được nhận hoặc không còn — bỏ qua, không gọi model."];
         }
 
-        $stage = VideoPlanningStage::query()->withoutSnapshot()->findOrFail($stageId);
+        $stage = $this->stages->findStageOrFail($stageId);
 
         if ($prepared === null) {
             try {
@@ -213,7 +217,7 @@ final class StageQueue
                     return [null, $this->lost($stage, $name, $run, $token, 'answered', 'claim_lost', $usage, $response->text, $stored, $response->usageComplete, $label, $log)];
                 }
 
-                return [VideoPlanningStage::query()->withoutSnapshot()->find($stageId), 'ok'];
+                return [$this->stages->findStage($stageId), 'ok'];
             } catch (\Throwable $e) {
                 $billed = $e instanceof LlmUnavailable ? $e->billed : null;
                 $queued = $usage === [] && $billed === null && $rateLimited !== null ? $rateLimited($e) : null;
@@ -322,8 +326,7 @@ final class StageQueue
 
     private function replayed(string $projectId, PlanningStageName $name, string $operationId): ?VideoPlanningStage
     {
-        return VideoPlanningStage::query()->withoutSnapshot()->where('project_id', $projectId)->where('stage', $name->value)
-            ->where('input_json->'.PlanningStageStore::METADATA_KEY.'->operation_id', $operationId)->orderByDesc('planning_revision')->first();
+        return $this->stages->findStageByOperation($projectId, $name, $operationId);
     }
 
     /** @return array{0: ?VideoPlanningStage, 1: string} */

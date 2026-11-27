@@ -6,6 +6,7 @@ namespace App\Services\Video;
 
 use App\Enums\PlanningStageName;
 use App\Models\VideoPlanningStage;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Video\Inspiration\ClaudeInspirationAnalyst;
 use App\Video\Llm\LlmClient;
 use App\Video\Llm\LlmRequest;
@@ -15,7 +16,11 @@ use Illuminate\Support\Facades\Log;
 
 final class SpecStageRunner
 {
-    public function __construct(private readonly PlanningStageStore $stageStore) {}
+    public function __construct(
+        private readonly PlanningStageStore $stageStore,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+        private readonly ScriptEvaluation $evaluation,
+    ) {}
 
     /**
      * @param  string  $step  a key of RunPlanningStageJob::STEPS
@@ -27,7 +32,7 @@ final class SpecStageRunner
      */
     public function submit(string $step, string $projectId, PlanningStageName $name, \Closure $prepare, bool $regenerate, string $operationId, LlmClient $llm, \Closure $output, string $label, string $log, ?array $requester): array
     {
-        return (new StageQueue($this->stageStore))->submit($step, $projectId, $name, $prepare, $regenerate, $operationId, $requester, $this->perform($llm, $output, $label, $log), $label, $log);
+        return (new StageQueue($this->stageStore, $this->stages))->submit($step, $projectId, $name, $prepare, $regenerate, $operationId, $requester, $this->perform($llm, $output, $label, $log), $label, $log);
     }
 
     /**
@@ -37,7 +42,7 @@ final class SpecStageRunner
      */
     public function execute(string $stageId, string $token, \Closure $prepare, LlmClient $llm, \Closure $output, string $label, string $log): array
     {
-        return (new StageQueue($this->stageStore))->execute($stageId, $token, $prepare, $this->perform($llm, $output, $label, $log), $label, $log);
+        return (new StageQueue($this->stageStore, $this->stages))->execute($stageId, $token, $prepare, $this->perform($llm, $output, $label, $log), $label, $log);
     }
 
     /**
@@ -69,7 +74,7 @@ final class SpecStageRunner
                 ));
                 $raw = $response->text;
                 $usage = ClaudeInspirationAnalyst::usageOf($response, $version);
-                $evaluation = ScriptEvaluation::of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $run['metadata']['source'], $run['adapter']);
+                $evaluation = $this->evaluation->of($raw, $run['metadata']['manifest'], $run['metadata']['context'], $run['metadata']['source'], $run['adapter']);
 
                 if ($evaluation['document'] === null) {
                     $this->stageStore->finishFailed($stageId, $token, 'Phản hồi không đọc được JSON: '.$evaluation['parse_error'], $usage, $raw, $output($run, $evaluation));
@@ -89,7 +94,7 @@ final class SpecStageRunner
                     return [null, "Lượt {$label} bị giành mất khi lưu — kết quả đã trả tiền không được dùng. Tải lại trang."];
                 }
 
-                return [VideoPlanningStage::query()->withoutSnapshot()->find($stageId), 'ok'];
+                return [$this->stages->findStage($stageId), 'ok'];
             } catch (\Throwable $e) {
                 $queued = $usage === [] && $rateLimited !== null ? $rateLimited($e) : null;
 

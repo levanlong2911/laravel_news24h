@@ -20,7 +20,15 @@ use App\Models\VideoProject;
 use App\Models\VideoRender;
 use App\Models\VideoRenderScene;
 use App\Models\VideoSession;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\CategoryRepositoryInterface;
+use App\Repositories\Interfaces\VideoArtifactRepositoryInterface;
+use App\Repositories\Interfaces\VideoDesignImageRepositoryInterface;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderRepositoryInterface;
+use App\Repositories\Interfaces\VideoRenderSceneRepositoryInterface;
+use App\Repositories\Interfaces\VideoShotRepositoryInterface;
 use App\Services\Admin\ArticleService;
 use App\Services\Video\CharacterAnchorPromptService;
 use App\Services\Video\DesignImageDirectRenderer;
@@ -237,6 +245,24 @@ class VideoProjectService implements QueuedStageService
 
     private ScreenplayExpansionService $screenplayExpansion;
 
+    private VideoPlanningStageRepositoryInterface $stages;
+
+    private PhaseResolver $resolver;
+
+    private AiPhaseRepositoryInterface $phases;
+
+    private VideoRenderSceneRepositoryInterface $scenes;
+
+    private VideoDesignImageRepositoryInterface $images;
+
+    private VideoArtifactRepositoryInterface $artifacts;
+
+    private VideoShotRepositoryInterface $shots;
+
+    private VideoRenderRepositoryInterface $renders;
+
+    private CategoryRepositoryInterface $categories;
+
     public function __construct(
         VideoProjectRepositoryInterface $videoProjectRepository,
         ArticleService $articleService,
@@ -249,6 +275,15 @@ class VideoProjectService implements QueuedStageService
         ScreenplayApprovalService $screenplayApprovalService,
         ProductionSelectionService $productionSelectionService,
         ScreenplayExpansionService $screenplayExpansion,
+        VideoPlanningStageRepositoryInterface $stages,
+        PhaseResolver $resolver,
+        AiPhaseRepositoryInterface $phases,
+        VideoRenderSceneRepositoryInterface $scenes,
+        VideoDesignImageRepositoryInterface $images,
+        VideoArtifactRepositoryInterface $artifacts,
+        VideoShotRepositoryInterface $shots,
+        VideoRenderRepositoryInterface $renders,
+        CategoryRepositoryInterface $categories,
     ) {
         $this->videoProjectRepository = $videoProjectRepository;
         $this->articleService = $articleService;
@@ -261,6 +296,15 @@ class VideoProjectService implements QueuedStageService
         $this->screenplayApprovalService = $screenplayApprovalService;
         $this->productionSelectionService = $productionSelectionService;
         $this->screenplayExpansion = $screenplayExpansion;
+        $this->stages = $stages;
+        $this->resolver = $resolver;
+        $this->phases = $phases;
+        $this->scenes = $scenes;
+        $this->images = $images;
+        $this->artifacts = $artifacts;
+        $this->shots = $shots;
+        $this->renders = $renders;
+        $this->categories = $categories;
     }
 
     public function listAll(?Admin $actor): iterable
@@ -302,12 +346,12 @@ class VideoProjectService implements QueuedStageService
      */
     public function runInspiration(string $projectId, string $operationId, ?array $requester = null): array
     {
-        return (new StageQueue($this->stageStore))->submit(
+        return (new StageQueue($this->stageStore, $this->stages))->submit(
             'inspiration',
             $projectId,
             PlanningStageName::INSPIRATION,
             fn (): array => $this->inspirationPrepared($projectId),
-            static fn (VideoPlanningStage $done, array $run): bool => SourceCheck::answerUnusable(self::sourceCheckOf(
+            fn (VideoPlanningStage $done, array $run): bool => SourceCheck::answerUnusable($this->sourceCheckOf(
                 (string) ($done->output_json['raw_text'] ?? ''),
                 (string) $run['payload'],
                 (string) ($done->input_json['execution'] ?? ''),
@@ -332,7 +376,7 @@ class VideoProjectService implements QueuedStageService
             return [null, 'Lượt phân tích không còn — bỏ qua.'];
         }
 
-        return (new StageQueue($this->stageStore))->execute(
+        return (new StageQueue($this->stageStore, $this->stages))->execute(
             $stageId,
             $token,
             fn (): array => $this->inspirationPrepared($projectId),
@@ -453,7 +497,7 @@ class VideoProjectService implements QueuedStageService
         $pinnedProblem = $phaseOne && $succeeded ? $this->pinnedInspirationProblem($latest, $articleBlock, $prompt, $pinnedBundle) : null;
         $sourceCurrent = $phaseOne && $succeeded && $pinnedProblem === null;
         $sourceCheck = match (true) {
-            $sourceCurrent => self::sourceCheckOf((string) ($stored['raw_text'] ?? ''), (string) $articleBlock, (string) ($runInput['execution'] ?? ''), self::inspirationManifest($latest), $pinnedBundle),
+            $sourceCurrent => $this->sourceCheckOf((string) ($stored['raw_text'] ?? ''), (string) $articleBlock, (string) ($runInput['execution'] ?? ''), self::inspirationManifest($latest), $pinnedBundle),
             $phaseOne && is_array($stored['source'] ?? null) => $stored['source'],
             default => null,
         };
@@ -508,7 +552,7 @@ class VideoProjectService implements QueuedStageService
     private function pinnedInspirationProblem(VideoPlanningStage $stage, ?string $articleBlock, ?AiPhase $read = null, ?ResolvedPhase &$replayed = null): ?string
     {
         $input = is_array($stage->input_json) ? $stage->input_json : [];
-        $phase = $read !== null && (string) $read->id === ($input['phase_id'] ?? null) ? $read : AiPhase::query()->find($input['phase_id'] ?? null);
+        $phase = $read !== null && (string) $read->id === ($input['phase_id'] ?? null) ? $read : $this->phases->findPhase($input['phase_id'] ?? null);
 
         if ($phase === null) {
             return 'Prompt Phase 1 mà lượt này đã dùng không còn trong DB.';
@@ -529,7 +573,7 @@ class VideoProjectService implements QueuedStageService
 
         if (in_array($input['execution'] ?? null, [ClaudeInspirationAnalyst::EXECUTION_V2, MotoContract::EVIDENCE_EXECUTION], true)) {
             try {
-                $replayed = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest(self::inspirationManifest($stage) ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
+                $replayed = $this->resolver->fromManifest(self::inspirationManifest($stage) ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng'));
             } catch (\Throwable $e) {
                 return 'Hợp đồng mà lượt Phase 1 này đã ghim không còn khớp DB: '.$e->getMessage();
             }
@@ -936,17 +980,7 @@ class VideoProjectService implements QueuedStageService
      */
     public function sceneKeyframeCells(string $projectId, int $revision): array
     {
-        $rows = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->whereIn('render_scene_id', VideoRenderScene::query()
-                ->where('project_id', $projectId)
-                ->where('revision', $revision)
-                ->select('id'))
-            ->with(['artifacts' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
-            ->orderBy('created_at')
-            ->orderBy('id')
-            ->get();
+        $rows = $this->images->findSceneKeyframesForRevision($projectId, $revision);
 
         $cost = $this->designImageStore->costSummaryByImage(
             $projectId, $rows->pluck('id')->map('strval')->all(),
@@ -985,22 +1019,11 @@ class VideoProjectService implements QueuedStageService
      */
     public function sceneClipCells(string $projectId, int $revision): array
     {
-        $shots = \App\Models\VideoShot::query()
-            ->whereNotNull('scene_id')
-            ->whereIn('scene_id', VideoRenderScene::query()
-                ->where('project_id', $projectId)
-                ->where('revision', $revision)
-                ->select('id'))
-            ->get();
+        $shots = $this->shots->findSceneShotsForRevision($projectId, $revision);
 
         // Current answers "what is running"; selected answers "what will be cut".
         // They intentionally remain independent when a newer attempt fails.
-        $productionRenders = \App\Models\VideoRender::query()
-            ->whereIn('shot_id', $shots->pluck('id'))
-            ->where('render_kind', 'video')
-            ->where('execution_purpose', SceneClipDispatchService::PURPOSE_PRODUCTION)
-            ->orderBy('attempt_no')
-            ->get();
+        $productionRenders = $this->renders->findProductionVideoRendersOfShots($shots->pluck('id'));
         $renders = $productionRenders
             ->keyBy(fn (\App\Models\VideoRender $render): string => (string) $render->id);
         $reconciler = app(ShotSelectionReconciler::class);
@@ -1879,7 +1902,7 @@ class VideoProjectService implements QueuedStageService
 
         $facts = $this->referenceImageFacts($projectId, $revision, array_keys($artifactIds));
         $planLinks = $this->referencePlanLinks($projectId, $stage);
-        $shas = VideoArtifact::query()->whereIn('id', array_keys($artifactIds))->pluck('sha256', 'id')->map(static fn (mixed $sha): string => (string) $sha)->all();
+        $shas = $this->artifacts->pluckShaByIds(array_keys($artifactIds));
         $out = [];
         $ready = 0;
         $previous = null;
@@ -2064,26 +2087,17 @@ class VideoProjectService implements QueuedStageService
             return [];
         }
 
-        $images = VideoDesignImage::query()->where('project_id', $projectId)->whereIn('selected_artifact_id', $artifactIds)->get();
+        $images = $this->images->findImagesBySelectedArtifacts($projectId, $artifactIds);
         $anchorOf = static function (VideoDesignImage $image): ?string {
             $spec = is_array($image->prompt_spec_json) ? $image->prompt_spec_json : [];
 
             return is_string($spec['identity_anchor_artifact_id'] ?? null) ? $spec['identity_anchor_artifact_id']
                 : (is_string($spec['source_artifact_id'] ?? null) ? $spec['source_artifact_id'] : null);
         };
-        $anchorKeys = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::ANCHOR_TYPE)
-            ->whereIn('selected_artifact_id', array_values(array_filter($images->map($anchorOf)->all())))
-            ->get()
+        $anchorKeys = $this->images->findAnchorsBySelectedArtifacts($projectId, array_values(array_filter($images->map($anchorOf)->all())))
             ->mapWithKeys(static fn (VideoDesignImage $anchor): array => [(string) $anchor->selected_artifact_id => $anchor->prompt_spec_json['subject_key'] ?? null])
             ->all();
-        $shots = VideoRenderScene::query()
-            ->where('project_id', $projectId)
-            ->where('revision', $revision)
-            ->whereIn('id', array_values(array_filter($images->pluck('render_scene_id')->all())))
-            ->pluck('scene_code', 'id')
-            ->all();
+        $shots = $this->scenes->pluckSceneCodes($projectId, $revision, array_values(array_filter($images->pluck('render_scene_id')->all())));
         $facts = [];
 
         foreach ($images as $image) {
@@ -2350,24 +2364,13 @@ class VideoProjectService implements QueuedStageService
             return [null, null];
         }
 
-        $previous = VideoRenderScene::query()
-            ->where('project_id', $scene->project_id)
-            ->where('revision', $scene->revision)
-            ->where('scene_index', (int) $scene->scene_index - 1)
-            ->first(['id', 'title', 'state_json']);
+        $previous = $this->scenes->findSceneAtIndex($scene->project_id, $scene->revision, (int) $scene->scene_index - 1);
 
         if ($previous === null) {
             return [null, null];
         }
 
-        $keyframe = VideoDesignImage::query()
-            ->where('project_id', $scene->project_id)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('render_scene_id', $previous->id)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->orderByDesc('approved_at')
-            ->first();
+        $keyframe = $this->images->findLatestApprovedKeyframeForScene($scene->project_id, $previous->id);
 
         if ($keyframe === null) {
             return [null, 'previous_keyframe_missing|'.$previous->title];
@@ -2434,20 +2437,9 @@ class VideoProjectService implements QueuedStageService
             return $options;
         }
 
-        $earlier = VideoRenderScene::query()
-            ->where('project_id', $scene->project_id)
-            ->where('revision', $scene->revision)
-            ->where('scene_index', '<', (int) $scene->scene_index)
-            ->orderBy('scene_index')
-            ->get(['id', 'title', 'state_json'])
+        $earlier = $this->scenes->findEarlierScenes($scene->project_id, $scene->revision, (int) $scene->scene_index)
             ->filter(static fn (VideoRenderScene $row): bool => ($row->state_json['location_id'] ?? null) === ($scene->state_json['location_id'] ?? null));
-        $keyframes = VideoDesignImage::query()
-            ->whereIn('render_scene_id', $earlier->pluck('id'))
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->with('artifact')
-            ->get()
+        $keyframes = $this->images->findApprovedKeyframesForScenes($earlier->pluck('id'))
             ->keyBy('render_scene_id');
         $memo = [];
 
@@ -2777,13 +2769,7 @@ class VideoProjectService implements QueuedStageService
     /** @param array<string, mixed> $requirement */
     private function missingRoomPlateReason(string $projectId, array $requirement): string
     {
-        $approved = VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::ENVIRONMENT_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->whereNotNull('environment_key')
-            ->get(['environment_key', 'prompt_spec_json'])
+        $approved = $this->images->findApprovedEnvironmentKeys($projectId)
             ->filter(static fn (VideoDesignImage $row): bool => ($row->prompt_spec_json['location_id'] ?? null) === $requirement['location_id'])
             ->pluck('environment_key')
             ->map(static fn (mixed $key): string => (string) $key)
@@ -2797,7 +2783,7 @@ class VideoProjectService implements QueuedStageService
             return 'room_plate_unapproved';
         }
 
-        $project = VideoProject::query()->find($projectId);
+        $project = $this->videoProjectRepository->findProject($projectId);
         $current = $project === null ? [] : collect($this->selectedEnvironmentRequirements($project)[1])
             ->where('location_id', $requirement['location_id'])
             ->pluck('key')
@@ -2811,13 +2797,7 @@ class VideoProjectService implements QueuedStageService
      */
     private function filmRoomKeyframe(VideoRenderScene $scene): array
     {
-        $keyframe = VideoDesignImage::query()
-            ->where('render_scene_id', $scene->id)
-            ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->with('artifact')
-            ->first();
+        $keyframe = $this->images->findApprovedKeyframeWithArtifactForScene($scene->id);
         $choice = is_array($scene->state_json) ? ($scene->state_json[self::FILM_KEYFRAME_USE_KEY] ?? null) : null;
         $chosen = is_array($choice)
             && $keyframe?->artifact !== null
@@ -2893,12 +2873,7 @@ class VideoProjectService implements QueuedStageService
             return $this->sourceMemo[$memoKey];
         }
 
-        $stage = VideoPlanningStage::query()
-            ->whereKey($scene->screenplay_stage_id)
-            ->where('project_id', $scene->project_id)
-            ->where('stage', PlanningStageName::SCREENPLAY->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $stage = $this->stages->findSucceededStageOfKindWithSnapshot($scene->project_id, $scene->screenplay_stage_id, PlanningStageName::SCREENPLAY);
         $screenplay = is_array($stage?->output_json)
             ? $this->productionScreenplayContent($stage->output_json)
             : [];
@@ -2951,7 +2926,7 @@ class VideoProjectService implements QueuedStageService
             }
         }
 
-        $project = VideoProject::query()->with('article.category')->find($projectId);
+        $project = $this->videoProjectRepository->findProjectWithCategory($projectId);
         $category = (string) ($project?->article?->category?->slug ?? '');
         $profile = $category === '' ? null : $this->screenplayExpansion->screenplayProfile($category);
         $stages = array_values(array_filter((array) ($profile['arc_stages'] ?? []), 'is_string'));
@@ -3176,14 +3151,7 @@ class VideoProjectService implements QueuedStageService
 
         $plates = [];
 
-        foreach (VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::ENVIRONMENT_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->whereNotNull('environment_key')
-            ->with('artifact')
-            ->get() as $row) {
+        foreach ($this->images->findApprovedEnvironmentPlates($projectId) as $row) {
             if ($row->artifact === null) {
                 continue;
             }
@@ -3232,13 +3200,7 @@ class VideoProjectService implements QueuedStageService
 
         $views = [];
 
-        foreach (VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::REFERENCE_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->with('artifact')
-            ->get() as $row) {
+        foreach ($this->images->findApprovedReferenceViews($projectId) as $row) {
             $spec = is_array($row->prompt_spec_json) ? $row->prompt_spec_json : [];
             $view = ReferenceView::tryFrom((string) ($spec['view_key'] ?? ''));
 
@@ -3278,7 +3240,7 @@ class VideoProjectService implements QueuedStageService
     private function designReferenceOptions(string $projectId): array
     {
         $anchor = $this->productionAnchor($projectId);
-        $artifact = $anchor?->selected_artifact_id === null ? null : VideoArtifact::query()->whereKey($anchor->selected_artifact_id)->first();
+        $artifact = $anchor?->selected_artifact_id === null ? null : $this->artifacts->findArtifact($anchor->selected_artifact_id);
 
         if ($artifact === null) {
             return [];
@@ -3504,7 +3466,7 @@ class VideoProjectService implements QueuedStageService
      */
     public function referencePlanSource(string $projectId, bool $readBytes = false): array
     {
-        $project = VideoProject::query()->find($projectId);
+        $project = $this->videoProjectRepository->findProject($projectId);
 
         if ($project === null) {
             return [null, 'project_not_found'];
@@ -3514,7 +3476,7 @@ class VideoProjectService implements QueuedStageService
             return [null, 'reference_plan_design_first_only'];
         }
 
-        $storyboard = $project->selectedScenePlanStage()->first();
+        $storyboard = $this->stages->findStageWithSnapshot($project->selected_scene_plan_stage_id);
         $input = is_array($storyboard?->input_json) ? $storyboard->input_json : [];
 
         if ($storyboard === null || $storyboard->status !== VideoPlanningStageStatus::SUCCEEDED->value
@@ -3529,7 +3491,7 @@ class VideoProjectService implements QueuedStageService
             return [null, 'reference_plan_source_changed|'.$changed];
         }
 
-        $screenplayStage = VideoPlanningStage::query()->whereKey((string) $input['screenplay_stage_id'])->first();
+        $screenplayStage = $this->stages->findStageWithSnapshot((string) $input['screenplay_stage_id']);
         $output = is_array($screenplayStage?->output_json) ? $screenplayStage->output_json : [];
         $recorded = $output[VesselDesign::SOURCE_DESIGN_KEY] ?? null;
         $design = is_array($recorded) ? app(VesselDesignService::class)->verifiedSource($projectId, $recorded) : null;
@@ -3550,30 +3512,23 @@ class VideoProjectService implements QueuedStageService
         }
 
         $revision = (int) ($storyboard->output_json['revision'] ?? 0);
-        $rows = VideoRenderScene::query()
-            ->where('project_id', $projectId)
-            ->where('revision', $revision)
-            ->where('screenplay_stage_id', $screenplayStage->id)
-            ->orderBy('scene_index')
-            ->get();
+        $rows = $this->scenes->findScenesForScreenplayRevision($projectId, $revision, $screenplayStage->id);
 
         if ($revision < 1 || $rows->isEmpty()) {
             return [null, 'reference_plan_no_production_storyboard'];
         }
 
         $meta = PlanningStageStore::metadataOf($screenplayStage->input_json);
-        $foundation = VideoPlanningStage::query()
-            ->whereKey((string) ($meta['foundation_stage_id'] ?? ''))
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCREENPLAY_FOUNDATION->value)
-            ->first();
+        $foundation = $this->stages->findStageOfKindWithSnapshot($projectId, (string) ($meta['foundation_stage_id'] ?? ''), PlanningStageName::SCREENPLAY_FOUNDATION);
 
         if ($foundation === null || ! hash_equals((string) ($meta['foundation_output_hash'] ?? ''), (string) $foundation->output_hash)) {
             return [null, 'reference_plan_profile_unknown'];
         }
 
+        $article = $this->videoProjectRepository->findArticleOf($project);
+        $category = $article === null ? null : $this->categories->findCategoryOfArticle($article);
         [$profile] = ScreenplayExpansionService::profileForFoundation(
-            $foundation, app(ScreenplayExpansionService::class)->screenplayProfile((string) ($project->article?->category?->slug ?? '')),
+            $foundation, app(ScreenplayExpansionService::class)->screenplayProfile((string) ($category?->slug ?? '')),
         );
         $unfinished = $profile['film_cut']['finished_before_launch_stages'] ?? null;
 
@@ -3687,14 +3642,7 @@ class VideoProjectService implements QueuedStageService
     {
         $catalog = [];
 
-        foreach (VideoDesignImage::query()
-            ->where('project_id', $projectId)
-            ->where('image_type', DesignImageStore::REFERENCE_TYPE)
-            ->where('status', DesignImageStatus::APPROVED->value)
-            ->whereNotNull('selected_artifact_id')
-            ->with('artifact')
-            ->orderBy('slot_index')
-            ->get() as $image) {
+        foreach ($this->images->findApprovedReferencesBySlot($projectId) as $image) {
             $spec = is_array($image->prompt_spec_json) ? $image->prompt_spec_json : [];
 
             if ($image->artifact === null || ($spec['reference_mode'] ?? null) === \App\Video\Reference\ReferenceSheet::MODE
@@ -3960,15 +3908,7 @@ class VideoProjectService implements QueuedStageService
                 ReferencePromptWriter::REUSE_ANCHOR => [$source['anchor_artifact_id']],
                 ReferencePromptWriter::REUSE_REFERENCE => in_array($item['existing_artifact_id'], array_column($source['catalog'], 'artifact_id'), true)
                     ? [(string) $item['existing_artifact_id']] : [],
-                ReferencePromptWriter::RENDER_NEW => VideoDesignImage::query()
-                    ->where('project_id', $projectId)
-                    ->where('image_type', DesignImageStore::REFERENCE_TYPE)
-                    ->where('status', DesignImageStatus::APPROVED->value)
-                    ->where('prompt_spec_json->reference_plan_stage_id', (string) $plan->id)
-                    ->where('prompt_spec_json->request_id', $item['request_id'])
-                    ->where('prompt_spec_json->identity_anchor_artifact_id', $source['anchor_artifact_id'])
-                    ->where('prompt_spec_json->identity_anchor_sha256', $source['anchor_sha256'])
-                    ->pluck('selected_artifact_id')->map('strval')->all(),
+                ReferencePromptWriter::RENDER_NEW => $this->images->pluckPlannedReferenceArtifacts($projectId, (string) $plan->id, $item['request_id'], $source['anchor_artifact_id'], $source['anchor_sha256']),
                 default => [],
             };
 
@@ -4056,22 +3996,13 @@ class VideoProjectService implements QueuedStageService
      */
     private function selectedEnvironmentRequirements(VideoProject $project): array
     {
-        $stage = $project->selectedScenePlanStage()
-            ->where('project_id', $project->id)
-            ->where('stage', PlanningStageName::SCENE_PLAN->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $stage = $this->stages->findSucceededStageOfKindWithSnapshot($project->id, $project->selected_scene_plan_stage_id, PlanningStageName::SCENE_PLAN);
         $revision = is_array($stage?->output_json)
             ? (int) ($stage->output_json['revision'] ?? 0)
             : 0;
 
         if ($revision >= 1 && $this->reviewForRevision($stage)['status'] === 'passed') {
-            $scenes = VideoRenderScene::query()
-                ->where('project_id', $project->id)
-                ->where('revision', $revision)
-                ->where('screenplay_stage_id', $project->selected_screenplay_stage_id)
-                ->orderBy('scene_index')
-                ->get();
+            $scenes = $this->scenes->findScenesForScreenplayRevision($project->id, $revision, $project->selected_screenplay_stage_id);
             $linked = $scenes->contains(
                 static fn (VideoRenderScene $scene): bool => $scene->screenplay_stage_id !== null,
             );
@@ -4658,7 +4589,7 @@ class VideoProjectService implements QueuedStageService
             return $this->sourceMemo[$memoKey];
         }
 
-        $project = VideoProject::query()->find($projectId);
+        $project = $this->videoProjectRepository->findProject($projectId);
 
         if ($project === null) {
             return $this->rememberSource($memoKey, [null, 'project_not_found']);
@@ -4697,7 +4628,7 @@ class VideoProjectService implements QueuedStageService
 
     private function productionAnchor(string $projectId): ?VideoDesignImage
     {
-        $project = VideoProject::query()->find($projectId);
+        $project = $this->videoProjectRepository->findProject($projectId);
         $stage = $project === null ? null : $this->selectedProductionScreenplay($project);
         $locked = is_array($stage?->output_json) ? ($stage->output_json[VesselDesign::SOURCE_ANCHOR_KEY] ?? null) : null;
 
@@ -4919,7 +4850,7 @@ class VideoProjectService implements QueuedStageService
         }
 
         $articleBlock ??= $this->inspirationArticle($project);
-        $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->forProject($project, ClaudeInspirationAnalyst::ACTION);
+        $bundle = $this->resolver->forProject($project, ClaudeInspirationAnalyst::ACTION);
 
         $moto = MotoContract::is($workflow);
 
@@ -4974,7 +4905,7 @@ class VideoProjectService implements QueuedStageService
             'raw_text' => $rawText,
             'parsed_json' => $json,
             'json_parse_error' => $error,
-            'source' => self::sourceCheckOf($rawText, $articleBlock, (string) $input['execution'], $manifest),
+            'source' => $this->sourceCheckOf($rawText, $articleBlock, (string) $input['execution'], $manifest),
         ];
     }
 
@@ -4986,7 +4917,7 @@ class VideoProjectService implements QueuedStageService
      * @param  ?ResolvedPhase  $bundle  that contract when this request already replayed it from the manifest; its schemas are read from it and the manifest is not replayed again
      * @return array<string, mixed>
      */
-    private static function sourceCheckOf(string $rawText, string $articleBlock, string $execution, ?array $manifest = null, ?ResolvedPhase $bundle = null): array
+    private function sourceCheckOf(string $rawText, string $articleBlock, string $execution, ?array $manifest = null, ?ResolvedPhase $bundle = null): array
     {
         $answer = JsonAnswer::object($rawText);
         $contract = match ($execution) {
@@ -5005,7 +4936,7 @@ class VideoProjectService implements QueuedStageService
 
         try {
             [$decoded] = JsonAnswer::parse($rawText);
-            $schemas = ($bundle ?? PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng')))->outputSchemas();
+            $schemas = ($bundle ?? $this->resolver->fromManifest($manifest ?? throw new RuntimeException('lượt này không lưu manifest hợp đồng')))->outputSchemas();
             // A moto evidence answer is held to its JSON structure only, like every moto AI answer.
             $errors = $moto ? MotoContract::structureErrors($decoded, $schemas) : PhaseOneEvidence::schemaErrors($decoded, $schemas);
         } catch (\Throwable $e) {
@@ -5370,13 +5301,13 @@ class VideoProjectService implements QueuedStageService
      */
     private function storyboardSourceChange(string $projectId, array $input): ?string
     {
-        $project = VideoProject::query()->find($projectId);
+        $project = $this->videoProjectRepository->findProject($projectId);
 
         if ($project === null || (string) $project->selected_screenplay_stage_id !== (string) ($input['screenplay_stage_id'] ?? '')) {
             return 'screenplay_selection_changed';
         }
 
-        $screenplay = VideoPlanningStage::query()->whereKey((string) $input['screenplay_stage_id'])->first();
+        $screenplay = $this->stages->findStageWithSnapshot((string) $input['screenplay_stage_id']);
         $output = is_array($screenplay?->output_json) ? $screenplay->output_json : [];
 
         if ($screenplay === null || ! hash_equals(
@@ -5674,7 +5605,7 @@ class VideoProjectService implements QueuedStageService
         }
 
         $anchor = $this->productionAnchor($projectId);
-        $artifact = $anchor?->selected_artifact_id === null ? null : VideoArtifact::query()->whereKey($anchor->selected_artifact_id)->first();
+        $artifact = $anchor?->selected_artifact_id === null ? null : $this->artifacts->findArtifact($anchor->selected_artifact_id);
 
         if ($anchor === null || $artifact === null || $anchor->status !== DesignImageStatus::APPROVED->value) {
             return null;
@@ -5754,7 +5685,7 @@ class VideoProjectService implements QueuedStageService
 
     private function artifactFileExists(string $artifactId): bool
     {
-        $artifact = VideoArtifact::query()->find($artifactId);
+        $artifact = $this->artifacts->findArtifact($artifactId);
 
         return $artifact !== null
             && (string) $artifact->storage_path !== ''
@@ -5763,7 +5694,7 @@ class VideoProjectService implements QueuedStageService
 
     private function artifactFileSize(string $artifactId): int
     {
-        $artifact = VideoArtifact::query()->find($artifactId);
+        $artifact = $this->artifacts->findArtifact($artifactId);
 
         return $artifact === null || ! $this->artifactFileExists($artifactId)
             ? 0
@@ -5798,7 +5729,7 @@ class VideoProjectService implements QueuedStageService
             $drift[] = 'Cấu hình phim 30 giây đã đổi kể từ lúc lập.';
         }
 
-        $screenplay = VideoPlanningStage::query()->whereKey((string) ($stage->input_json['screenplay_stage_id'] ?? ''))->first();
+        $screenplay = $this->stages->findStageWithSnapshot((string) ($stage->input_json['screenplay_stage_id'] ?? ''));
 
         if ($screenplay === null || ! hash_equals(
             (string) ($stage->input_json['screenplay_hash'] ?? ''),
@@ -5820,7 +5751,7 @@ class VideoProjectService implements QueuedStageService
         }
 
         foreach ($entries as $candidateId => $item) {
-            $image = VideoDesignImage::query()->whereKey($candidateId)->with('artifact')->first();
+            $image = $this->images->findImageWithArtifact($candidateId);
 
             if ($image === null
                 || $image->status !== DesignImageStatus::APPROVED->value
@@ -5916,7 +5847,7 @@ class VideoProjectService implements QueuedStageService
         )));
         $groups = [];
 
-        foreach (VideoRenderScene::query()->where('project_id', $projectId)->where('revision', $revision)->orderBy('scene_index')->get() as $row) {
+        foreach ($this->scenes->findScenesForRevision($projectId, $revision) as $row) {
             if ($this->isLegacyFilmRow($row)) {
                 return [];
             }
@@ -5940,13 +5871,7 @@ class VideoProjectService implements QueuedStageService
             foreach ($rows as $position => $row) {
                 $room = $this->filmRoomPlate($projectId, $row);
                 $use = $room['room'] ? $this->filmRoomKeyframe($row) : null;
-                $image = VideoDesignImage::query()
-                    ->where('render_scene_id', $row->id)
-                    ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-                    ->where('status', DesignImageStatus::APPROVED->value)
-                    ->whereNotNull('selected_artifact_id')
-                    ->with('artifact')
-                    ->first();
+                $image = $this->images->findApprovedKeyframeWithArtifactForScene($row->id);
 
                 if ($use !== null && $use['stale']) {
                     $roomProblems[] = strtoupper((string) ($shots[$position]['scene_id'] ?? '')).': '.__('messages.scene_keyframe_film_keyframe_stale');
@@ -6585,12 +6510,8 @@ class VideoProjectService implements QueuedStageService
     public function selectedScenePlan(string $projectId): array
     {
         $ledger = $this->stageStore->attemptSummaryForProject($projectId, PlanningStageName::SCENE_PLAN);
-        $project = VideoProject::query()->whereKey($projectId)->first();
-        $stage = $project?->selectedScenePlanStage()
-            ->where('project_id', $projectId)
-            ->where('stage', PlanningStageName::SCENE_PLAN->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $project = $this->videoProjectRepository->findProject($projectId);
+        $stage = $project === null ? null : $this->stages->findSucceededStageOfKindWithSnapshot($projectId, $project->selected_scene_plan_stage_id, PlanningStageName::SCENE_PLAN);
         $revision = is_array($stage?->output_json)
             ? (int) ($stage->output_json['revision'] ?? 0)
             : 0;
@@ -6603,12 +6524,7 @@ class VideoProjectService implements QueuedStageService
             ] + $ledger;
         }
 
-        $rows = VideoRenderScene::query()
-            ->where('project_id', $projectId)
-            ->where('revision', $revision)
-            ->where('screenplay_stage_id', $project?->selected_screenplay_stage_id)
-            ->orderBy('scene_index')
-            ->get();
+        $rows = $this->scenes->findScenesForScreenplayRevision($projectId, $revision, $project?->selected_screenplay_stage_id);
         [$profile, $notice] = $this->profileForRevision($stage);
         [$preservation, $preservationNotice] = $this->preservationForRevision($stage);
 
@@ -7836,7 +7752,7 @@ class VideoProjectService implements QueuedStageService
             return [false, 'scene_plan_not_reviewed', $stage, null];
         }
 
-        $project = VideoProject::query()->whereKey($scene->project_id)->first();
+        $project = $this->videoProjectRepository->findProject($scene->project_id);
 
         if ($project === null
             || (string) $project->selected_scene_plan_stage_id !== (string) $stage->id) {
@@ -7847,12 +7763,7 @@ class VideoProjectService implements QueuedStageService
             return [false, 'screenplay_selection_changed', $stage, null];
         }
 
-        $screenplayStage = VideoPlanningStage::query()
-            ->whereKey($project->selected_screenplay_stage_id)
-            ->where('project_id', $scene->project_id)
-            ->where('stage', PlanningStageName::SCREENPLAY->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $screenplayStage = $this->stages->findSucceededStageOfKindWithSnapshot($scene->project_id, $project->selected_screenplay_stage_id, PlanningStageName::SCREENPLAY);
 
         if ($screenplayStage === null
             || ! is_array($screenplayStage->output_json)
@@ -7864,11 +7775,7 @@ class VideoProjectService implements QueuedStageService
             return [false, 'screenplay_selection_changed', $stage, null];
         }
 
-        $rows = VideoRenderScene::query()
-            ->where('project_id', $scene->project_id)
-            ->where('revision', $scene->revision)
-            ->orderBy('scene_index')
-            ->get();
+        $rows = $this->scenes->findScenesForRevision($scene->project_id, $scene->revision);
 
         $verified = $rows->firstWhere('id', $scene->id);
 
@@ -7922,10 +7829,7 @@ class VideoProjectService implements QueuedStageService
             return null;
         }
 
-        return VideoRenderScene::query()
-            ->whereKey($sceneId)
-            ->where('project_id', $projectId)
-            ->first();
+        return $this->scenes->findSceneForProject($projectId, $sceneId);
     }
 
     private function isPlaceShot(VideoRenderScene $scene): bool
@@ -8012,13 +7916,13 @@ class VideoProjectService implements QueuedStageService
     ): array {
         $artifact = $artifactId === null || trim($artifactId) === ''
             ? null
-            : VideoArtifact::query()->whereKey($artifactId)->first();
+            : $this->artifacts->findArtifact($artifactId);
 
         if ($artifact === null) {
             return [null, 'source_artifact_missing'];
         }
 
-        $candidate = VideoDesignImage::query()->whereKey($artifact->design_image_id)->first();
+        $candidate = $this->images->findImage($artifact->design_image_id);
 
         if ($candidate === null) {
             return [null, 'source_artifact_not_in_candidate'];
@@ -8063,8 +7967,8 @@ class VideoProjectService implements QueuedStageService
             return [null, 'candidate_snapshot_role_mismatch'];
         }
 
-        $artifact = VideoArtifact::query()->whereKey($entry['artifact_id'])->first();
-        $candidate = VideoDesignImage::query()->whereKey($entry['candidate_id'])->first();
+        $artifact = $this->artifacts->findArtifact($entry['artifact_id']);
+        $candidate = $this->images->findImage($entry['candidate_id']);
 
         if ($artifact === null || $candidate === null) {
             return [null, 'source_artifact_missing'];
@@ -8119,28 +8023,12 @@ class VideoProjectService implements QueuedStageService
      */
     private function readLockedAnchor(string $projectId, int $revision): array
     {
-        $carriers = VideoRenderScene::query()
-            ->where('project_id', $projectId)
-            ->where('revision', $revision)
-            ->where('transition_mode', ScenePreservationPrompt::HARD_CUT)
-            ->whereIn('id', VideoDesignImage::query()
-                ->where('project_id', $projectId)
-                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-                ->whereNotNull('render_scene_id')
-                ->select('render_scene_id'))
-            ->orderBy('scene_index')
-            ->get();
+        $carriers = $this->scenes->findHardCutKeyframeCarriers($projectId, $revision);
 
         $entry = null;
 
         foreach ($carriers as $carrier) {
-            $candidate = VideoDesignImage::query()
-                ->where('project_id', $projectId)
-                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-                ->where('render_scene_id', $carrier->id)
-                ->orderBy('created_at')
-                ->orderBy('id')
-                ->first();
+            $candidate = $this->images->findFirstKeyframeForScene($projectId, $carrier->id);
 
             $spec = is_array($candidate?->prompt_spec_json) ? $candidate->prompt_spec_json : [];
             $entry = $spec['sources'][0] ?? null;
@@ -8176,7 +8064,7 @@ class VideoProjectService implements QueuedStageService
     /** @return bool whether the anchor a keyframe revision was locked to is the screenplay's anchor, since replaced by an approved anchor of the same design */
     private function anchorLockReplaced(string $projectId, string $candidateId): bool
     {
-        $project = VideoProject::query()->find($projectId);
+        $project = $this->videoProjectRepository->findProject($projectId);
         $stage = $project === null || ! VesselDesign::isDesignFirst($project) ? null : $this->selectedProductionScreenplay($project);
         $locked = is_array($stage?->output_json) ? ($stage->output_json[VesselDesign::SOURCE_ANCHOR_KEY] ?? null) : null;
         $current = is_array($locked) && (string) ($locked['image_id'] ?? '') === $candidateId ? $this->productionAnchor($projectId) : null;
@@ -8217,7 +8105,7 @@ class VideoProjectService implements QueuedStageService
         $input = is_array($stage?->input_json) ? $stage->input_json : [];
 
         if (($input['source_mode'] ?? null) === ScenePlanAuthor::DESIGN_FIRST_SOURCE) {
-            $screenplay = VideoPlanningStage::query()->whereKey((string) ($input['screenplay_stage_id'] ?? ''))->first();
+            $screenplay = $this->stages->findStageWithSnapshot((string) ($input['screenplay_stage_id'] ?? ''));
             $designSource = is_array($screenplay?->output_json) ? ($screenplay->output_json[VesselDesign::SOURCE_DESIGN_KEY] ?? null) : null;
 
             if (! is_array($designSource)
@@ -8316,24 +8204,13 @@ class VideoProjectService implements QueuedStageService
                 return $this->sourceMemo[$key];
             }
 
-            $previous = VideoRenderScene::query()
-                ->where('project_id', $projectId)
-                ->where('revision', $scene->revision)
-                ->where('scene_code', (string) $scene->source_scene_code)
-                ->first();
+            $previous = $this->scenes->findSceneByCode($projectId, $scene->revision, (string) $scene->source_scene_code);
 
             if ($previous === null) {
                 return [null, 'source_scene_not_found'];
             }
 
-            $candidate = VideoDesignImage::query()
-                ->where('project_id', $projectId)
-                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-                ->where('render_scene_id', $previous->id)
-                ->where('status', DesignImageStatus::APPROVED->value)
-                ->whereNotNull('selected_artifact_id')
-                ->orderByDesc('approved_at')
-                ->first();
+            $candidate = $this->images->findLatestApprovedKeyframeForScene($projectId, $previous->id);
 
             $found = match (true) {
                 $candidate === null => [null, 'source_keyframe_not_approved'],
@@ -8661,11 +8538,7 @@ class VideoProjectService implements QueuedStageService
         }
 
         $projectId = (string) $scene->project_id;
-        $scenes = VideoRenderScene::query()
-            ->where('project_id', $projectId)
-            ->where('revision', $scene->revision)
-            ->orderBy('scene_index')
-            ->get()
+        $scenes = $this->scenes->findScenesForRevision($projectId, $scene->revision)
             ->map(static fn (VideoRenderScene $row): array => [
                 'id' => (string) $row->scene_code,
                 'scene_id' => (string) $row->id,
@@ -8699,23 +8572,10 @@ class VideoProjectService implements QueuedStageService
             return 'Ảnh nguồn của '.explode('|', $gate, 2)[1].' — chưa đạt yêu cầu ảnh của shot';
         }
 
-        $successor = VideoRenderScene::query()
-            ->where('project_id', $scene->project_id)
-            ->where('revision', $scene->revision)
-            ->where('source_scene_code', $scene->scene_code)
-            ->where('transition_mode', ScenePreservationPrompt::CONTINUATION)
-            ->where(fn ($query) => $scene->continuity_group === null
-                ? $query->whereNull('continuity_group')
-                : $query->where('continuity_group', $scene->continuity_group))
-            ->orderBy('scene_index')
-            ->first(['id', 'title']);
+        $successor = $this->scenes->findContinuationSuccessor($scene, ['id', 'title']);
 
         foreach (array_filter([$scene, $successor]) as $row) {
-            $keyframe = VideoDesignImage::query()
-                ->where('render_scene_id', $row->id)
-                ->where('image_type', DesignImageStore::SCENE_KEYFRAME_TYPE)
-                ->where('status', DesignImageStatus::APPROVED->value)
-                ->first();
+            $keyframe = $this->images->findApprovedSceneKeyframe($row->id);
             $reason = $keyframe === null ? null : $this->keyframeNeedsReview($keyframe);
 
             if ($reason !== null) {
@@ -8751,7 +8611,7 @@ class VideoProjectService implements QueuedStageService
         }
 
         $projectId = (string) $keyframe->project_id;
-        $scene = VideoRenderScene::query()->whereKey($keyframe->render_scene_id)->first(['id', 'revision']);
+        $scene = $this->scenes->findSceneRevision($keyframe->render_scene_id);
         $design = null;
 
         foreach ($sources as $entry) {
@@ -8777,8 +8637,8 @@ class VideoProjectService implements QueuedStageService
                 continue;
             }
 
-            $source = VideoDesignImage::query()->whereKey($entry['candidate_id'] ?? null)->first();
-            $sourceScene = $source === null ? null : VideoRenderScene::query()->whereKey($source->render_scene_id)->first(['id', 'revision']);
+            $source = $this->images->findImage($entry['candidate_id'] ?? null);
+            $sourceScene = $source === null ? null : $this->scenes->findSceneRevision($source->render_scene_id);
 
             if ($source === null || $sourceScene === null || $scene === null
                 || (int) $sourceScene->revision !== (int) $scene->revision
@@ -8793,10 +8653,10 @@ class VideoProjectService implements QueuedStageService
     /** @param array<string, mixed> $entry */
     private function sourceLabel(array $entry): string
     {
-        $candidate = VideoDesignImage::query()->whereKey($entry['candidate_id'] ?? null)->first(['id', 'render_scene_id']);
+        $candidate = $this->images->findImageSceneLink($entry['candidate_id'] ?? null);
         $scene = $candidate?->render_scene_id === null
             ? null
-            : VideoRenderScene::query()->whereKey($candidate->render_scene_id)->first(['title']);
+            : $this->scenes->findSceneTitle($candidate->render_scene_id);
 
         return $scene !== null ? (string) $scene->title : (string) $entry['role'];
     }
@@ -8816,7 +8676,7 @@ class VideoProjectService implements QueuedStageService
                 : 'changed';
         }
 
-        $candidate = VideoDesignImage::query()->whereKey($entry['candidate_id'])->first();
+        $candidate = $this->images->findImage($entry['candidate_id']);
 
         return $candidate !== null
             && $candidate->status === DesignImageStatus::APPROVED->value
@@ -10126,5 +9986,11 @@ class VideoProjectService implements QueuedStageService
     private function digest(array $value): string
     {
         return hash('sha256', json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
+    }
+
+    /** @return ?VideoProject the project with only its id and owner read, for the check of who may work on it; null when no project has that id */
+    public function ownershipOf(string $projectId): ?VideoProject
+    {
+        return $this->videoProjectRepository->findOwnership($projectId);
     }
 }

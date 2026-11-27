@@ -2,6 +2,7 @@
 
 namespace App\Repositories\Eloquent;
 
+use App\Models\Article;
 use App\Models\Category;
 use App\Repositories\Interfaces\CategoryRepositoryInterface;
 use App\Enums\Paginate;
@@ -36,5 +37,15 @@ class CategoryRepository extends BaseRepository implements CategoryRepositoryInt
         return $this->model->newQuery()
                 ->orderBy('name', 'asc')
                 ->get();
+    }
+
+    public function findCategory(?string $categoryId): ?Category
+    {
+        return $this->model->newQuery()->find($categoryId);
+    }
+
+    public function findCategoryOfArticle(Article $article): ?Category
+    {
+        return $article->category;
     }
 }

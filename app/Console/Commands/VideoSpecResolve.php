@@ -21,10 +21,9 @@ class VideoSpecResolve extends Command
 
     protected $description = 'Xem trước gói hợp đồng (hướng dẫn chung, prompt phase, schema, manifest) của một tác vụ cho một project; chỉ đọc, không gọi AI';
 
-    public function handle(): int
+    public function handle(PhaseResolver $resolver): int
     {
         $config = (array) config('video.superyacht');
-        $resolver = PhaseResolver::fromConfig($config);
         $project = (string) $this->argument('project');
         $action = (string) $this->argument('action');
 

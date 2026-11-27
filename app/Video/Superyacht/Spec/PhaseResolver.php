@@ -6,18 +6,39 @@ use App\Models\AiJsonSchema;
 use App\Models\AiPhase;
 use App\Models\Category;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\AiJsonSchemaRepositoryInterface;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\CategoryRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Superyacht\Support\CanonicalJson;
 use RuntimeException;
 
 final class PhaseResolver
 {
-    /** @param array<string, mixed> $contracts video.superyacht.contracts */
-    public function __construct(private readonly array $contracts) {}
+    /** @param array<string, mixed>|\Closure(): array<string, mixed> $contracts video.superyacht.contracts, or what reads them each time the resolver is asked */
+    public function __construct(
+        private readonly array|\Closure $contracts,
+        private readonly AiPhaseRepositoryInterface $phases,
+        private readonly AiJsonSchemaRepositoryInterface $schemas,
+        private readonly CategoryRepositoryInterface $categories,
+        private readonly VideoProjectRepositoryInterface $projects,
+    ) {}
 
     /** @param array<string, mixed> $config video.superyacht */
-    public static function fromConfig(array $config): self
+    public static function fromConfig(
+        array $config,
+        AiPhaseRepositoryInterface $phases,
+        AiJsonSchemaRepositoryInterface $schemas,
+        CategoryRepositoryInterface $categories,
+        VideoProjectRepositoryInterface $projects,
+    ): self {
+        return new self((array) ($config['contracts'] ?? []), $phases, $schemas, $categories, $projects);
+    }
+
+    /** @return array<string, mixed> video.superyacht.contracts the resolver works with now */
+    private function contracts(): array
     {
-        return new self((array) ($config['contracts'] ?? []));
+        return $this->contracts instanceof \Closure ? ($this->contracts)() : $this->contracts;
     }
 
     /**
@@ -26,8 +47,8 @@ final class PhaseResolver
     public function forProject(string|VideoProject $project, string $action, ?TaskContext $context = null): ResolvedPhase
     {
         $projectId = $project instanceof VideoProject ? (string) $project->id : $project;
-        $project = $project instanceof VideoProject ? $project : (VideoProject::query()->find($project) ?? throw new RuntimeException("Project {$projectId} does not exist."));
-        $article = $project->article ?? throw new RuntimeException("Project {$projectId} has no article.");
+        $project = $project instanceof VideoProject ? $project : ($this->projects->findProject($project) ?? throw new RuntimeException("Project {$projectId} does not exist."));
+        $article = $this->projects->findArticleOf($project) ?? throw new RuntimeException("Project {$projectId} has no article.");
         $categoryId = (string) $article->category_id;
 
         if ($categoryId === '') {
@@ -38,7 +59,7 @@ final class PhaseResolver
             throw new RuntimeException("The task context belongs to project {$context->projectId}, not {$project->id}.");
         }
 
-        $category = $article->category ?? throw new RuntimeException("Category {$categoryId} does not exist.");
+        $category = $this->categories->findCategoryOfArticle($article) ?? throw new RuntimeException("Category {$categoryId} does not exist.");
 
         return $this->resolve($category, $action, (string) $project->id, $context, $this->releaseOf($project, $category));
     }
@@ -46,15 +67,15 @@ final class PhaseResolver
     /** @param ?string $release the release of a workflow that declares releases; without one such a workflow resolves its legacy release */
     public function forCategory(string $categoryId, string $action, ?TaskContext $context = null, ?string $release = null): ResolvedPhase
     {
-        return $this->resolve(Category::query()->find($categoryId) ?? throw new RuntimeException("Category {$categoryId} does not exist."), $action, $context?->projectId, $context, $release);
+        return $this->resolve($this->categories->findCategory($categoryId) ?? throw new RuntimeException("Category {$categoryId} does not exist."), $action, $context?->projectId, $context, $release);
     }
 
     /** @return ?string the release the project pinned for a workflow that declares releases, null when it pinned none or the workflow declares none */
     private function releaseOf(VideoProject $project, Category $category): ?string
     {
         $slug = $category->slug;
-        $workflow = $slug === null ? null : ($this->contracts['categories'][$slug] ?? null);
-        $key = $workflow === null ? null : ($this->contracts['workflows'][$workflow]['release_key'] ?? null);
+        $workflow = $slug === null ? null : ($this->contracts()['categories'][$slug] ?? null);
+        $key = $workflow === null ? null : ($this->contracts()['workflows'][$workflow]['release_key'] ?? null);
         $pinned = is_string($key) ? ($project->metadata_json[$key] ?? null) : null;
 
         return is_string($pinned) && $pinned !== '' ? $pinned : null;
@@ -77,11 +98,11 @@ final class PhaseResolver
             throw new RuntimeException('The manifest does not match its own bundle_hash.');
         }
 
-        $category = Category::query()->find($manifest['category']['id'] ?? null)
+        $category = $this->categories->findCategory($manifest['category']['id'] ?? null)
             ?? throw new RuntimeException('The category of the manifest no longer exists.');
         $phaseId = $manifest['phase']['id'] ?? null;
         $instructionIds = array_map(static fn (array $item): mixed => $item['id'] ?? null, (array) $manifest['instructions']);
-        $rows = AiPhase::query()->whereIn('id', array_values(array_unique(array_filter([$phaseId, ...$instructionIds], 'is_string'))))->get()->keyBy('id');
+        $rows = $this->phases->findPhasesByIds(array_values(array_unique(array_filter([$phaseId, ...$instructionIds], 'is_string'))))->keyBy('id');
         $phase = (is_string($phaseId) ? $rows->get($phaseId) : null)
             ?? throw new RuntimeException('The phase revision of the manifest no longer exists.');
         $instructions = array_map(
@@ -105,11 +126,11 @@ final class PhaseResolver
 
     private function resolve(Category $category, string $actionKey, ?string $projectId, ?TaskContext $context, ?string $release = null): ResolvedPhase
     {
-        $workflow = $this->contracts['categories'][$category->slug]
+        $workflow = $this->contracts()['categories'][$category->slug]
             ?? throw new RuntimeException("Category {$category->slug} has no configured workflow.");
         $contract = $this->release($workflow, $release);
         $action = $contract['actions'][$actionKey]
-            ?? $this->contracts['workflows'][$workflow]['actions'][$actionKey]
+            ?? $this->contracts()['workflows'][$workflow]['actions'][$actionKey]
             ?? throw new RuntimeException("Action {$actionKey} is not configured for workflow {$workflow}.");
         $action = ActionContract::normalise($actionKey, (array) $action);
         $pick = fn (string $code): AiPhase => isset($contract['phases'][$code])
@@ -128,13 +149,13 @@ final class PhaseResolver
      */
     private function release(string $workflow, ?string $release): array
     {
-        $declared = (array) ($this->contracts['workflows'][$workflow]['releases'] ?? []);
+        $declared = (array) ($this->contracts()['workflows'][$workflow]['releases'] ?? []);
 
         if ($declared === []) {
             return ['phases' => [], 'actions' => []];
         }
 
-        $code = $release ?? (string) ($this->contracts['workflows'][$workflow]['legacy_release'] ?? '');
+        $code = $release ?? (string) ($this->contracts()['workflows'][$workflow]['legacy_release'] ?? '');
         $contract = $declared[$code] ?? throw new RuntimeException("Release {$code} is not configured for workflow {$workflow}.");
         $base = ['phases' => [], 'actions' => []];
 
@@ -160,12 +181,7 @@ final class PhaseResolver
      */
     private function within(string $categoryId, string $workflow, string $code, array $range): AiPhase
     {
-        $rows = AiPhase::query()
-            ->where('category_id', $categoryId)
-            ->where('workflow_code', $workflow)
-            ->where('phase_code', $code)
-            ->get()
-            ->all();
+        $rows = $this->phases->findRevisionsOfPhase($categoryId, $workflow, $code);
 
         return self::choose($rows, $range) ?? throw new RuntimeException(isset($range['revisions'])
             ? "{$code} of {$workflow} has no published revision of its release catalogue (id, hash and input format ".json_encode($range['input_format'] ?? null).') for this category: '.self::catalogueFault($rows, $range).'.'
@@ -279,12 +295,7 @@ final class PhaseResolver
 
     private function current(string $categoryId, string $workflow, string $code): AiPhase
     {
-        $rows = AiPhase::query()
-            ->where('category_id', $categoryId)
-            ->where('workflow_code', $workflow)
-            ->where('phase_code', $code)
-            ->where('is_current', true)
-            ->get();
+        $rows = $this->phases->findCurrentRevisions($categoryId, $workflow, $code);
 
         if ($rows->count() !== 1) {
             throw new RuntimeException("{$code} of {$workflow} has {$rows->count()} current revisions for this category; expected exactly one.");
@@ -323,7 +334,7 @@ final class PhaseResolver
             }
         }
 
-        $links = $phase->schemaLinks()->with('schema')->get()
+        $links = $this->phases->findSchemaLinksWithSchemas($phase)
             ->sortBy(static fn ($link): string => $link->role.'|'.$link->slot_key)
             ->values();
         $schemas = [];
@@ -340,7 +351,7 @@ final class PhaseResolver
         while ($queue !== []) {
             $unread = array_values(array_unique(array_filter($queue, static fn (mixed $id): bool => ! isset($read[$id]))));
 
-            foreach ($unread === [] ? [] : AiJsonSchema::query()->whereIn('id', $unread)->get() as $row) {
+            foreach ($unread === [] ? [] : $this->schemas->findSchemasByIds($unread) as $row) {
                 $read[$row->id] = $row;
             }
 

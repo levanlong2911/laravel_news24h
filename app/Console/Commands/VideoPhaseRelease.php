@@ -2,6 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Repositories\Interfaces\AiJsonSchemaRepositoryInterface;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\CategoryRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Superyacht\Spec\PhaseRelease;
 use Illuminate\Console\Command;
 use Throwable;
@@ -16,7 +20,7 @@ class VideoPhaseRelease extends Command
 
     protected $description = 'Phát hành một gói (schema mới + revision prompt mới kèm liên kết theo config) vào DB cho một category; gói chỉ là đầu vào, lúc chạy vẫn đọc DB';
 
-    public function handle(): int
+    public function handle(AiPhaseRepositoryInterface $phases, AiJsonSchemaRepositoryInterface $schemas, CategoryRepositoryInterface $categories, VideoProjectRepositoryInterface $projects): int
     {
         $category = trim((string) $this->option('category'));
         $package = trim((string) $this->option('package'));
@@ -27,7 +31,7 @@ class VideoPhaseRelease extends Command
             return self::FAILURE;
         }
 
-        $release = PhaseRelease::fromConfig((array) config('video.superyacht'));
+        $release = PhaseRelease::fromConfig((array) config('video.superyacht'), $phases, $schemas, $categories, $projects);
 
         try {
             $plan = $release->plan($category, $package);

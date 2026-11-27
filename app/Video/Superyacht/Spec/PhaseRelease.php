@@ -7,6 +7,10 @@ namespace App\Video\Superyacht\Spec;
 use App\Models\AiJsonSchema;
 use App\Models\AiPhase;
 use App\Models\Category;
+use App\Repositories\Interfaces\AiJsonSchemaRepositoryInterface;
+use App\Repositories\Interfaces\AiPhaseRepositoryInterface;
+use App\Repositories\Interfaces\CategoryRepositoryInterface;
+use App\Repositories\Interfaces\VideoProjectRepositoryInterface;
 use App\Video\Superyacht\Import\SpecImporter;
 use App\Video\Superyacht\Support\CanonicalJson;
 use Illuminate\Support\Facades\DB;
@@ -24,12 +28,23 @@ final class PhaseRelease
     public const CREATED_BY = 'video:phase-release';
 
     /** @param array<string, mixed> $config video.superyacht */
-    public function __construct(private readonly array $config) {}
+    public function __construct(
+        private readonly array $config,
+        private readonly AiPhaseRepositoryInterface $phases,
+        private readonly AiJsonSchemaRepositoryInterface $schemas,
+        private readonly CategoryRepositoryInterface $categories,
+        private readonly VideoProjectRepositoryInterface $projects,
+    ) {}
 
     /** @param array<string, mixed> $config video.superyacht */
-    public static function fromConfig(array $config): self
-    {
-        return new self($config);
+    public static function fromConfig(
+        array $config,
+        AiPhaseRepositoryInterface $phases,
+        AiJsonSchemaRepositoryInterface $schemas,
+        CategoryRepositoryInterface $categories,
+        VideoProjectRepositoryInterface $projects,
+    ): self {
+        return new self($config, $phases, $schemas, $categories, $projects);
     }
 
     /** @return array<string, mixed> */
@@ -225,7 +240,7 @@ final class PhaseRelease
                     $written[] = ['code' => $published->phase_code, 'revision' => (int) $published->revision, 'id' => (string) $published->id];
                 }
 
-                $resolver = PhaseResolver::fromConfig($this->config);
+                $resolver = PhaseResolver::fromConfig($this->config, $this->phases, $this->schemas, $this->categories, $this->projects);
 
                 foreach ((array) ($this->config['contracts']['workflows'][$plan['workflow']]['actions'] ?? []) as $key => $action) {
                     if (! in_array($action['phase'] ?? null, array_column($package['phases'], 'code'), true)) {

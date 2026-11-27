@@ -25,7 +25,7 @@ class VideoMotoRelease extends Command
 
     protected $description = 'Preview (or with --apply store) the release of moto projects. Without a project: every moto project that pinned no release is pinned to what it ran under before the current default — the legacy release when it already ran Phase 2, otherwise the release new projects took before. With a project and --to: the project moves to the next release when no step that release replaces has a selection or a run in progress. No model is called, no run is deleted.';
 
-    public function handle(): int
+    public function handle(PhaseResolver $resolver): int
     {
         $apply = (bool) $this->option('apply');
         $this->line($apply ? 'Mode: APPLY' : 'Mode: PREVIEW (read-only, nothing written)');
@@ -34,7 +34,7 @@ class VideoMotoRelease extends Command
             return $this->pinDnaContracts($apply);
         }
 
-        return $this->argument('project') === null ? $this->pinInherited($apply) : $this->move((string) $this->argument('project'), $apply);
+        return $this->argument('project') === null ? $this->pinInherited($apply) : $this->move((string) $this->argument('project'), $apply, $resolver);
     }
 
     /**
@@ -55,7 +55,7 @@ class VideoMotoRelease extends Command
             $kept = $project->metadata_json[DesignDnaService::CONTRACT_KEY] ?? null;
 
             if (is_array($kept['manifest'] ?? null)) {
-                [$replayed, $broken] = DesignDnaService::replay($kept['manifest']);
+                [$replayed, $broken] = $dna->replay($kept['manifest']);
                 $broken ??= $replayed !== ($kept['bundle_hash'] ?? null) ? 'bundle hash của hợp đồng đã ghim không khớp manifest của nó' : null;
 
                 if ($broken !== null) {
@@ -130,7 +130,7 @@ class VideoMotoRelease extends Command
         return self::SUCCESS;
     }
 
-    private function move(string $projectId, bool $apply): int
+    private function move(string $projectId, bool $apply, PhaseResolver $resolver): int
     {
         $project = VideoProject::query()->with('article.category')->find($projectId);
         $to = trim((string) $this->option('to'));
@@ -148,14 +148,13 @@ class VideoMotoRelease extends Command
             return self::FAILURE;
         }
 
-        $result = DB::transaction(function () use ($projectId, $to, $reason, $apply): array {
+        $result = DB::transaction(function () use ($projectId, $to, $reason, $apply, $resolver): array {
             $locked = VideoProject::query()->whereKey($projectId)->lockForUpdate()->firstOrFail();
             $from = MotoPipelineRelease::of($locked);
 
             if ($from === $to) {
                 return ['from' => $from, 'problems' => [], 'moved' => [], 'change' => null, 'same' => true, 'dna' => null];
             }
-            $resolver = PhaseResolver::fromConfig((array) config('video.superyacht'));
             $codes = array_map(static fn (int $number): string => "phase-{$number}", range(1, 11));
             $rules = static function (string $release) use ($resolver, $codes): array {
                 try {

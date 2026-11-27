@@ -8,11 +8,15 @@ use App\Enums\PlanningStageName;
 use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
+use App\Repositories\Interfaces\VideoPlanningStageRepositoryInterface;
 use Illuminate\Support\Facades\DB;
 
 final class ProductionSelectionService
 {
-    public function __construct(private readonly ScreenplayApprovalService $approvals) {}
+    public function __construct(
+        private readonly ScreenplayApprovalService $approvals,
+        private readonly VideoPlanningStageRepositoryInterface $stages,
+    ) {}
 
     public function selectedScreenplay(VideoProject $project): ?VideoPlanningStage
     {
@@ -22,12 +26,7 @@ final class ProductionSelectionService
             return null;
         }
 
-        $stage = VideoPlanningStage::query()
-            ->whereKey($stageId)
-            ->where('project_id', $project->id)
-            ->where('stage', PlanningStageName::SCREENPLAY->value)
-            ->where('status', VideoPlanningStageStatus::SUCCEEDED->value)
-            ->first();
+        $stage = $this->stages->findSucceededStageOfKindWithSnapshot($project->id, $stageId, PlanningStageName::SCREENPLAY);
 
         if ($stage === null || ! is_array($stage->output_json)) {
             return null;

@@ -12,13 +12,15 @@ use RuntimeException;
 
 final class ScriptEvaluation
 {
+    public function __construct(private readonly PhaseResolver $resolver) {}
+
     /**
      * @param  array<string, mixed>  $manifest  the bundle the run was sent with
      * @param  array<string, mixed>  $context  the check context pinned with the run
      * @param  array<string, mixed>  $source  the pinned source of the run
      * @return array{document: ?array<string, mixed>, parse_error: ?string, check: array<string, mixed>, derived: ?array<string, mixed>, contract: string, content_hash: ?string}
      */
-    public static function of(string $raw, array $manifest, array $context, array $source, CheckedWorkflow $adapter): array
+    public function of(string $raw, array $manifest, array $context, array $source, CheckedWorkflow $adapter): array
     {
         [$decoded, $parseError] = JsonAnswer::parse($raw);
         $document = $parseError === null ? json_decode((string) json_encode($decoded), true) : null;
@@ -29,7 +31,7 @@ final class ScriptEvaluation
         $preparation = null;
 
         if ($document !== null) {
-            $bundle = PhaseResolver::fromConfig((array) config('video.superyacht'))->fromManifest($manifest);
+            $bundle = $this->resolver->fromManifest($manifest);
 
             if ($adapter instanceof NormalizesAnswer) {
                 $prepared = $adapter->normalizeAnswer($decoded, $bundle);

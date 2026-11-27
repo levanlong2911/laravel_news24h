@@ -22,7 +22,7 @@ class VideoSpecCheckContracts extends Command
     /** @var array<string, ResolvedPhase> */
     private array $bundles = [];
 
-    public function handle(): int
+    public function handle(PhaseResolver $resolver): int
     {
         $this->bundles = [];
         $slug = trim((string) $this->option('category'));
@@ -35,7 +35,6 @@ class VideoSpecCheckContracts extends Command
         }
 
         $config = (array) config('video.superyacht');
-        $resolver = PhaseResolver::fromConfig($config);
         $categoryId = (string) $category->first()->id;
         $workflow = $config['contracts']['categories'][$slug] ?? null;
         $actions = (array) ($config['contracts']['workflows'][$workflow]['actions'] ?? []);

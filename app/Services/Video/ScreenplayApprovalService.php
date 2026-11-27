@@ -9,6 +9,7 @@ use App\Enums\VideoPlanningStageStatus;
 use App\Models\VideoPlanningStage;
 use App\Models\VideoProject;
 use App\Models\VideoReviewDecision;
+use App\Repositories\Interfaces\VideoReviewDecisionRepositoryInterface;
 use App\Video\Screenplay\ScreenplayContentHash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -16,6 +17,8 @@ use Illuminate\Support\Str;
 final class ScreenplayApprovalService
 {
     public const ENTITY_TYPE = 'screenplay';
+
+    public function __construct(private readonly VideoReviewDecisionRepositoryInterface $decisions) {}
 
     /** @return list<string> */
     public function productionContracts(): array
@@ -126,12 +129,7 @@ final class ScreenplayApprovalService
             return null;
         }
 
-        $latest = VideoReviewDecision::query()
-            ->where('project_id', $stage->project_id)
-            ->where('entity_type', self::ENTITY_TYPE)
-            ->where('entity_id', $stage->id)
-            ->orderByDesc('revision')
-            ->first();
+        $latest = $this->decisions->findLatestForProjectEntity($stage->project_id, self::ENTITY_TYPE, $stage->id);
 
         if ($latest === null || $latest->decision !== 'approved') {
             return null;
